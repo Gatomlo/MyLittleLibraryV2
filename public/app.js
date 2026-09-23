@@ -205,7 +205,16 @@
           const detector = await getDetector(formats);
           const bitmap = await createImageBitmap(file);
           const codes = await detector.detect(bitmap);
-          if (!codes.some((c) => tryValue(c.rawValue))) status.textContent = 'Aucun code lisible sur la photo. Réessaie plus près et bien éclairé.';
+          if (codes.some((c) => tryValue(c.rawValue))) return;
+          if (isBarcode) {
+            const canvas = document.createElement('canvas');
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            canvas.getContext('2d').drawImage(bitmap, 0, 0);
+            await loadQuagga();
+            if (tryValue(await quaggaDecode(canvas))) return;
+          }
+          status.textContent = 'Aucun code lisible sur la photo. Réessaie plus près et bien éclairé.';
         } catch (err) { status.textContent = 'Analyse impossible : ' + err.message; }
       });
 
@@ -213,6 +222,7 @@
         let detector;
         try {
           detector = await getDetector(formats);
+          if (isBarcode) await loadQuagga().catch(() => null);
         } catch (err) {
           status.textContent = 'Lecteur de codes indisponible : ' + err.message;
           return;
@@ -222,32 +232,107 @@
           return;
         }
         try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+          // Resolution maximale : un code-barres ISBN est petit, chaque pixel compte.
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+            audio: false,
+          });
         } catch (err) {
           status.textContent = 'Caméra refusée ou absente. Utilise la saisie manuelle ou une photo.';
           return;
         }
         if (done) { stream.getTracks().forEach((t) => t.stop()); return; }
+        await tuneCamera(stream.getVideoTracks()[0], isBarcode);
         video.srcObject = stream;
         await video.play().catch(() => {});
+        if (isBarcode) {
+          status.textContent = `${hint} Tiens le livre à 15-25 cm, bien éclairé, le code-barres net et à plat dans le cadre.`;
+        }
+
+        // Code-barres : on n'analyse que la bande centrale (zone du cadre) en pleine
+        // resolution, avec deux moteurs complementaires : ZXing (rapide) et Quagga2
+        // (plus tolerant au flou des webcams). Une lecture Quagga doit etre confirmee
+        // deux fois pour ecarter les erreurs de lecture.
+        const band = document.createElement('canvas');
+        const quaggaHits = new Map();
+        let frame = 0;
         const tick = async () => {
           if (done) return;
           try {
-            if (video.readyState >= 2) {
-              const codes = await detector.detect(video);
+            if (video.readyState >= 2 && video.videoWidth) {
+              let source = video;
+              if (isBarcode) {
+                const vw = video.videoWidth;
+                const vh = video.videoHeight;
+                band.width = Math.round(vw * 0.9);
+                band.height = Math.round(vh * 0.6);
+                band.getContext('2d').drawImage(video, vw * 0.05, vh * 0.2, band.width, band.height, 0, 0, band.width, band.height);
+                source = band;
+              }
+              const codes = await detector.detect(source);
               for (const c of codes) if (tryValue(c.rawValue)) return;
+              if (isBarcode && window.Quagga && ++frame % 2 === 0) {
+                const q = accept(String((await quaggaDecode(band)) || ''));
+                if (q) {
+                  const hits = (quaggaHits.get(q) || 0) + 1;
+                  quaggaHits.set(q, hits);
+                  if (hits >= 2 && tryValue(q)) return;
+                }
+              }
             }
           } catch (e) { /* image suivante */ }
-          timer = setTimeout(tick, 180);
+          timer = setTimeout(tick, 120);
         };
         tick();
       })();
     });
   }
 
+  // Reglages de la camera quand elle les accepte : mise au point continue et, pour un
+  // code-barres sur telephone, un leger zoom (permet de tenir le livre assez loin
+  // pour que la mise au point se fasse).
+  async function tuneCamera(track, isBarcode) {
+    if (!track || !track.getCapabilities) return;
+    try {
+      const caps = track.getCapabilities();
+      const advanced = [];
+      if (caps.focusMode && caps.focusMode.includes('continuous')) advanced.push({ focusMode: 'continuous' });
+      if (isBarcode && caps.zoom && caps.zoom.max >= 1.8) advanced.push({ zoom: Math.min(2, caps.zoom.max) });
+      if (advanced.length) await track.applyConstraints({ advanced });
+    } catch (e) { /* reglages non supportes : on garde ceux par defaut */ }
+  }
+
+  let quaggaPromise = null;
+  function loadQuagga() {
+    if (!quaggaPromise) quaggaPromise = loadScript(BASE + '/vendor/quagga.min.js');
+    return quaggaPromise;
+  }
+
+  // Lecture EAN-13 avec Quagga2 sur un canvas ; null si rien n'est lu (ou apres 3 s).
+  function quaggaDecode(canvas) {
+    const Q = window.Quagga && (window.Quagga.default || window.Quagga);
+    if (!Q) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve(null), 3000);
+      Q.decodeSingle({
+        src: canvas.toDataURL('image/jpeg', 0.92),
+        numOfWorkers: 0,
+        inputStream: { size: Math.min(1600, canvas.width) },
+        locate: true,
+        locator: { patchSize: 'medium', halfSample: false },
+        decoder: { readers: ['ean_reader'] },
+      }, (r) => { clearTimeout(timeout); resolve(r && r.codeResult ? r.codeResult.code : null); });
+    });
+  }
+
+  // ISBN-13 (978/979 + cle de controle EAN valide) ou ISBN-10 saisi a la main.
   function isbnFromScan(raw) {
     const digits = raw.replace(/[^0-9Xx]/g, '').toUpperCase();
-    if (/^97[89]\d{10}$/.test(digits) || /^\d{9}[\dX]$/.test(digits)) return digits;
+    if (/^97[89]\d{10}$/.test(digits)) {
+      const sum = digits.split('').reduce((acc, d, i) => acc + Number(d) * (i % 2 ? 3 : 1), 0);
+      return sum % 10 === 0 ? digits : null;
+    }
+    if (/^\d{9}[\dX]$/.test(digits)) return digits;
     return null;
   }
 
@@ -271,7 +356,7 @@
   function scanIsbn() {
     return openScanner({
       title: 'Scanner le code-barres',
-      hint: 'Vise le code-barres ISBN au dos du livre (celui qui commence par 978 ou 979).',
+      hint: 'Vise le code-barres ISBN au dos du livre (978… ou 979…).',
       formats: ['ean_13'],
       accept: isbnFromScan,
       manualLabel: "ou tape l'ISBN",
@@ -556,7 +641,11 @@
       location.replace(`#/book/${r.bookId}`);
       return;
     }
-    const { copy, book } = await api(`/api/copies/by-code/${encodeURIComponent(code)}`);
+    const { copy, book, oldCode } = await api(`/api/copies/by-code/${encodeURIComponent(code)}`);
+    if (oldCode) {
+      history.replaceState(null, '', `#/c/${encodeURIComponent(copy.code)}`);
+      toast(`Ancienne étiquette ${oldCode} : cet exemplaire s'appelle maintenant ${copy.code}. Pense à réimprimer son étiquette.`);
+    }
     const borrowers = copy.loan ? [] : await api('/api/borrowers');
     view().innerHTML = `
       <p><a href="#/loans">← Prêts</a></p>
@@ -954,7 +1043,7 @@
 
   async function viewLabels() {
     const [settings, pending] = await Promise.all([api('/api/settings'), api('/api/labels/pending')]);
-    const layout = Object.assign({ preset: 'L7160', showLogo: true, showName: true, showTitle: true, guides: true }, LABEL_PRESETS.L7160, settings.labelLayout || {});
+    const layout = Object.assign({ preset: 'L7160', showLogo: true, showName: true, showTitle: true, showAuthor: true, guides: true }, LABEL_PRESETS.L7160, settings.labelLayout || {});
     pending.forEach((p) => { if (!state.labelSelection.size || state.labelSelection.has(p.code)) state.labelSelection.add(p.code); });
     let start = 1;
     let data = null;
@@ -985,6 +1074,7 @@
             <label class="check"><input type="checkbox" id="opt-logo" ${layout.showLogo ? 'checked' : ''}> Logo</label>
             <label class="check"><input type="checkbox" id="opt-name" ${layout.showName ? 'checked' : ''}> Nom de la bibliothèque</label>
             <label class="check"><input type="checkbox" id="opt-title" ${layout.showTitle ? 'checked' : ''}> Titre du livre</label>
+            <label class="check"><input type="checkbox" id="opt-author" ${layout.showAuthor ? 'checked' : ''}> Auteur(s)</label>
             <label class="check"><input type="checkbox" id="opt-guides" ${layout.guides ? 'checked' : ''}> Contours dans l'aperçu</label>
             <div class="btn-row" style="margin-top:14px">
               <button class="btn btn-primary" id="print">Imprimer</button>
@@ -1022,6 +1112,7 @@
       layout.showLogo = $('#opt-logo').checked;
       layout.showName = $('#opt-name').checked;
       layout.showTitle = $('#opt-title').checked;
+      layout.showAuthor = $('#opt-author').checked;
       layout.guides = $('#opt-guides').checked;
       start = Math.max(1, parseInt($('#start').value, 10) || 1);
     }
@@ -1036,7 +1127,10 @@
       const perSheet = layout.cols * layout.rows;
       const slots = Array(Math.min(start - 1, perSheet - 1)).fill(null).concat(items);
       const small = layout.height < 26 || layout.width < 45;
-      const qrSize = Math.min(layout.height - 4, layout.width * 0.5);
+      const qrSize = Math.min(layout.height - 4, layout.width * 0.45);
+      // Echelle du texte et du logo : suit la place laissee a cote du QR code
+      // (reference : etiquette 63,5×38 mm), bornee pour rester lisible.
+      const k = Math.max(0.6, Math.min(2.5, Math.min(layout.height / 38, (layout.width - qrSize) / 35)));
       const showName = layout.showName && data.libraryName;
       const showLogo = layout.showLogo && data.logoUrl;
       let html = '';
@@ -1047,11 +1141,12 @@
           const row = Math.floor(i / layout.cols);
           const pos = `left:${layout.left + col * layout.hPitch}mm;top:${layout.top + row * layout.vPitch}mm;width:${layout.width}mm;height:${layout.height}mm`;
           if (!item) { html += `<div class="lbl blank" style="${pos}"></div>`; return; }
-          html += `<div class="lbl ${small ? 'small' : ''}" style="${pos}">
+          html += `<div class="lbl ${small ? 'small' : ''}" style="${pos};--k:${k.toFixed(3)}">
             <div class="qr" style="width:${qrSize}mm;height:${qrSize}mm">${item.svg}</div>
             <div class="info">
               ${showName || showLogo ? `<div class="lib">${showLogo ? `<img src="${esc(mediaSrc(data.logoUrl))}" alt="">` : ''}${showName ? `<span>${esc(data.libraryName)}</span>` : ''}</div>` : ''}
               ${layout.showTitle ? `<div class="ttl">${esc(item.title)}</div>` : ''}
+              ${layout.showAuthor && item.authors ? `<div class="aut">${esc(item.authors)}</div>` : ''}
               <div class="cd">${esc(item.code)}</div>
             </div>
           </div>`;
@@ -1080,7 +1175,7 @@
       saveLayout();
     };
     $$('[data-dim]').forEach((input) => input.addEventListener('input', () => { layout.preset = 'custom'; $('#preset').value = 'custom'; renderSheets(); saveLayout(); }));
-    ['#opt-logo', '#opt-name', '#opt-title', '#opt-guides'].forEach((sel) => { $(sel).onchange = () => { renderSheets(); saveLayout(); }; });
+    ['#opt-logo', '#opt-name', '#opt-title', '#opt-author', '#opt-guides'].forEach((sel) => { $(sel).onchange = () => { renderSheets(); saveLayout(); }; });
     $('#start').oninput = renderSheets;
     $('#add-code').onsubmit = async (e) => {
       e.preventDefault();
@@ -1136,11 +1231,32 @@
           </div>
           <p class="small muted" style="margin-top:6px">Affiché dans l'en-tête, sur les étiquettes et dans le catalogue intégré. PNG à fond transparent conseillé.</p>
         </div>
-        <div class="grid-2">
-          <div class="field"><label for="prefix">Préfixe des codes d'exemplaire</label><input id="prefix" name="codePrefix" value="${esc(s.codePrefix)}" maxlength="10" style="text-transform:uppercase"></div>
-          <div class="field"><label>Prochain code</label><input disabled value="${esc(s.codePrefix)}-${String(s.nextCodeNumber).padStart(5, '0')}"></div>
-        </div>
         <button class="btn btn-primary" type="submit">Enregistrer</button>
+      </form>
+
+      <h2>Codes des exemplaires</h2>
+      <form class="card" id="code-form">
+        <p class="muted small">Prochain code attribué : <span class="code">${esc(s.codePrefix)}-${String(s.nextCodeNumber).padStart(5, '0')}</span></p>
+        <div class="grid-2">
+          <div class="field"><label for="prefix">Préfixe</label><input id="prefix" name="prefix" value="${esc(s.codePrefix)}" maxlength="10" pattern="[A-Za-z0-9]{1,10}" required style="text-transform:uppercase"></div>
+          <div class="field"><label>Aperçu</label><input id="prefix-preview" disabled></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn" type="submit" name="mode" value="new">Appliquer aux nouveaux exemplaires</button>
+          <button class="btn btn-danger" type="button" id="renumber">Régénérer tous les codes…</button>
+        </div>
+        <div id="renumber-panel" hidden style="margin-top:14px">
+          <div class="info-box">
+            Tous les exemplaires existants reçoivent un code avec ce préfixe et leurs étiquettes repassent « à imprimer ».
+            Les anciennes étiquettes restent utilisables en attendant : scannées, elles renvoient vers le bon exemplaire.
+          </div>
+          <label class="check"><input type="checkbox" id="compact"> Renuméroter à partir de 1 (dans l'ordre d'ajout, sans trous)</label>
+          <p class="small muted" id="compact-warn" hidden>Avec le même préfixe, des numéros seront réattribués à d'autres livres : une ancienne étiquette pourrait alors ouvrir le mauvais exemplaire. Réimprime toutes les étiquettes rapidement.</p>
+          <div class="btn-row" style="margin-top:10px">
+            <button class="btn btn-danger" type="button" id="renumber-go">Régénérer maintenant</button>
+            <button class="btn" type="button" id="renumber-cancel">Annuler</button>
+          </div>
+        </div>
       </form>
 
       <h2>Catégories</h2>
@@ -1178,10 +1294,40 @@
     $('#lib-form').onsubmit = async (e) => {
       e.preventDefault();
       try {
-        await api('/api/settings', { method: 'PUT', body: { libraryName: e.target.libraryName.value, codePrefix: e.target.codePrefix.value } });
+        await api('/api/settings', { method: 'PUT', body: { libraryName: e.target.libraryName.value } });
         await loadSettings();
         toast('Réglages enregistrés.');
         route();
+      } catch (err) { toast(err.message, 'error'); }
+    };
+    const prefixInput = $('#prefix');
+    const updatePreview = () => {
+      const p = prefixInput.value.trim().toUpperCase() || '…';
+      $('#prefix-preview').value = `${p}-00001, ${p}-00002…`;
+      $('#compact-warn').hidden = !($('#compact').checked && p === s.codePrefix);
+    };
+    prefixInput.addEventListener('input', updatePreview);
+    $('#compact').addEventListener('change', updatePreview);
+    updatePreview();
+    $('#code-form').onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await api('/api/settings', { method: 'PUT', body: { codePrefix: prefixInput.value } });
+        toast('Préfixe enregistré pour les prochains exemplaires.');
+        route();
+      } catch (err) { toast(err.message, 'error'); }
+    };
+    $('#renumber').onclick = () => { $('#renumber-panel').hidden = false; };
+    $('#renumber-cancel').onclick = () => { $('#renumber-panel').hidden = true; };
+    $('#renumber-go').onclick = async () => {
+      if (!prefixInput.reportValidity()) return;
+      const prefix = prefixInput.value.trim().toUpperCase();
+      if (!confirm(`Régénérer les codes de tous les exemplaires avec le préfixe ${prefix} ?\nToutes les étiquettes seront à réimprimer.`)) return;
+      try {
+        const r = await api('/api/copies/renumber', { method: 'POST', body: { prefix, compact: $('#compact').checked } });
+        state.labelSelection.clear();
+        toast(r.changed ? `${r.changed} code(s) régénéré(s). Les nouvelles étiquettes sont prêtes à imprimer.` : 'Aucun code à modifier.');
+        go(r.changed ? '#/labels' : '#/settings');
       } catch (err) { toast(err.message, 'error'); }
     };
     $('#logo-file').onchange = async (e) => {

@@ -30,6 +30,8 @@ function nodeModuleFile(...parts) {
   return candidates.find((p) => fs.existsSync(p)) || candidates[0];
 }
 app.get('/vendor/barcode-detector.js', (req, res) => res.sendFile(nodeModuleFile('barcode-detector', 'dist', 'iife', 'ponyfill.js')));
+app.get('/vendor/quagga.min.js', (req, res) => res.sendFile(nodeModuleFile('@ericblade', 'quagga2', 'dist', 'quagga.min.js')));
+app.get('/vendor/zxing-reader.js', (req, res) => res.sendFile(nodeModuleFile('zxing-wasm', 'dist', 'iife', 'reader', 'index.js')));
 app.get('/vendor/zxing_reader.wasm', (req, res) => res.type('application/wasm').sendFile(nodeModuleFile('zxing-wasm', 'dist', 'reader', 'zxing_reader.wasm')));
 
 // Les routes sont declarees sans prefixe de montage : quand la passerelle monte l'app
@@ -39,10 +41,11 @@ app.use('/api', api);
 
 api.use(auth.loadUser);
 
-// Les requetes qui modifient des donnees doivent etre en JSON : un formulaire d'un
-// autre site ne peut pas en envoyer sans CORS (protection CSRF, avec SameSite=Lax).
+// Les POST/PUT doivent etre en JSON : un formulaire d'un autre site ne peut pas en
+// envoyer sans CORS (protection CSRF, avec SameSite=Lax). Un DELETE d'un autre site
+// declenche de toute facon une verification CORS prealable, refusee.
 api.use((req, res, next) => {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.is('application/json')) return next();
+  if (!['POST', 'PUT', 'PATCH'].includes(req.method) || req.is('application/json')) return next();
   res.status(415).json({ error: 'Requête JSON attendue.' });
 });
 
@@ -159,6 +162,15 @@ function getBookRow(id) {
   return b;
 }
 
+// Exemplaire par son code actuel, ou par un ancien code (etiquette d'avant une
+// regeneration des codes). Renvoie { id, book_id, code } avec le code actuel.
+function findCopy(code) {
+  const c = str(code, 40);
+  return db.prepare('SELECT id, book_id, code FROM copies WHERE code = ?').get(c)
+    || db.prepare(`SELECT c.id, c.book_id, c.code FROM copy_code_history h
+      JOIN copies c ON c.id = h.copy_id WHERE h.code = ?`).get(c);
+}
+
 function publicSettings() {
   return { libraryName: getSetting('libraryName'), logoUrl: mediaUrl(getSetting('logo')) };
 }
@@ -185,9 +197,9 @@ api.get('/public/books/:id', h((req, res) => {
 
 // Permet d'ouvrir la fiche d'un livre en scannant l'etiquette sans etre connecte.
 api.get('/public/copies/:code', h((req, res) => {
-  const c = db.prepare('SELECT book_id FROM copies WHERE code = ?').get(str(req.params.code, 40));
+  const c = findCopy(req.params.code);
   if (!c) throw httpError(404, 'Exemplaire introuvable.');
-  res.json({ bookId: c.book_id });
+  res.json({ bookId: c.book_id, code: c.code });
 }));
 
 // ================= Authentification =================
@@ -485,10 +497,66 @@ api.delete('/copies/:id', h((req, res) => {
 // Exemplaire retrouve par son code (saisi ou scanne sur l'etiquette).
 api.get('/copies/by-code/:code', h((req, res) => {
   const code = str(req.params.code, 40);
-  const c = db.prepare('SELECT id, book_id FROM copies WHERE code = ?').get(code);
+  const c = findCopy(code);
   if (!c) throw httpError(404, `Aucun exemplaire avec le code ${code}.`);
   const book = bookDetail(c.book_id);
-  res.json({ copy: book.copies.find((x) => x.id === c.id), book });
+  res.json({ copy: book.copies.find((x) => x.id === c.id), book, oldCode: c.code.toUpperCase() !== code.toUpperCase() ? code : null });
+}));
+
+// Regenere les codes de tous les exemplaires avec le prefixe choisi, soit en gardant
+// les numeros (seul le prefixe change), soit en renumerotant a partir de 1 dans
+// l'ordre d'ajout (supprime les trous laisses par les suppressions). Les anciens
+// codes restent reconnus (copy_code_history) ; toutes les etiquettes repassent
+// "a imprimer".
+api.post('/copies/renumber', h((req, res) => {
+  const prefix = str(req.body.prefix, 10).toUpperCase();
+  if (!/^[A-Z0-9]{1,10}$/.test(prefix)) throw httpError(400, 'Préfixe : lettres et chiffres uniquement (10 max).');
+  const compact = !!req.body.compact;
+  const count = tx(() => {
+    const copies = db.prepare('SELECT id, code FROM copies ORDER BY created_at, id').all();
+    const numbers = new Map();
+    const used = new Set();
+    if (compact) {
+      copies.forEach((c, i) => numbers.set(c.id, i + 1));
+    } else {
+      // Numero actuel conserve ; en cas de doublon (anciens prefixes melanges), le
+      // suivant libre est attribue apres les autres.
+      const pending = [];
+      for (const c of copies) {
+        const m = /(\d+)$/.exec(c.code);
+        const n = m ? Number(m[1]) : 0;
+        if (n > 0 && !used.has(n)) { used.add(n); numbers.set(c.id, n); } else pending.push(c);
+      }
+      let next = Math.max(0, ...used) + 1;
+      pending.forEach((c) => numbers.set(c.id, next++));
+    }
+    const remember = db.prepare(`INSERT INTO copy_code_history (code, copy_id) VALUES (?, ?)
+      ON CONFLICT(code) DO UPDATE SET copy_id = excluded.copy_id, replaced_at = datetime('now')`);
+    const setCode = db.prepare('UPDATE copies SET code = ?, label_printed_at = NULL WHERE id = ?');
+    // Codes temporaires d'abord, pour ne jamais violer l'unicite pendant l'echange.
+    copies.forEach((c) => setCode.run(`TMP${c.id}-0`, c.id));
+    let changed = 0;
+    let max = 0;
+    for (const c of copies) {
+      const n = numbers.get(c.id);
+      max = Math.max(max, n);
+      const code = `${prefix}-${String(n).padStart(5, '0')}`;
+      setCode.run(code, c.id);
+      if (code.toUpperCase() !== c.code.toUpperCase()) {
+        remember.run(c.code, c.id);
+        changed++;
+      } else {
+        // Code inchange : l'etiquette actuelle reste valable.
+        db.prepare("UPDATE copies SET label_printed_at = datetime('now') WHERE id = ?").run(c.id);
+      }
+    }
+    // Un ancien code redevenu code actuel d'un exemplaire n'a plus a etre redirige.
+    db.exec('DELETE FROM copy_code_history WHERE code IN (SELECT code FROM copies)');
+    setSetting('codePrefix', prefix);
+    setSetting('nextCodeNumber', max + 1);
+    return changed;
+  });
+  res.json({ changed: count });
 }));
 
 // ================= Emprunteurs =================
@@ -569,7 +637,7 @@ api.get('/loans', (req, res) => {
 api.post('/loans', h((req, res) => {
   const code = str(req.body.code, 40);
   const loanId = tx(() => {
-    const copy = db.prepare('SELECT id FROM copies WHERE code = ?').get(code);
+    const copy = findCopy(code);
     if (!copy) throw httpError(404, `Aucun exemplaire avec le code ${code}.`);
     if (db.prepare('SELECT 1 FROM loans WHERE copy_id = ? AND returned_at IS NULL').get(copy.id)) {
       throw httpError(409, 'Cet exemplaire est déjà en prêt.');
@@ -614,8 +682,9 @@ api.post('/labels', h(async (req, res) => {
     JOIN books b ON b.id = c.book_id WHERE c.code = ?`);
   const items = [];
   for (const code of codes) {
-    const c = find.get(code);
-    if (!c) continue;
+    const current = findCopy(code);
+    const c = current && find.get(current.code);
+    if (!c || items.some((i) => i.code === c.code)) continue;
     const svg = await QRCode.toString(`${baseUrl}#/c/${encodeURIComponent(c.code)}`, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' });
     items.push({ code: c.code, title: c.title, authors: c.authors || '', location: c.location || '', svg });
   }

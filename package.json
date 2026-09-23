@@ -10,6 +10,7 @@
     "set-password": "node scripts/set-password.js"
   },
   "dependencies": {
+    "@ericblade/quagga2": "^1.12.1",
     "barcode-detector": "^3.2.2",
     "express": "^4.19.2",
     "qrcode": "^1.5.4"
