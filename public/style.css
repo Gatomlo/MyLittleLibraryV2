@@ -68,9 +68,59 @@ p { margin: 0 0 10px; }
 }
 .nav a:hover, .nav button:hover { background: var(--surface-2); color: var(--text); }
 .nav a.active { background: var(--accent-soft); color: var(--accent); }
-@media (max-width: 760px) {
-  .nav { order: 3; width: 100%; margin: 0 -16px; padding: 0 16px; width: calc(100% + 32px); }
+.scan-btn { order: 1; }
+/* Ecran moyen/petit : marque, Scanner et compte sur la 1re ligne, navigation dessous. */
+@media (max-width: 1100px) {
+  .nav { order: 3; margin: 0 -16px; padding: 0 16px; width: calc(100% + 32px); }
 }
+@media (max-width: 480px) {
+  .scan-btn span, .account-btn .name { display: none; }
+}
+
+/* ---------- Menu du compte (bascule entre bibliotheques) ---------- */
+.account { position: relative; order: 2; }
+.account-btn { display: inline-flex; align-items: center; gap: 6px; max-width: 200px; }
+.account-btn .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-btn svg { flex-shrink: 0; }
+.menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; width: min(300px, calc(100vw - 32px));
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+  padding: 6px; max-height: calc(100vh - 90px); overflow: auto;
+}
+.menu-head { padding: 8px 10px 6px; font-size: 13px; color: var(--muted); }
+.menu-head strong { display: block; color: var(--text); font-size: 15px; }
+.menu-sep { height: 1px; background: var(--border); margin: 6px 0; }
+.menu-title { padding: 6px 10px 2px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+.menu-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border-radius: 8px; border: 0; background: none; color: var(--text); font: inherit; font-size: 14px; text-align: left; text-decoration: none; cursor: pointer; }
+.menu-item:hover { background: var(--surface-2); }
+.menu-item.current { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.menu-item .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-item img { width: 22px; height: 22px; object-fit: contain; border-radius: 4px; flex-shrink: 0; }
+.star { border: 0; background: none; cursor: pointer; font-size: 17px; line-height: 1; color: var(--muted); padding: 2px 4px; border-radius: 6px; }
+.star.on { color: #d9a21b; }
+.star:hover { background: var(--surface-2); }
+
+/* ---------- Accueil (liste des bibliotheques) ---------- */
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.lib-card { display: flex; align-items: center; gap: 14px; padding: 18px; text-decoration: none; color: inherit; }
+.lib-card:hover { border-color: var(--accent); }
+.lib-card img, .lib-card .ph { width: 48px; height: 48px; object-fit: contain; border-radius: 10px; flex-shrink: 0; }
+.lib-card .ph { display: flex; align-items: center; justify-content: center; background: var(--accent); color: var(--accent-contrast); font-weight: 700; font-size: 20px; }
+.lib-card strong { font-size: 16px; }
+
+/* ---------- Selection des etiquettes ---------- */
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 10px; margin-bottom: 12px; }
+.seg button { border: 0; background: none; padding: 8px 6px; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.sel-list { max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+.sel-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.sel-row:last-child { border-bottom: 0; }
+.sel-row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-row button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 4px; }
+.sel-row button:hover { color: var(--danger); }
+.search-results { border: 1px solid var(--border); border-radius: 10px; margin-top: 6px; max-height: 280px; overflow: auto; }
+.search-results .sel-row button.add { color: var(--accent); font-size: 13px; font-weight: 700; border: 1px solid var(--border); border-radius: 8px; padding: 3px 8px; }
+.summary-line { font-weight: 700; margin: 10px 0 4px; }
 
 .shell { max-width: 1100px; margin: 0 auto; padding: 20px 16px 64px; }
 

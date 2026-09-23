@@ -1,25 +1,29 @@
 (function () {
   'use strict';
 
-  // Chemin de montage de l'app (ex. '/mylittlelibrary' quand la passerelle Node monte
-  // plusieurs outils sous des sous-dossiers, '' si servie a la racine). Deduit de
-  // l'URL reelle utilisee pour charger ce script (via la balise <script src="app.js">,
-  // volontairement relative) : fonctionne sans configuration a coder en dur.
-  const BASE = (() => {
-    try {
-      const scriptUrl = document.currentScript && document.currentScript.src;
-      if (!scriptUrl) return '';
-      return new URL('.', scriptUrl).pathname.replace(/\/$/, '');
-    } catch (e) { return ''; }
+  // Configuration injectee par le serveur (window.MLL, voir renderIndex dans
+  // server.js) : ROOT = chemin de montage de l'app (ex. '/mylittlelibrary' dans la
+  // passerelle, '' seule) ; LIBRARY = bibliotheque de la page (null sur l'accueil).
+  const CONFIG = window.MLL || {};
+  const ROOT = typeof CONFIG.root === 'string' ? CONFIG.root : (() => {
+    try { return new URL('.', document.currentScript.src).pathname.replace(/\/$/, ''); } catch (e) { return ''; }
   })();
+  const LIBRARY = CONFIG.library || null;
+  const LIB = LIBRARY ? `${ROOT}/${LIBRARY.slug}` : null;
+  const libUrl = (slug) => `${ROOT}/${slug}/`;
 
   const state = {
     user: null,
     needsSetup: false,
-    settings: { libraryName: 'Bibliothèque', logoUrl: null },
+    libraries: [], // bibliotheques gerees par le compte connecte
+    settings: LIBRARY ? { libraryName: LIBRARY.name, logoUrl: LIBRARY.logoUrl } : { libraryName: 'Bibliothèques', logoUrl: null },
     catalog: { q: '', category: '', status: '', sort: 'title', page: 1 },
-    labelSelection: new Set(),
+    labels: { mode: 'pending', manual: [] },
   };
+
+  const isAdmin = () => !!state.user && state.user.role === 'admin';
+  // Le compte connecte peut-il gerer la bibliotheque de la page ?
+  const canManage = () => !!state.user && !!LIBRARY && (isAdmin() || state.libraries.some((l) => l.slug === LIBRARY.slug));
 
   // ================= Utilitaires =================
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -30,8 +34,9 @@
     return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // Les chemins d'images renvoyes par l'API sont relatifs a la bibliotheque (ou a la racine).
   function mediaSrc(url) {
-    return url ? `${BASE}/${url}` : '';
+    return url ? `${LIB || ROOT}/${url}` : '';
   }
 
   // Dates SQLite (UTC, "AAAA-MM-JJ HH:MM:SS") -> affichage local.
@@ -43,8 +48,8 @@
       : d.toLocaleDateString('fr-BE', { day: '2-digit', month: '2-digit', year: 'numeric' });
   }
 
-  async function api(path, { method = 'GET', body } = {}) {
-    const res = await fetch(BASE + path, {
+  async function request(base, path, { method = 'GET', body } = {}) {
+    const res = await fetch(base + path, {
       method,
       credentials: 'same-origin',
       headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
@@ -54,11 +59,14 @@
     try { data = await res.json(); } catch (e) { /* reponse vide */ }
     if (res.status === 401 && state.user) {
       state.user = null;
-      renderNav();
+      renderHeader();
     }
     if (!res.ok) throw new Error((data && data.error) || `Erreur ${res.status}`);
     return data;
   }
+  // API de la bibliotheque courante / API globale (comptes, administration).
+  const api = (path, opts) => request(LIB, path, opts);
+  const gapi = (path, opts) => request(ROOT, path, opts);
 
   function toast(message, type) {
     const el = document.createElement('div');
@@ -122,6 +130,11 @@
     });
   }
 
+  function sessionStorageSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* stockage indisponible */ } }
+  function sessionStorageTake(k) {
+    try { const v = sessionStorage.getItem(k); sessionStorage.removeItem(k); return v; } catch (e) { return null; }
+  }
+
   // ================= Scanner (webcam / camera du telephone) =================
   // API BarcodeDetector native quand le navigateur la fournit (Chrome Android...),
   // sinon polyfill ZXing/WebAssembly servi par l'app (Safari iOS, Firefox...).
@@ -136,12 +149,49 @@
       } catch (e) { /* on bascule sur le polyfill */ }
     }
     if (!window.BarcodeDetectionAPI) {
-      await loadScript(BASE + '/vendor/barcode-detector.js');
+      await loadScript(ROOT + '/vendor/barcode-detector.js');
       window.BarcodeDetectionAPI.prepareZXingModule({
-        overrides: { locateFile: (p, prefix) => (p.endsWith('.wasm') ? BASE + '/vendor/zxing_reader.wasm' : prefix + p) },
+        overrides: { locateFile: (p, prefix) => (p.endsWith('.wasm') ? ROOT + '/vendor/zxing_reader.wasm' : prefix + p) },
       });
     }
     return (detectors[key] = new window.BarcodeDetectionAPI.BarcodeDetector({ formats }));
+  }
+
+  // Reglages de la camera quand elle les accepte : mise au point continue et, pour un
+  // code-barres sur telephone, un leger zoom (permet de tenir le livre assez loin
+  // pour que la mise au point se fasse).
+  async function tuneCamera(track, isBarcode) {
+    if (!track || !track.getCapabilities) return;
+    try {
+      const caps = track.getCapabilities();
+      const advanced = [];
+      if (caps.focusMode && caps.focusMode.includes('continuous')) advanced.push({ focusMode: 'continuous' });
+      if (isBarcode && caps.zoom && caps.zoom.max >= 1.8) advanced.push({ zoom: Math.min(2, caps.zoom.max) });
+      if (advanced.length) await track.applyConstraints({ advanced });
+    } catch (e) { /* reglages non supportes : on garde ceux par defaut */ }
+  }
+
+  let quaggaPromise = null;
+  function loadQuagga() {
+    if (!quaggaPromise) quaggaPromise = loadScript(ROOT + '/vendor/quagga.min.js');
+    return quaggaPromise;
+  }
+
+  // Lecture EAN-13 avec Quagga2 sur un canvas ; null si rien n'est lu (ou apres 3 s).
+  function quaggaDecode(canvas) {
+    const Q = window.Quagga && (window.Quagga.default || window.Quagga);
+    if (!Q) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve(null), 3000);
+      Q.decodeSingle({
+        src: canvas.toDataURL('image/jpeg', 0.92),
+        numOfWorkers: 0,
+        inputStream: { size: Math.min(1600, canvas.width) },
+        locate: true,
+        locator: { patchSize: 'medium', halfSample: false },
+        decoder: { readers: ['ean_reader'] },
+      }, (r) => { clearTimeout(timeout); resolve(r && r.codeResult ? r.codeResult.code : null); });
+    });
   }
 
   // Ouvre la camera et renvoie la premiere valeur lue acceptee par `accept`
@@ -288,43 +338,6 @@
     });
   }
 
-  // Reglages de la camera quand elle les accepte : mise au point continue et, pour un
-  // code-barres sur telephone, un leger zoom (permet de tenir le livre assez loin
-  // pour que la mise au point se fasse).
-  async function tuneCamera(track, isBarcode) {
-    if (!track || !track.getCapabilities) return;
-    try {
-      const caps = track.getCapabilities();
-      const advanced = [];
-      if (caps.focusMode && caps.focusMode.includes('continuous')) advanced.push({ focusMode: 'continuous' });
-      if (isBarcode && caps.zoom && caps.zoom.max >= 1.8) advanced.push({ zoom: Math.min(2, caps.zoom.max) });
-      if (advanced.length) await track.applyConstraints({ advanced });
-    } catch (e) { /* reglages non supportes : on garde ceux par defaut */ }
-  }
-
-  let quaggaPromise = null;
-  function loadQuagga() {
-    if (!quaggaPromise) quaggaPromise = loadScript(BASE + '/vendor/quagga.min.js');
-    return quaggaPromise;
-  }
-
-  // Lecture EAN-13 avec Quagga2 sur un canvas ; null si rien n'est lu (ou apres 3 s).
-  function quaggaDecode(canvas) {
-    const Q = window.Quagga && (window.Quagga.default || window.Quagga);
-    if (!Q) return Promise.resolve(null);
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => resolve(null), 3000);
-      Q.decodeSingle({
-        src: canvas.toDataURL('image/jpeg', 0.92),
-        numOfWorkers: 0,
-        inputStream: { size: Math.min(1600, canvas.width) },
-        locate: true,
-        locator: { patchSize: 'medium', halfSample: false },
-        decoder: { readers: ['ean_reader'] },
-      }, (r) => { clearTimeout(timeout); resolve(r && r.codeResult ? r.codeResult.code : null); });
-    });
-  }
-
   // ISBN-13 (978/979 + cle de controle EAN valide) ou ISBN-10 saisi a la main.
   function isbnFromScan(raw) {
     const digits = raw.replace(/[^0-9Xx]/g, '').toUpperCase();
@@ -363,96 +376,210 @@
     });
   }
 
-  // ================= Navigation =================
+  // ================= En-tete : marque, navigation, menu du compte =================
   function renderBrand() {
     const s = state.settings;
     $('#brand-name').textContent = s.libraryName;
     document.title = s.libraryName;
+    const brand = $('.brand');
+    brand.href = LIBRARY ? `${LIB}/#/` : `${ROOT}/#/`;
     const logo = $('#brand-logo');
     logo.hidden = !s.logoUrl;
     if (s.logoUrl) logo.src = mediaSrc(s.logoUrl);
   }
 
+  function renderHeader() {
+    renderBrand();
+    renderNav();
+    renderAccount();
+  }
+
   function renderNav() {
-    const links = state.user
-      ? [['#/', 'Catalogue'], ['#/add', 'Ajouter'], ['#/loans', 'Prêts'], ['#/borrowers', 'Emprunteurs'], ['#/labels', 'Étiquettes'], ['#/settings', 'Réglages']]
-      : [['#/', 'Catalogue'], ['#/login', 'Connexion']];
+    let links = [];
+    if (LIBRARY) {
+      links = canManage()
+        ? [['#/', 'Catalogue'], ['#/add', 'Ajouter'], ['#/loans', 'Prêts'], ['#/borrowers', 'Emprunteurs'], ['#/labels', 'Étiquettes'], ['#/settings', 'Réglages']]
+        : [['#/', 'Catalogue']];
+    }
     const current = '#/' + (location.hash.replace(/^#\/?/, '').split('/')[0] || '');
     $('#nav').innerHTML = links.map(([href, label]) => {
       const active = href === current || (href === '#/' && (current === '#/book' || current === '#/'));
       return `<a href="${href}" class="${active ? 'active' : ''}">${label}</a>`;
-    }).join('') + (state.user ? '<button type="button" id="logout">Déconnexion</button>' : '');
-    $('#scan-btn').hidden = !state.user;
-    const logout = $('#logout');
-    if (logout) logout.onclick = async () => {
-      await api('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
-      state.user = null;
-      toast('Déconnecté.');
-      go('#/');
-      renderNav();
+    }).join('');
+    $('#nav').hidden = links.length <= 1;
+    $('#scan-btn').hidden = !canManage();
+  }
+
+  const USER_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+  function renderAccount() {
+    const box = $('#account');
+    if (!state.user) {
+      // Sur l'accueil, la page est deja celle de connexion.
+      box.innerHTML = LIBRARY ? `<a class="btn btn-small account-btn" href="#/login">${USER_ICON}<span class="name">Connexion</span></a>` : '';
+      return;
+    }
+    box.innerHTML = `<button class="btn btn-small account-btn" type="button" id="account-btn" aria-haspopup="true" aria-expanded="false">
+      ${USER_ICON}<span class="name">${esc(state.user.username)}</span><span aria-hidden="true">▾</span></button>`;
+    $('#account-btn').onclick = (e) => {
+      e.stopPropagation();
+      const open = $('#account .menu');
+      if (open) { closeMenu(); return; }
+      openMenu();
     };
   }
 
-  const routes = [
+  function closeMenu() {
+    const m = $('#account .menu');
+    if (m) m.remove();
+    const b = $('#account-btn');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  }
+
+  function openMenu() {
+    const u = state.user;
+    const def = u.defaultLibraryId;
+    const libs = state.libraries.map((l) => `
+      <div class="menu-item ${LIBRARY && l.slug === LIBRARY.slug ? 'current' : ''}" style="padding:0 4px 0 0">
+        <a class="menu-item" href="${esc(libUrl(l.slug))}" style="flex:1;min-width:0">
+          ${l.logoUrl ? `<img src="${esc(ROOT + '/' + l.logoUrl)}" alt="">` : ''}<span class="grow">${esc(l.name)}</span></a>
+        <button class="star ${l.id === def ? 'on' : ''}" data-default="${l.id}" title="${l.id === def ? 'Bibliothèque par défaut' : 'Définir comme bibliothèque par défaut'}">${l.id === def ? '★' : '☆'}</button>
+      </div>`).join('');
+    const menu = document.createElement('div');
+    menu.className = 'menu';
+    menu.innerHTML = `
+      <div class="menu-head"><strong>${esc(u.username)}</strong>${u.role === 'admin' ? 'Administrateur' : 'Gestionnaire'}</div>
+      <div class="menu-sep"></div>
+      <div class="menu-title">Mes bibliothèques</div>
+      ${libs || '<p class="small muted" style="padding:4px 10px">Aucune bibliothèque liée à ce compte.</p>'}
+      <div class="menu-sep"></div>
+      <a class="menu-item" href="#/account">Mon compte</a>
+      ${u.role === 'admin' ? '<a class="menu-item" href="#/admin">Administration</a>' : ''}
+      <button class="menu-item" type="button" id="logout">Déconnexion</button>`;
+    $('#account').appendChild(menu);
+    $('#account-btn').setAttribute('aria-expanded', 'true');
+    menu.addEventListener('click', (e) => e.stopPropagation());
+    $$('a', menu).forEach((a) => a.addEventListener('click', closeMenu));
+    $$('[data-default]', menu).forEach((btn) => {
+      btn.onclick = async () => {
+        const id = Number(btn.dataset.default);
+        try {
+          await gapi('/api/me/default-library', { method: 'PUT', body: { libraryId: id } });
+          state.user.defaultLibraryId = id;
+          closeMenu();
+          openMenu();
+          toast('Bibliothèque par défaut enregistrée.');
+        } catch (err) { toast(err.message, 'error'); }
+      };
+    });
+    $('#logout').onclick = async () => {
+      closeMenu();
+      await gapi('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
+      state.user = null;
+      state.libraries = [];
+      toast('Déconnecté.');
+      renderHeader();
+      go('#/');
+    };
+  }
+  document.addEventListener('click', closeMenu);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+
+  // ================= Routage =================
+  // needs : 'manage' (gerer cette bibliotheque), 'user' (etre connecte), 'admin'.
+  const LIBRARY_ROUTES = [
     [/^\/?$/, viewCatalog],
     [/^\/book\/(\d+)$/, viewBook],
-    [/^\/book\/(\d+)\/edit$/, viewBookForm, true],
+    [/^\/book\/(\d+)\/edit$/, viewBookForm, 'manage'],
     [/^\/c\/([^/]+)$/, viewCopy],
     [/^\/login$/, viewLogin],
-    [/^\/add$/, viewBookForm, true],
-    [/^\/loans$/, viewLoans, true],
-    [/^\/borrowers$/, viewBorrowers, true],
-    [/^\/borrower\/(\d+)$/, viewBorrower, true],
-    [/^\/labels$/, viewLabels, true],
-    [/^\/settings$/, viewSettings, true],
+    [/^\/add$/, viewBookForm, 'manage'],
+    [/^\/loans$/, viewLoans, 'manage'],
+    [/^\/borrowers$/, viewBorrowers, 'manage'],
+    [/^\/borrower\/(\d+)$/, viewBorrower, 'manage'],
+    [/^\/labels$/, viewLabels, 'manage'],
+    [/^\/settings$/, viewSettings, 'manage'],
+    [/^\/account$/, viewAccount, 'user'],
+    [/^\/admin$/, viewAdmin, 'admin'],
+  ];
+  const HOME_ROUTES = [
+    [/^\/?$/, viewHome],
+    [/^\/login$/, viewLogin],
+    [/^\/account$/, viewAccount, 'user'],
+    [/^\/admin$/, viewAdmin, 'admin'],
+    // Anciennes etiquettes (d'avant les bibliotheques multiples) : #/c/CODE a la racine.
+    [/^\/(c\/[^/]+|book\/\d+)$/, viewLegacyRedirect],
   ];
 
-  let routeToken = 0;
   async function route() {
+    closeMenu();
     const path = decodeURIComponent(location.hash.replace(/^#/, '')) || '/';
     renderNav();
     window.scrollTo(0, 0);
-    const token = ++routeToken;
-    for (const [re, fn, needsAuth] of routes) {
+    for (const [re, fn, needs] of (LIBRARY ? LIBRARY_ROUTES : HOME_ROUTES)) {
       const m = path.match(re);
       if (!m) continue;
-      if (needsAuth && !state.user) {
+      if (needs && !state.user) {
         sessionStorageSet('mll-after-login', location.hash);
         return go('#/login');
+      }
+      if ((needs === 'manage' && !canManage()) || (needs === 'admin' && !isAdmin())) {
+        view().innerHTML = `<div class="empty">Ton compte n'a pas accès à cette page.<br><br><a class="btn" href="#/">Retour</a></div>`;
+        return;
       }
       view().innerHTML = '<p class="muted">Chargement…</p>';
       try {
         await fn(...m.slice(1));
       } catch (err) {
-        if (token === routeToken) view().innerHTML = `<div class="error-box">${esc(err.message)}</div><a class="btn" href="#/">Retour au catalogue</a>`;
+        view().innerHTML = `<div class="error-box">${esc(err.message)}</div><a class="btn" href="#/">Retour</a>`;
       }
       return;
     }
     view().innerHTML = '<div class="empty">Page introuvable.</div>';
   }
 
-  function sessionStorageSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* stockage indisponible */ } }
-  function sessionStorageTake(k) {
-    try { const v = sessionStorage.getItem(k); sessionStorage.removeItem(k); return v; } catch (e) { return null; }
+  // ================= Accueil (racine du site) =================
+  // Non connecte : uniquement la page de connexion (les catalogues publics ont
+  // chacun leur adresse). Connecte : ouverture de sa bibliotheque par defaut, ou
+  // liste de ses bibliotheques quand on y revient depuis le menu.
+  async function viewHome() {
+    if (!state.user) return viewLogin();
+    const params = new URLSearchParams(location.search);
+    const def = state.libraries.find((l) => l.id === state.user.defaultLibraryId) || state.libraries[0];
+    if (def && !params.has('accueil')) { location.replace(libUrl(def.slug)); return; }
+    const libs = state.libraries;
+    view().innerHTML = `
+      <div class="page-head"><div><h1>Mes bibliothèques</h1></div>
+        ${isAdmin() ? '<a class="btn btn-primary" href="#/admin">Administration</a>' : ''}</div>
+      ${libs.length ? `<div class="lib-grid">${libs.map((l) => `
+        <a class="card lib-card" href="${esc(libUrl(l.slug))}">
+          ${l.logoUrl ? `<img src="${esc(ROOT + '/' + l.logoUrl)}" alt="">` : `<span class="ph">${esc(l.name.charAt(0).toUpperCase())}</span>`}
+          <div><strong>${esc(l.name)}</strong><div class="small muted">/${esc(l.slug)}/${l.id === state.user.defaultLibraryId ? ' · par défaut' : ''}</div></div>
+        </a>`).join('')}</div>`
+        : `<div class="empty">Aucune bibliothèque n'est liée à ton compte.${isAdmin() ? '<br><br><a class="btn btn-primary" href="#/admin">Créer une bibliothèque</a>' : ' Demande à un administrateur.'}</div>`}`;
+  }
+
+  async function viewLegacyRedirect(rest) {
+    const libs = await gapi('/api/libraries');
+    if (!libs.length) return go('#/');
+    location.replace(`${libUrl(libs[0].slug)}#/${rest}`);
   }
 
   // ================= Catalogue =================
-  let categoriesCache = null;
-  async function loadCategories(force) {
-    if (!categoriesCache || force) categoriesCache = await api('/api/public/categories');
-    return categoriesCache;
+  async function loadCategories() {
+    return api('/api/public/categories');
   }
 
   async function viewCatalog() {
     const c = state.catalog;
-    const cats = await loadCategories(true);
+    const cats = await loadCategories();
     view().innerHTML = `
       <div class="page-head">
         <div><h1>Catalogue</h1><p class="muted" id="count"></p></div>
-        ${state.user ? '<a class="btn btn-primary" href="#/add">+ Ajouter un livre</a>' : ''}
+        ${canManage() ? '<a class="btn btn-primary" href="#/add">+ Ajouter un livre</a>' : ''}
       </div>
       <div class="filters">
-        <input class="search" type="search" id="q" placeholder="Titre, auteur, éditeur, ISBN${state.user ? ', code' : ''}…" value="${esc(c.q)}">
+        <input class="search" type="search" id="q" placeholder="Titre, auteur, éditeur, ISBN${canManage() ? ', code' : ''}…" value="${esc(c.q)}">
         <select id="cat"><option value="">Toutes les catégories</option>
           ${cats.filter((x) => x.count > 0).map((x) => `<option value="${x.id}" ${String(x.id) === c.category ? 'selected' : ''}>${esc(x.name)} (${x.count})</option>`).join('')}
         </select>
@@ -480,7 +607,7 @@
   async function loadBooks(append) {
     const c = state.catalog;
     const params = new URLSearchParams({ q: c.q, category: c.category, status: c.status, sort: c.sort, page: c.page, limit: 48 });
-    const data = await api(`/api/${state.user ? 'books' : 'public/books'}?${params}`);
+    const data = await api(`/api/${canManage() ? 'books' : 'public/books'}?${params}`);
     const list = $('#books');
     if (!list) return;
     const html = data.items.map((b) => `
@@ -503,7 +630,8 @@
 
   // ================= Fiche livre =================
   async function viewBook(id) {
-    const book = await api(state.user ? `/api/books/${id}` : `/api/public/books/${id}`);
+    const manage = canManage();
+    const book = await api(manage ? `/api/books/${id}` : `/api/public/books/${id}`);
     const facts = [
       ['Auteur(s)', esc(book.authors)],
       ['Éditeur', esc(book.publisher)],
@@ -522,17 +650,17 @@
           ${availabilityBadge(book)}
           <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
           ${book.summary ? `<h3>Résumé</h3><p class="summary">${esc(book.summary)}</p>` : ''}
-          ${state.user && book.notes ? `<h3>Notes internes</h3><p class="summary muted">${esc(book.notes)}</p>` : ''}
-          ${state.user ? `<div class="btn-row" style="margin-top:14px">
+          ${manage && book.notes ? `<h3>Notes internes</h3><p class="summary muted">${esc(book.notes)}</p>` : ''}
+          ${manage ? `<div class="btn-row" style="margin-top:14px">
               <a class="btn" href="#/book/${book.id}/edit">Modifier</a>
               <button class="btn btn-danger" id="del-book">Supprimer</button>
             </div>` : ''}
         </div>
       </div>
       <h2>Exemplaires</h2>
-      <div class="card" id="copies">${state.user ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
-      ${state.user && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}`;
-    if (state.user) bindAdminBook(book);
+      <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
+      ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}`;
+    if (manage) bindAdminBook(book);
   }
 
   function publicCopiesHtml(book) {
@@ -592,7 +720,7 @@
     };
     const print = $('#print-labels');
     if (print) print.onclick = () => {
-      book.copies.forEach((c) => state.labelSelection.add(c.code));
+      state.labels = { mode: 'manual', manual: book.copies.map((c) => ({ code: c.code, title: book.title })) };
       go('#/labels');
     };
     $$('[data-edit-copy]').forEach((btn) => {
@@ -636,7 +764,7 @@
 
   // ================= Exemplaire (cible du QR code) : pret / retour =================
   async function viewCopy(code) {
-    if (!state.user) {
+    if (!canManage()) {
       const r = await api(`/api/public/copies/${encodeURIComponent(code)}`);
       location.replace(`#/book/${r.bookId}`);
       return;
@@ -704,13 +832,14 @@
     const setup = state.needsSetup;
     view().innerHTML = `
       <div class="card" style="max-width:400px;margin:24px auto">
-        <h1>${setup ? 'Créer le compte administrateur' : 'Connexion'}</h1>
-        <p class="muted">${setup ? "Aucun compte n'existe encore. Choisis l'identifiant et le mot de passe qui protégeront l'édition et les prêts." : 'Réservé à la gestion de la bibliothèque.'}</p>
+        <h1>${setup ? 'Premier démarrage' : 'Connexion'}</h1>
+        <p class="muted">${setup ? "Crée le compte administrateur et la première bibliothèque." : 'Réservé à la gestion des bibliothèques.'}</p>
         <div id="err"></div>
         <form id="login-form">
+          ${setup ? '<div class="field"><label for="lib">Nom de la bibliothèque</label><input id="lib" name="libraryName" required value="Bibliothèque du bureau"></div>' : ''}
           <div class="field"><label for="u">Identifiant</label><input id="u" name="username" autocomplete="username" required></div>
           <div class="field"><label for="p">Mot de passe${setup ? ' (8 caractères min.)' : ''}</label><input id="p" name="password" type="password" autocomplete="${setup ? 'new-password' : 'current-password'}" required ${setup ? 'minlength="8"' : ''}></div>
-          <button class="btn btn-primary btn-block" type="submit">${setup ? 'Créer le compte' : 'Se connecter'}</button>
+          <button class="btn btn-primary btn-block" type="submit">${setup ? 'Créer' : 'Se connecter'}</button>
         </form>
       </div>`;
     $('#u').focus();
@@ -718,16 +847,265 @@
       e.preventDefault();
       const btn = $('button[type=submit]', e.target);
       btn.disabled = true;
+      const body = { username: e.target.username.value, password: e.target.password.value };
+      if (setup) body.libraryName = e.target.libraryName.value;
       try {
-        const r = await api(setup ? '/api/auth/setup' : '/api/auth/login', { method: 'POST', body: { username: e.target.username.value, password: e.target.password.value } });
-        state.user = r.user;
-        state.needsSetup = false;
-        toast(`Bienvenue ${r.user.username} !`);
-        go(sessionStorageTake('mll-after-login') || '#/');
+        await gapi(setup ? '/api/auth/setup' : '/api/auth/login', { method: 'POST', body });
+        await loadStatus();
+        toast(`Bienvenue ${state.user.username} !`);
+        const after = sessionStorageTake('mll-after-login');
+        if (LIBRARY) {
+          renderHeader();
+          go(after || '#/');
+        } else {
+          const def = state.libraries.find((l) => l.id === state.user.defaultLibraryId) || state.libraries[0];
+          if (def && !after) location.href = libUrl(def.slug);
+          else { renderHeader(); go(after || '#/'); }
+        }
       } catch (err) {
         $('#err').innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
         btn.disabled = false;
       }
+    };
+  }
+
+  // ================= Mon compte =================
+  async function viewAccount() {
+    const u = state.user;
+    view().innerHTML = `
+      <h1>Mon compte</h1>
+      <p class="muted">${esc(u.username)} · ${u.role === 'admin' ? 'Administrateur (gère toutes les bibliothèques)' : 'Gestionnaire'}</p>
+      <h2>Bibliothèque par défaut</h2>
+      <div class="card">
+        ${state.libraries.length ? `<p class="small muted">Ouverte automatiquement après la connexion. Le menu du compte permet de basculer à tout moment.</p>
+        <div class="list">${state.libraries.map((l) => `
+          <label class="list-item check" style="cursor:pointer">
+            <input type="radio" name="def" value="${l.id}" ${l.id === u.defaultLibraryId ? 'checked' : ''}>
+            <span class="grow">${esc(l.name)} <span class="small muted">/${esc(l.slug)}/</span></span>
+            <a class="btn btn-small" href="${esc(libUrl(l.slug))}">Ouvrir</a>
+          </label>`).join('')}</div>`
+        : '<p class="muted">Aucune bibliothèque n\'est liée à ton compte. Demande à un administrateur.</p>'}
+      </div>
+      <h2>Mot de passe</h2>
+      <form class="card" id="pwd-form">
+        <div class="grid-2">
+          <div class="field"><label>Mot de passe actuel</label><input name="current" type="password" autocomplete="current-password" required></div>
+          <div class="field"><label>Nouveau mot de passe (8 caractères min.)</label><input name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+        </div>
+        <button class="btn" type="submit">Changer le mot de passe</button>
+      </form>`;
+    $$('input[name=def]').forEach((radio) => {
+      radio.onchange = async () => {
+        try {
+          await gapi('/api/me/default-library', { method: 'PUT', body: { libraryId: Number(radio.value) } });
+          state.user.defaultLibraryId = Number(radio.value);
+          toast('Bibliothèque par défaut enregistrée.');
+        } catch (err) { toast(err.message, 'error'); }
+      };
+    });
+    $('#pwd-form').onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await gapi('/api/me/password', { method: 'POST', body: { current: e.target.current.value, password: e.target.password.value } });
+        e.target.reset();
+        toast('Mot de passe modifié.');
+      } catch (err) { toast(err.message, 'error'); }
+    };
+  }
+
+  // ================= Administration =================
+  let adminTab = 'libraries';
+  async function viewAdmin() {
+    view().innerHTML = `
+      <div class="page-head"><h1>Administration</h1></div>
+      <div class="tabs">
+        <button data-tab="libraries" class="${adminTab === 'libraries' ? 'active' : ''}">Bibliothèques</button>
+        <button data-tab="users" class="${adminTab === 'users' ? 'active' : ''}">Comptes</button>
+        <button data-tab="data" class="${adminTab === 'data' ? 'active' : ''}">Sauvegarde</button>
+      </div>
+      <div id="admin-body"></div>`;
+    $$('.tabs button').forEach((btn) => { btn.onclick = () => { adminTab = btn.dataset.tab; viewAdmin(); }; });
+    if (adminTab === 'libraries') await adminLibraries();
+    else if (adminTab === 'users') await adminUsers();
+    else {
+      $('#admin-body').innerHTML = `<div class="card">
+        <p>Copie complète de la base (toutes les bibliothèques, comptes, prêts). Les images (couvertures, logos) sont dans le dossier <span class="code">data/media</span> du serveur.</p>
+        <a class="btn" href="${ROOT}/api/admin/backup">Télécharger une sauvegarde de la base</a></div>`;
+    }
+  }
+
+  async function refreshMyLibraries() {
+    await loadStatus();
+    renderHeader();
+  }
+
+  async function adminLibraries() {
+    const libs = await gapi('/api/admin/libraries');
+    const origin = location.origin + ROOT + '/';
+    $('#admin-body').innerHTML = `
+      <form class="card" id="new-lib" style="margin-bottom:18px">
+        <h3 style="margin-top:0">Nouvelle bibliothèque</h3>
+        <div class="grid-2">
+          <div class="field"><label>Nom *</label><input name="name" required placeholder="ex. Bibliothèque de l'accueil"></div>
+          <div class="field"><label>Adresse</label><input name="slug" placeholder="calculée depuis le nom" pattern="[a-z0-9][a-z0-9-]*"></div>
+        </div>
+        <p class="small muted" id="slug-preview"></p>
+        <button class="btn btn-primary" type="submit">Créer</button>
+      </form>
+      <div class="card">${libs.length ? `<div class="list">${libs.map((l) => `
+        <div class="list-item">
+          <div class="grow">
+            <strong>${esc(l.name)}</strong>
+            <div class="small"><a href="${esc(libUrl(l.slug))}">${esc(origin + l.slug)}/</a></div>
+            <div class="small muted">${l.books} livre(s) · ${l.copies} exemplaire(s) · ${l.users} compte(s) lié(s)</div>
+          </div>
+          <button class="btn btn-small" data-edit-lib="${l.id}">Modifier</button>
+          <button class="btn btn-small btn-danger" data-del-lib="${l.id}">Supprimer</button>
+        </div>`).join('')}</div>` : '<p class="muted">Aucune bibliothèque.</p>'}</div>`;
+
+    const f = $('#new-lib');
+    let userEditedSlug = false;
+    const preview = debounce(async () => {
+      if (userEditedSlug) { $('#slug-preview').textContent = `Adresse : ${origin}${f.slug.value}/`; return; }
+      if (!f.name.value.trim()) { $('#slug-preview').textContent = ''; return; }
+      const r = await gapi(`/api/admin/slug?name=${encodeURIComponent(f.name.value)}`).catch(() => null);
+      if (r) { f.slug.placeholder = r.slug; $('#slug-preview').textContent = `Adresse : ${origin}${r.slug}/`; }
+    }, 250);
+    f.name.addEventListener('input', preview);
+    f.slug.addEventListener('input', () => { userEditedSlug = !!f.slug.value; preview(); });
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const lib = await gapi('/api/admin/libraries', { method: 'POST', body: { name: f.name.value, slug: f.slug.value || undefined } });
+        toast(`Bibliothèque créée : ${origin}${lib.slug}/`);
+        await refreshMyLibraries();
+        viewAdmin();
+      } catch (err) { toast(err.message, 'error'); }
+    };
+    $$('[data-edit-lib]').forEach((btn) => {
+      btn.onclick = () => editLibraryDialog(libs.find((l) => l.id === Number(btn.dataset.editLib)), origin);
+    });
+    $$('[data-del-lib]').forEach((btn) => {
+      btn.onclick = async () => {
+        const lib = libs.find((l) => l.id === Number(btn.dataset.delLib));
+        const typed = prompt(`Supprimer « ${lib.name} » avec ses ${lib.books} livre(s), ${lib.copies} exemplaire(s), emprunteurs et prêts ?\nCette action est définitive.\n\nPour confirmer, tape exactement le nom de la bibliothèque :`);
+        if (typed === null) return;
+        try {
+          await gapi(`/api/admin/libraries/${lib.id}?confirm=${encodeURIComponent(typed)}`, { method: 'DELETE' });
+          toast('Bibliothèque supprimée.');
+          await refreshMyLibraries();
+          if (LIBRARY && LIBRARY.slug === lib.slug) location.href = `${ROOT}/?accueil=1`;
+          else viewAdmin();
+        } catch (err) { toast(err.message, 'error'); }
+      };
+    });
+  }
+
+  function editLibraryDialog(lib, origin) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <form class="modal">
+        <h2>Modifier la bibliothèque</h2>
+        <div class="field"><label>Nom</label><input name="name" required value="${esc(lib.name)}"></div>
+        <div class="field"><label>Adresse</label><input name="slug" required value="${esc(lib.slug)}" pattern="[a-z0-9][a-z0-9-]*"></div>
+        <div class="info-box small">Changer l'adresse : l'ancienne reste redirigée vers la nouvelle (étiquettes déjà imprimées, shortcode WordPress). Pense tout de même à mettre à jour le shortcode.</div>
+        <div class="btn-row">
+          <button class="btn btn-primary" type="submit">Enregistrer</button>
+          <button class="btn" type="button" data-close>Annuler</button>
+        </div>
+      </form>`;
+    document.body.appendChild(backdrop);
+    const close = () => backdrop.remove();
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(); });
+    $('form', backdrop).onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const r = await gapi(`/api/admin/libraries/${lib.id}`, { method: 'PUT', body: { name: e.target.name.value, slug: e.target.slug.value } });
+        close();
+        toast(`Enregistré : ${origin}${r.slug}/`);
+        await refreshMyLibraries();
+        if (LIBRARY && LIBRARY.slug === lib.slug && r.slug !== lib.slug) location.href = `${libUrl(r.slug)}#/admin`;
+        else viewAdmin();
+      } catch (err) { toast(err.message, 'error'); }
+    };
+  }
+
+  async function adminUsers() {
+    const [users, libs] = await Promise.all([gapi('/api/admin/users'), gapi('/api/admin/libraries')]);
+    const libName = (id) => (libs.find((l) => l.id === id) || {}).name || '?';
+    $('#admin-body').innerHTML = `
+      <div class="btn-row" style="margin-bottom:12px"><button class="btn btn-primary" id="new-user">+ Nouveau compte</button></div>
+      <div class="card">${users.length ? `<div class="list">${users.map((u) => `
+        <div class="list-item">
+          <div class="grow">
+            <strong>${esc(u.username)}</strong> ${u.role === 'admin' ? '<span class="badge badge-ok">Administrateur</span>' : '<span class="badge badge-muted">Gestionnaire</span>'}
+            ${u.id === state.user.id ? '<span class="small muted">(toi)</span>' : ''}
+            <div class="small muted">${u.role === 'admin' ? 'Toutes les bibliothèques' : (u.libraryIds.map((id) => esc(libName(id)) + (id === u.defaultLibraryId ? ' ★' : '')).join(', ') || 'Aucune bibliothèque')}</div>
+          </div>
+          <button class="btn btn-small" data-edit-user="${u.id}">Modifier</button>
+          ${u.id === state.user.id ? '' : `<button class="btn btn-small btn-danger" data-del-user="${u.id}">Supprimer</button>`}
+        </div>`).join('')}</div>` : ''}</div>`;
+    $('#new-user').onclick = () => userDialog(null, libs);
+    $$('[data-edit-user]').forEach((btn) => { btn.onclick = () => userDialog(users.find((u) => u.id === Number(btn.dataset.editUser)), libs); });
+    $$('[data-del-user]').forEach((btn) => {
+      btn.onclick = async () => {
+        const u = users.find((x) => x.id === Number(btn.dataset.delUser));
+        if (!confirm(`Supprimer le compte ${u.username} ?`)) return;
+        try { await gapi(`/api/admin/users/${u.id}`, { method: 'DELETE' }); toast('Compte supprimé.'); viewAdmin(); } catch (err) { toast(err.message, 'error'); }
+      };
+    });
+  }
+
+  function userDialog(user, libs) {
+    const u = user || { username: '', role: 'manager', libraryIds: LIBRARY ? libs.filter((l) => l.slug === LIBRARY.slug).map((l) => l.id) : [], defaultLibraryId: null };
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <form class="modal">
+        <h2>${user ? `Compte ${esc(user.username)}` : 'Nouveau compte'}</h2>
+        <div class="field"><label>Identifiant *</label><input name="username" required value="${esc(u.username)}" autocomplete="off"></div>
+        <div class="field"><label>${user ? 'Nouveau mot de passe (laisser vide pour ne pas changer)' : 'Mot de passe * (8 caractères min.)'}</label>
+          <input name="password" type="password" autocomplete="new-password" minlength="8" ${user ? '' : 'required'}></div>
+        <div class="field"><label>Rôle</label><select name="role">
+          <option value="manager" ${u.role !== 'admin' ? 'selected' : ''}>Gestionnaire : gère les bibliothèques cochées ci-dessous</option>
+          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrateur : toutes les bibliothèques, comptes et réglages</option>
+        </select></div>
+        <div class="field"><label>Bibliothèques gérées (★ = par défaut)</label>
+          <div class="sel-list">${libs.map((l) => `
+            <div class="sel-row">
+              <input type="checkbox" name="lib" value="${l.id}" ${u.libraryIds.includes(l.id) ? 'checked' : ''} id="lib-${l.id}">
+              <label for="lib-${l.id}" class="grow" style="margin:0;font-weight:500;color:var(--text);font-size:14px">${esc(l.name)}</label>
+              <label class="small" style="margin:0;display:flex;align-items:center;gap:4px" title="Bibliothèque par défaut"><input type="radio" name="def" value="${l.id}" ${u.defaultLibraryId === l.id ? 'checked' : ''} style="width:auto;min-height:0"> ★</label>
+            </div>`).join('') || '<p class="muted small" style="padding:8px">Crée d\'abord une bibliothèque.</p>'}</div>
+        </div>
+        <div id="dlg-err"></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" type="submit">${user ? 'Enregistrer' : 'Créer le compte'}</button>
+          <button class="btn" type="button" data-close>Annuler</button>
+        </div>
+      </form>`;
+    document.body.appendChild(backdrop);
+    const close = () => backdrop.remove();
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(); });
+    // Choisir une bibliotheque par defaut la coche automatiquement.
+    $$('input[name=def]', backdrop).forEach((r) => {
+      r.onchange = () => { const cb = $(`#lib-${r.value}`, backdrop); if (cb) cb.checked = true; };
+    });
+    $('form', backdrop).onsubmit = async (e) => {
+      e.preventDefault();
+      const t = e.target;
+      const libraryIds = $$('input[name=lib]:checked', backdrop).map((x) => Number(x.value));
+      const def = $('input[name=def]:checked', backdrop);
+      const body = { username: t.username.value, role: t.role.value, libraryIds, defaultLibraryId: def ? Number(def.value) : null };
+      if (t.password.value) body.password = t.password.value;
+      try {
+        await gapi(user ? `/api/admin/users/${user.id}` : '/api/admin/users', { method: user ? 'PUT' : 'POST', body });
+        close();
+        toast(user ? 'Compte enregistré.' : 'Compte créé.');
+        if (user && user.id === state.user.id) await refreshMyLibraries();
+        viewAdmin();
+      } catch (err) { $('#dlg-err', backdrop).innerHTML = `<div class="error-box">${esc(err.message)}</div>`; }
     };
   }
 
@@ -736,7 +1114,7 @@
     const editing = !!id;
     const [book, cats, locations] = await Promise.all([
       editing ? api(`/api/books/${id}`) : null,
-      loadCategories(true),
+      loadCategories(),
       api('/api/locations'),
     ]);
     const b = book || { isbn: '', title: '', subtitle: '', authors: '', publisher: '', year: '', pages: '', summary: '', notes: '', categories: [], coverUrl: null };
@@ -777,7 +1155,8 @@
           <div class="field"><label for="year">Année</label><input id="year" name="year" type="number" min="1400" max="2100" value="${esc(b.year || '')}"></div>
           <div class="field"><label for="pages">Pagination (nombre de pages)</label><input id="pages" name="pages" type="number" min="1" value="${esc(b.pages || '')}"></div>
         </div>
-        <div class="field"><label for="summary">Résumé</label><textarea id="summary" name="summary">${esc(b.summary)}</textarea></div>
+        <div class="field"><label for="summary">Résumé</label><textarea id="summary" name="summary">${esc(b.summary)}</textarea>
+          <div id="summary-alt"></div></div>
         <div class="field">
           <label for="cat-input">Catégories</label>
           <div id="cat-chips"></div>
@@ -793,7 +1172,7 @@
           <div class="field"><label for="location">Emplacement</label><input id="location" name="location" list="loc-list" placeholder="Étagère, armoire…">
             <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist></div>
         </div>`}
-        <div class="field"><label for="notes">Notes internes (visibles uniquement une fois connecté)</label><textarea id="notes" name="notes" style="min-height:70px">${esc(b.notes)}</textarea></div>
+        <div class="field"><label for="notes">Notes internes (visibles uniquement par les gestionnaires)</label><textarea id="notes" name="notes" style="min-height:70px">${esc(b.notes)}</textarea></div>
         <div id="form-err"></div>
         <div class="btn-row"><button class="btn btn-primary" type="submit">${editing ? 'Enregistrer' : 'Ajouter au catalogue'}</button></div>
       </form>`;
@@ -835,6 +1214,7 @@
     async function lookup(raw) {
       const out = $('#isbn-result');
       out.innerHTML = '<span class="muted">Recherche…</span>';
+      $('#summary-alt').innerHTML = '';
       try {
         const r = await api(`/api/isbn/${encodeURIComponent(raw)}`);
         $('#isbn-search').value = r.isbn;
@@ -854,6 +1234,12 @@
             form.cover.remoteUrl = d.coverUrl;
             form.cover.removed = false;
             renderCover();
+          }
+          // Resume trouve seulement dans une autre langue que celle du livre : propose, pas impose.
+          if (d.summaryAlt && !f.summary.value) {
+            $('#summary-alt').innerHTML = `<p class="small muted" style="margin-top:6px">Aucun résumé dans la langue du livre. Un résumé en ${esc(d.summaryAlt.language)} est disponible (${esc(d.summaryAlt.source)}).
+              <button type="button" class="btn btn-small" id="use-alt">Utiliser le résumé en ${esc(d.summaryAlt.language)}</button></p>`;
+            $('#use-alt').onclick = () => { f.summary.value = d.summaryAlt.text; $('#summary-alt').innerHTML = ''; };
           }
           html += `<span style="color:var(--ok)">✓ Fiche pré-remplie (${esc(d.sources.join(', '))}). Vérifie et complète avant d'enregistrer.</span>`;
         } else {
@@ -889,10 +1275,7 @@
       try {
         const saved = await api(editing ? `/api/books/${b.id}` : '/api/books', { method: editing ? 'PUT' : 'POST', body });
         if (editing) toast('Fiche enregistrée.');
-        else {
-          saved.copies.forEach((c) => state.labelSelection.add(c.code));
-          toast(`Livre ajouté : ${saved.copies.map((c) => c.code).join(', ')}. Étiquette(s) à imprimer.`);
-        }
+        else toast(`Livre ajouté : ${saved.copies.map((c) => c.code).join(', ')}. Étiquette(s) en attente d'impression.`);
         go(`#/book/${saved.id}`);
       } catch (err) {
         $('#form-err').innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -925,7 +1308,7 @@
     };
     async function load() {
       const loans = await api(`/api/loans?status=${tab}`);
-      $('#loan-list').innerHTML = loans.length ? `<div class="list">${loans.map(loanItemHtml).join('')}</div>`
+      $('#loan-list').innerHTML = loans.length ? `<div class="list">${loans.map((l) => loanItemHtml(l)).join('')}</div>`
         : `<div class="empty">${tab === 'open' ? 'Aucun prêt en cours.' : 'Aucun prêt terminé.'}</div>`;
     }
     $$('.tabs button').forEach((btn) => {
@@ -1041,10 +1424,13 @@
   const LAYOUT_FIELDS = [['cols', 'Colonnes'], ['rows', 'Lignes'], ['width', 'Largeur (mm)'], ['height', 'Hauteur (mm)'],
     ['left', 'Marge gauche (mm)'], ['top', 'Marge haut (mm)'], ['hPitch', 'Pas horizontal (mm)'], ['vPitch', 'Pas vertical (mm)']];
 
+  // Selection des etiquettes : par defaut toutes celles en attente (nouveaux
+  // exemplaires, codes regeneres) ; sinon une selection manuelle construite par
+  // recherche (titre, auteur, code) ou par scan, sans longue liste a cocher.
   async function viewLabels() {
     const [settings, pending] = await Promise.all([api('/api/settings'), api('/api/labels/pending')]);
     const layout = Object.assign({ preset: 'L7160', showLogo: true, showName: true, showTitle: true, showAuthor: true, guides: true }, LABEL_PRESETS.L7160, settings.labelLayout || {});
-    pending.forEach((p) => { if (!state.labelSelection.size || state.labelSelection.has(p.code)) state.labelSelection.add(p.code); });
+    const sel = state.labels;
     let start = 1;
     let data = null;
 
@@ -1053,12 +1439,13 @@
       <div class="label-layout">
         <div>
           <div class="card">
-            <h3 style="margin-top:0">Exemplaires à imprimer</h3>
-            <div id="sel-list"></div>
-            <form class="isbn-row" id="add-code" style="margin-top:10px">
-              <input name="code" placeholder="Ajouter un code (BIB-…)" autocomplete="off">
-              <button class="btn" type="submit">+</button>
-            </form>
+            <h3 style="margin-top:0">Quoi imprimer ?</h3>
+            <div class="seg">
+              <button type="button" data-mode="pending">En attente (${pending.length})</button>
+              <button type="button" data-mode="manual">Sélection (<span id="manual-count">0</span>)</button>
+            </div>
+            <div id="mode-body"></div>
+            <p class="summary-line" id="summary"></p>
           </div>
           <div class="card">
             <h3 style="margin-top:0">Format de planche</h3>
@@ -1085,24 +1472,87 @@
         <div class="sheets" id="sheets"></div>
       </div>`;
 
-    const knownCopies = new Map(pending.map((p) => [p.code, p]));
-    function renderSelection() {
-      const codes = Array.from(new Set([...pending.map((p) => p.code), ...state.labelSelection]));
-      $('#sel-list').innerHTML = codes.length ? `<div class="pending-list">${codes.map((code) => {
-        const p = knownCopies.get(code);
-        return `<label class="check"><input type="checkbox" data-code="${esc(code)}" ${state.labelSelection.has(code) ? 'checked' : ''}>
-          <span><span class="code">${esc(code)}</span> ${p ? `<span class="small muted">${esc(p.title)}</span>` : ''}${p ? '' : ' <span class="small muted">(déjà imprimée)</span>'}</span></label>`;
-      }).join('')}</div>
-        <div class="btn-row small" style="margin-top:8px"><button class="btn btn-small" id="sel-all">Tout</button><button class="btn btn-small" id="sel-none">Aucun</button></div>`
-        : '<p class="muted small">Aucune étiquette en attente. Les nouveaux exemplaires apparaissent ici automatiquement.</p>';
-      $$('#sel-list input[data-code]').forEach((cb) => {
-        cb.onchange = () => { if (cb.checked) state.labelSelection.add(cb.dataset.code); else state.labelSelection.delete(cb.dataset.code); refresh(); };
-      });
-      const all = $('#sel-all');
-      if (all) {
-        all.onclick = () => { codes.forEach((c) => state.labelSelection.add(c)); renderSelection(); refresh(); };
-        $('#sel-none').onclick = () => { state.labelSelection.clear(); renderSelection(); refresh(); };
+    function selectedCodes() {
+      return sel.mode === 'pending' ? pending.map((p) => p.code) : sel.manual.map((m) => m.code);
+    }
+
+    function addManual(items) {
+      let added = 0;
+      for (const it of items) {
+        if (!sel.manual.some((m) => m.code === it.code)) { sel.manual.push({ code: it.code, title: it.title }); added++; }
       }
+      return added;
+    }
+
+    // Liste compacte des etiquettes en attente, regroupees par livre.
+    function groupedHtml(list) {
+      const groups = new Map();
+      list.forEach((p) => { if (!groups.has(p.title)) groups.set(p.title, []); groups.get(p.title).push(p.code); });
+      return Array.from(groups).map(([title, codes]) => `<div class="sel-row"><span class="grow">${esc(title)}</span><span class="small muted code">${codes.map(esc).join(', ')}</span></div>`).join('');
+    }
+
+    function renderMode() {
+      $$('.seg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === sel.mode));
+      $('#manual-count').textContent = sel.manual.length;
+      const body = $('#mode-body');
+      if (sel.mode === 'pending') {
+        body.innerHTML = pending.length ? `
+          <p class="small muted">Nouveaux exemplaires et codes régénérés, pas encore imprimés.</p>
+          <details><summary class="small" style="cursor:pointer;margin-bottom:8px">Voir le détail</summary>
+            <div class="sel-list">${groupedHtml(pending)}</div></details>
+          <div class="btn-row" style="margin-top:10px"><button class="btn btn-small" type="button" id="customize">Personnaliser cette sélection</button></div>`
+          : '<p class="muted small">Aucune étiquette en attente. Utilise « Sélection » pour réimprimer des étiquettes.</p>';
+        const cz = $('#customize');
+        if (cz) cz.onclick = () => { sel.manual = []; addManual(pending); sel.mode = 'manual'; renderMode(); refresh(); };
+        return;
+      }
+      body.innerHTML = `
+        <div class="isbn-row">
+          <input type="search" id="lbl-q" placeholder="Titre, auteur ou code…" autocomplete="off">
+          <button class="btn" type="button" id="lbl-scan" title="Scanner une étiquette">Scanner</button>
+        </div>
+        <div id="lbl-results"></div>
+        <div class="btn-row small" style="margin:10px 0 8px">
+          ${pending.length ? `<button class="btn btn-small" type="button" id="add-pending">+ Les ${pending.length} en attente</button>` : ''}
+          ${sel.manual.length ? '<button class="btn btn-small btn-danger" type="button" id="clear">Vider</button>' : ''}
+        </div>
+        ${sel.manual.length ? `<div class="sel-list">${sel.manual.map((m, i) => `
+          <div class="sel-row"><span class="code">${esc(m.code)}</span><span class="grow muted">${esc(m.title || '')}</span>
+            <button type="button" data-rm="${i}" aria-label="Retirer">×</button></div>`).join('')}</div>`
+          : '<p class="muted small">Recherche un livre (titre, auteur) ou un code pour l\'ajouter, ou scanne une étiquette existante.</p>'}`;
+      const q = $('#lbl-q');
+      q.addEventListener('input', debounce(async () => {
+        const out = $('#lbl-results');
+        if (!q.value.trim()) { out.innerHTML = ''; return; }
+        const results = await api(`/api/labels/search?q=${encodeURIComponent(q.value)}`).catch(() => []);
+        out.innerHTML = results.length ? `<div class="search-results">${results.map((b, i) => `
+          <div class="sel-row"><span class="grow"><strong>${esc(b.title)}</strong> <span class="muted">${esc(b.authors)}</span></span>
+            <button type="button" class="add" data-add-book="${i}">+ ${b.copies.length > 1 ? `${b.copies.length} ex.` : esc(b.copies[0].code)}</button></div>
+          ${b.copies.length > 1 ? b.copies.map((c, j) => `<div class="sel-row" style="padding-left:22px"><span class="grow code small">${esc(c.code)}${c.location ? ` <span class="muted">· ${esc(c.location)}</span>` : ''}</span>
+            <button type="button" class="add" data-add-copy="${i}:${j}">+</button></div>`).join('') : ''}`).join('')}</div>`
+          : '<p class="small muted" style="margin-top:6px">Aucun résultat.</p>';
+        $$('[data-add-book]', out).forEach((btn) => {
+          btn.onclick = () => { const b = results[Number(btn.dataset.addBook)]; addManual(b.copies.map((c) => ({ code: c.code, title: b.title }))); renderMode(); refresh(); };
+        });
+        $$('[data-add-copy]', out).forEach((btn) => {
+          btn.onclick = () => { const [i, j] = btn.dataset.addCopy.split(':').map(Number); addManual([{ code: results[i].copies[j].code, title: results[i].title }]); renderMode(); refresh(); };
+        });
+      }, 250));
+      $('#lbl-scan').onclick = async () => {
+        const code = await scanCopy();
+        if (!code) return;
+        try {
+          const r = await api(`/api/copies/by-code/${encodeURIComponent(code)}`);
+          addManual([{ code: r.copy.code, title: r.book.title }]);
+          renderMode();
+          refresh();
+        } catch (err) { toast(err.message, 'error'); }
+      };
+      const ap = $('#add-pending');
+      if (ap) ap.onclick = () => { addManual(pending); renderMode(); refresh(); };
+      const cl = $('#clear');
+      if (cl) cl.onclick = () => { sel.manual = []; renderMode(); refresh(); };
+      $$('[data-rm]').forEach((btn) => { btn.onclick = () => { sel.manual.splice(Number(btn.dataset.rm), 1); renderMode(); refresh(); }; });
     }
 
     function readLayout() {
@@ -1123,9 +1573,12 @@
       readLayout();
       const target = $('#sheets');
       const items = data ? data.items : [];
-      if (!items.length) { target.innerHTML = '<div class="empty">Sélectionne des exemplaires pour voir l\'aperçu.</div>'; return; }
       const perSheet = layout.cols * layout.rows;
-      const slots = Array(Math.min(start - 1, perSheet - 1)).fill(null).concat(items);
+      const offset = Math.min(start - 1, perSheet - 1);
+      const sheets = items.length ? Math.ceil((items.length + offset) / perSheet) : 0;
+      $('#summary').textContent = items.length ? `${items.length} étiquette${items.length > 1 ? 's' : ''} · ${sheets} planche${sheets > 1 ? 's' : ''}` : '';
+      if (!items.length) { target.innerHTML = '<div class="empty">Rien à imprimer pour le moment.</div>'; return; }
+      const slots = Array(offset).fill(null).concat(items);
       const small = layout.height < 26 || layout.width < 45;
       const qrSize = Math.min(layout.height - 4, layout.width * 0.45);
       // Echelle du texte et du logo : suit la place laissee a cote du QR code
@@ -1158,14 +1611,17 @@
 
     let fetchToken = 0;
     async function refresh() {
-      const codes = Array.from(state.labelSelection);
+      const codes = selectedCodes();
       const token = ++fetchToken;
-      data = codes.length
-        ? await api('/api/labels', { method: 'POST', body: { codes, baseUrl: location.origin + BASE + '/' } })
+      const result = codes.length
+        ? await api('/api/labels', { method: 'POST', body: { codes, baseUrl: location.origin + LIB + '/' } })
         : { items: [] };
-      if (token === fetchToken) renderSheets();
+      if (token === fetchToken) { data = result; renderSheets(); }
     }
 
+    $$('.seg button').forEach((btn) => {
+      btn.onclick = () => { sel.mode = btn.dataset.mode; renderMode(); refresh(); };
+    });
     $('#preset').onchange = (e) => {
       layout.preset = e.target.value;
       const p = LABEL_PRESETS[e.target.value];
@@ -1175,21 +1631,8 @@
       saveLayout();
     };
     $$('[data-dim]').forEach((input) => input.addEventListener('input', () => { layout.preset = 'custom'; $('#preset').value = 'custom'; renderSheets(); saveLayout(); }));
-    ['#opt-logo', '#opt-name', '#opt-title', '#opt-author', '#opt-guides'].forEach((sel) => { $(sel).onchange = () => { renderSheets(); saveLayout(); }; });
+    ['#opt-logo', '#opt-name', '#opt-title', '#opt-author', '#opt-guides'].forEach((s) => { $(s).onchange = () => { renderSheets(); saveLayout(); }; });
     $('#start').oninput = renderSheets;
-    $('#add-code').onsubmit = async (e) => {
-      e.preventDefault();
-      const code = copyCodeFromScan(e.target.code.value.trim());
-      if (!code) return toast('Code non reconnu.', 'error');
-      try {
-        const r = await api(`/api/copies/by-code/${encodeURIComponent(code)}`);
-        knownCopies.set(r.copy.code, { code: r.copy.code, title: r.book.title });
-        state.labelSelection.add(r.copy.code);
-        e.target.reset();
-        renderSelection();
-        refresh();
-      } catch (err) { toast(err.message, 'error'); }
-    };
     $('#print').onclick = async () => {
       if (!data || !data.items.length) return toast('Aucune étiquette sélectionnée.', 'error');
       // Les planches sont copiees dans un conteneur enfant direct de <body> : la
@@ -1203,25 +1646,30 @@
       const printed = data.items.map((i) => i.code);
       if (confirm(`Les ${printed.length} étiquette(s) se sont-elles bien imprimées ?\nElles seront retirées de la liste d'attente.`)) {
         await api('/api/labels/mark-printed', { method: 'POST', body: { codes: printed } });
-        printed.forEach((c) => state.labelSelection.delete(c));
+        if (sel.mode === 'manual') sel.manual = [];
+        sel.mode = 'pending';
         toast('Étiquettes marquées comme imprimées.');
         route();
       }
     };
 
-    renderSelection();
+    // Rien en attente et rien de choisi : on ouvre directement la selection manuelle.
+    if (sel.mode === 'pending' && !pending.length) sel.mode = 'manual';
+    renderMode();
     await refresh();
   }
 
-  // ================= Reglages =================
+  // ================= Reglages de la bibliotheque =================
   async function viewSettings() {
-    const [s, cats] = await Promise.all([api('/api/settings'), loadCategories(true)]);
-    const embedUrl = location.origin + BASE;
+    const [s, cats] = await Promise.all([api('/api/settings'), api('/api/categories')]);
+    const libraryUrl = location.origin + LIB;
     view().innerHTML = `
       <h1>Réglages</h1>
+      <p class="muted">Bibliothèque « ${esc(s.libraryName)} » · <a href="${esc(libraryUrl)}/">${esc(libraryUrl)}/</a></p>
       <h2>Bibliothèque</h2>
       <form class="card" id="lib-form">
-        <div class="field"><label for="lib-name">Nom de la bibliothèque</label><input id="lib-name" name="libraryName" required value="${esc(s.libraryName)}"></div>
+        <div class="field"><label for="lib-name">Nom de la bibliothèque</label><input id="lib-name" name="libraryName" required value="${esc(s.libraryName)}">
+          <p class="small muted" style="margin-top:4px">Changer le nom ne change pas l'adresse de la bibliothèque (les QR codes imprimés restent valables).</p></div>
         <div class="field">
           <label>Logo</label>
           <div class="btn-row">
@@ -1242,12 +1690,12 @@
           <div class="field"><label>Aperçu</label><input id="prefix-preview" disabled></div>
         </div>
         <div class="btn-row">
-          <button class="btn" type="submit" name="mode" value="new">Appliquer aux nouveaux exemplaires</button>
+          <button class="btn" type="submit">Appliquer aux nouveaux exemplaires</button>
           <button class="btn btn-danger" type="button" id="renumber">Régénérer tous les codes…</button>
         </div>
         <div id="renumber-panel" hidden style="margin-top:14px">
           <div class="info-box">
-            Tous les exemplaires existants reçoivent un code avec ce préfixe et leurs étiquettes repassent « à imprimer ».
+            Tous les exemplaires de cette bibliothèque reçoivent un code avec ce préfixe et leurs étiquettes repassent « en attente ».
             Les anciennes étiquettes restent utilisables en attendant : scannées, elles renvoient vers le bon exemplaire.
           </div>
           <label class="check"><input type="checkbox" id="compact"> Renuméroter à partir de 1 (dans l'ordre d'ajout, sans trous)</label>
@@ -1271,31 +1719,23 @@
       <h2>Intégration WordPress / Divi</h2>
       <div class="card">
         <p>Avec l'extension fournie (dossier <span class="code">wordpress/</span> du projet), place ce shortcode dans un module Texte ou Code de Divi :</p>
-        <div class="snippet">[bibliotheque url="${esc(embedUrl)}"]</div>
+        <div class="snippet">[bibliotheque url="${esc(libraryUrl)}"]</div>
         <p style="margin-top:12px">Sans extension, colle ce code dans un module Code :</p>
-        <div class="snippet">${esc(`<div class="mll-catalogue" data-url="${embedUrl}"></div>\n<script src="${embedUrl}/embed.js" defer></script>`)}</div>
+        <div class="snippet">${esc(`<div class="mll-catalogue" data-url="${libraryUrl}"></div>\n<script src="${libraryUrl}/embed.js" defer></script>`)}</div>
       </div>
 
       <h2>Données</h2>
       <div class="card btn-row">
-        <a class="btn" href="${BASE}/api/export/copies.csv">Exporter le catalogue (CSV / Excel)</a>
-        <a class="btn" href="${BASE}/api/backup">Télécharger une sauvegarde de la base</a>
-      </div>
-
-      <h2>Mot de passe</h2>
-      <form class="card" id="pwd-form">
-        <div class="grid-2">
-          <div class="field"><label>Mot de passe actuel</label><input name="current" type="password" autocomplete="current-password" required></div>
-          <div class="field"><label>Nouveau mot de passe (8 caractères min.)</label><input name="password" type="password" autocomplete="new-password" minlength="8" required></div>
-        </div>
-        <button class="btn" type="submit">Changer le mot de passe</button>
-      </form>`;
+        <a class="btn" href="${LIB}/api/export/copies.csv">Exporter le catalogue (CSV / Excel)</a>
+      </div>`;
 
     $('#lib-form').onsubmit = async (e) => {
       e.preventDefault();
       try {
         await api('/api/settings', { method: 'PUT', body: { libraryName: e.target.libraryName.value } });
         await loadSettings();
+        await loadStatus();
+        renderHeader();
         toast('Réglages enregistrés.');
         route();
       } catch (err) { toast(err.message, 'error'); }
@@ -1325,8 +1765,8 @@
       if (!confirm(`Régénérer les codes de tous les exemplaires avec le préfixe ${prefix} ?\nToutes les étiquettes seront à réimprimer.`)) return;
       try {
         const r = await api('/api/copies/renumber', { method: 'POST', body: { prefix, compact: $('#compact').checked } });
-        state.labelSelection.clear();
-        toast(r.changed ? `${r.changed} code(s) régénéré(s). Les nouvelles étiquettes sont prêtes à imprimer.` : 'Aucun code à modifier.');
+        state.labels = { mode: 'pending', manual: [] };
+        toast(r.changed ? `${r.changed} code(s) régénéré(s). Les nouvelles étiquettes sont en attente d'impression.` : 'Aucun code à modifier.');
         go(r.changed ? '#/labels' : '#/settings');
       } catch (err) { toast(err.message, 'error'); }
     };
@@ -1337,12 +1777,14 @@
         const dataUrl = await imageToDataUrl(file, 600, 'image/png');
         await api('/api/settings/logo', { method: 'POST', body: { dataUrl } });
         await loadSettings();
+        await loadStatus();
+        renderHeader();
         toast('Logo enregistré.');
         route();
       } catch (err) { toast(err.message, 'error'); }
     };
     const rm = $('#logo-remove');
-    if (rm) rm.onclick = async () => { await api('/api/settings/logo', { method: 'DELETE' }); await loadSettings(); route(); };
+    if (rm) rm.onclick = async () => { await api('/api/settings/logo', { method: 'DELETE' }); await loadSettings(); renderHeader(); route(); };
     $$('[data-rename]').forEach((btn) => {
       btn.onclick = async () => {
         const name = prompt('Nouveau nom :', btn.dataset.name);
@@ -1362,20 +1804,21 @@
       if (!e.target.name.value.trim()) return;
       try { await api('/api/categories', { method: 'POST', body: { name: e.target.name.value } }); route(); } catch (err) { toast(err.message, 'error'); }
     };
-    $('#pwd-form').onsubmit = async (e) => {
-      e.preventDefault();
-      try {
-        await api('/api/auth/password', { method: 'POST', body: { current: e.target.current.value, password: e.target.password.value } });
-        e.target.reset();
-        toast('Mot de passe modifié.');
-      } catch (err) { toast(err.message, 'error'); }
-    };
   }
 
   // ================= Demarrage =================
   async function loadSettings() {
-    try { state.settings = await api('/api/public/settings'); } catch (e) { /* valeurs par defaut */ }
-    renderBrand();
+    if (!LIBRARY) return;
+    try { state.settings = await api('/api/public/settings'); } catch (e) { /* valeurs injectees */ }
+  }
+
+  async function loadStatus() {
+    try {
+      const s = await gapi('/api/auth/status');
+      state.user = s.user;
+      state.needsSetup = s.needsSetup;
+      state.libraries = s.libraries || [];
+    } catch (e) { /* hors ligne */ }
   }
 
   $('#scan-btn').onclick = async () => {
@@ -1384,12 +1827,8 @@
   };
 
   (async function init() {
-    await loadSettings();
-    try {
-      const s = await api('/api/auth/status');
-      state.user = s.user;
-      state.needsSetup = s.needsSetup;
-    } catch (e) { /* hors ligne */ }
+    await Promise.all([loadSettings(), loadStatus()]);
+    renderHeader();
     window.addEventListener('hashchange', route);
     route();
   })();

@@ -4,12 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2f5d50">
-<title>Bibliothèque</title>
-<!-- Chemins volontairement relatifs (pas de "/" initial) : l'app doit fonctionner
-     servie a la racine comme montee sous un sous-dossier par la passerelle. -->
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css">
+<title>{{TITLE}}</title>
+<!-- Page servie par server.js (renderIndex) : {{ROOT}} = chemin de montage de l'app
+     (ex. /mylittlelibrary dans la passerelle), CONFIG = bibliotheque courante. La
+     meme page sert l'accueil (/) et chaque bibliotheque (/<adresse>/). -->
+<link rel="manifest" href="{{ROOT}}/manifest.json">
+<link rel="icon" href="{{ROOT}}/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="{{ROOT}}/style.css">
+<script>window.MLL = {{CONFIG}};</script>
 </head>
 <body>
 <header class="topbar no-print">
@@ -21,10 +23,11 @@
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></svg>
     <span>Scanner</span>
   </button>
+  <div class="account" id="account"></div>
   <nav class="nav" id="nav"></nav>
 </header>
 <main class="shell" id="view"></main>
 <div class="toasts no-print" id="toasts" aria-live="polite"></div>
-<script src="app.js"></script>
+<script src="{{ROOT}}/app.js"></script>
 </body>
 </html>

@@ -9,6 +9,14 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 
 ## Fonctionnalités
 
+- **Plusieurs bibliothèques**, chacune avec son adresse construite depuis son nom
+  (`…/mylittlelibrary/bibliotheque-du-bureau/`), ses livres, exemplaires, codes,
+  emprunteurs, nom, logo et réglages d'étiquettes. L'adresse est fixée à la création
+  (modifiable par un administrateur ; l'ancienne reste redirigée).
+- **Comptes** : administrateurs (créent bibliothèques et comptes, gèrent tout) et
+  gestionnaires (gèrent les bibliothèques auxquelles ils sont liés). Bibliothèque par
+  défaut ouverte à la connexion ; le menu du compte permet de basculer.
+  La racine du site n'affiche que la page de connexion.
 - **Catalogue public** (lecture seule, sans connexion) : recherche, filtre par
   catégorie et disponibilité, fiche détaillée.
 - **Fiche livre** : titre, sous-titre, auteurs, éditeur, année, pagination, ISBN,
@@ -34,9 +42,10 @@ npm install
 npm start
 ```
 
-Puis ouvrir http://localhost:3000. Au premier accès, la page Connexion propose de
-créer le compte administrateur (possible uniquement tant qu'aucun compte n'existe).
-En ligne de commande :
+Puis ouvrir http://localhost:3000. Au premier accès, la page propose de créer le
+compte administrateur et la première bibliothèque (possible uniquement tant qu'aucun
+compte n'existe). Créer un compte administrateur / changer un mot de passe en ligne
+de commande :
 
 ```bash
 npm run set-password -- <identifiant> <mot-de-passe>
@@ -75,9 +84,10 @@ de l'app.
 
 1. Zipper le dossier `wordpress/mylittlelibrary-catalogue` et l'installer comme
    extension (Extensions > Ajouter > Téléverser).
-2. Réglages > Bibliothèque : renseigner l'adresse de l'app.
-3. Placer `[bibliotheque]` dans un module Texte ou Code. Options :
-   `par_page="24"`, `entete="non"`, `url="…"`.
+2. Placer le shortcode donné dans Réglages de la bibliothèque, par ex.
+   `[bibliotheque url="https://exemple.be/mylittlelibrary/bibliotheque-du-bureau"]`,
+   dans un module Texte ou Code. Options : `par_page="24"`, `entete="non"`.
+   (Réglages > Bibliothèque dans WordPress permet de définir une adresse par défaut.)
 
 Le catalogue est rendu dans un Shadow DOM (le thème ne le déforme pas) et interroge
 l'API publique `/api/public/*` (lecture seule, CORS ouvert).
@@ -85,4 +95,6 @@ l'API publique `/api/public/*` (lecture seule, CORS ouvert).
 ## Données
 
 Tout est dans `data/` (ignoré par git) : sauvegarder ce dossier, ou utiliser
-Réglages > « Télécharger une sauvegarde de la base ».
+Administration > Sauvegarde. La base est migrée automatiquement au démarrage
+(les données d'une installation à une seule bibliothèque deviennent la première
+bibliothèque ; les anciens comptes deviennent administrateurs).

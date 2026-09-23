@@ -70,8 +70,10 @@ function mll_catalogue_settings_page() {
                     <td>
                         <input type="url" id="mll_url" name="<?php echo esc_attr(MLL_OPTION); ?>" class="regular-text"
                                value="<?php echo esc_attr(get_option(MLL_OPTION, '')); ?>"
-                               placeholder="https://exemple.be/mylittlelibrary">
-                        <p class="description">Ensuite, place <code>[bibliotheque]</code> dans une page (module Texte ou Code de Divi).
+                               placeholder="https://exemple.be/mylittlelibrary/bibliotheque-du-bureau">
+                        <p class="description">Adresse de la bibliothèque (donnée dans ses Réglages), utilisée quand le shortcode n'a pas d'attribut <code>url</code>.
+                            Place <code>[bibliotheque]</code> dans une page (module Texte ou Code de Divi), ou
+                            <code>[bibliotheque url="…"]</code> pour une autre bibliothèque.
                             Options : <code>par_page="24"</code>, <code>entete="non"</code> pour masquer logo et nom.</p>
                     </td>
                 </tr>

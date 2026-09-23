@@ -14,6 +14,7 @@ if (existing) {
   db.prepare('DELETE FROM sessions WHERE user_id = ?').run(existing.id);
   console.log(`Mot de passe de "${username}" mis a jour.`);
 } else {
-  db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username, hashPassword(password));
-  console.log(`Compte "${username}" cree.`);
+  // Compte cree depuis le serveur : administrateur (il pourra ensuite tout gerer).
+  db.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')").run(username, hashPassword(password));
+  console.log(`Compte administrateur "${username}" cree.`);
 }
