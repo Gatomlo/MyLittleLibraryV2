@@ -2,8 +2,9 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>My Little Library</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f5d50">
+<title>Bibliothèque</title>
 <!-- Chemins volontairement relatifs (pas de "/" initial) : l'app doit fonctionner
      servie a la racine comme montee sous un sous-dossier par la passerelle. -->
 <link rel="manifest" href="manifest.json">
@@ -11,10 +12,19 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main class="shell">
-  <h1>My Little Library</h1>
-  <p id="status" class="muted">Connexion au serveur…</p>
-</main>
+<header class="topbar no-print">
+  <a class="brand" href="#/">
+    <img class="brand-logo" id="brand-logo" alt="" hidden>
+    <span class="brand-name" id="brand-name">Bibliothèque</span>
+  </a>
+  <button class="btn btn-icon scan-btn" id="scan-btn" type="button" title="Scanner une étiquette" hidden>
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></svg>
+    <span>Scanner</span>
+  </button>
+  <nav class="nav" id="nav"></nav>
+</header>
+<main class="shell" id="view"></main>
+<div class="toasts no-print" id="toasts" aria-live="polite"></div>
 <script src="app.js"></script>
 </body>
 </html>

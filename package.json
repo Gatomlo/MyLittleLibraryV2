@@ -2,16 +2,19 @@
   "name": "mylittlelibraryv2",
   "version": "1.0.0",
   "private": true,
-  "description": "Ma petite bibliotheque : gestion d'une collection de livres, montable dans la passerelle Node (node-gateway).",
+  "description": "Bibliotheque du bureau : catalogue, prets, etiquettes QR. Node.js + SQLite, montable dans la passerelle node-gateway.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "set-password": "node scripts/set-password.js"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "barcode-detector": "^3.2.2",
+    "express": "^4.19.2",
+    "qrcode": "^1.5.4"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.5.0"
   }
 }
