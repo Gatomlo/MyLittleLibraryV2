@@ -398,7 +398,7 @@
     let links = [];
     if (LIBRARY) {
       links = canManage()
-        ? [['#/', 'Catalogue'], ['#/add', 'Ajouter'], ['#/loans', 'Prêts'], ['#/borrowers', 'Emprunteurs'], ['#/labels', 'Étiquettes'], ['#/settings', 'Réglages']]
+        ? [['#/', 'Catalogue'], ['#/add', 'Ajouter'], ['#/import', 'Importer'], ['#/loans', 'Prêts'], ['#/borrowers', 'Emprunteurs'], ['#/labels', 'Étiquettes'], ['#/settings', 'Réglages']]
         : [['#/', 'Catalogue']];
     }
     const current = '#/' + (location.hash.replace(/^#\/?/, '').split('/')[0] || '');
@@ -494,6 +494,7 @@
     [/^\/c\/([^/]+)$/, viewCopy],
     [/^\/login$/, viewLogin],
     [/^\/add$/, viewBookForm, 'manage'],
+    [/^\/import$/, viewImport, 'manage'],
     [/^\/loans$/, viewLoans, 'manage'],
     [/^\/borrowers$/, viewBorrowers, 'manage'],
     [/^\/borrower\/(\d+)$/, viewBorrower, 'manage'],
@@ -576,7 +577,7 @@
     view().innerHTML = `
       <div class="page-head">
         <div><h1>Catalogue</h1><p class="muted" id="count"></p></div>
-        ${canManage() ? '<a class="btn btn-primary" href="#/add">+ Ajouter un livre</a>' : ''}
+        ${canManage() ? '<div class="btn-row"><a class="btn" href="#/import">Importer une liste</a><a class="btn btn-primary" href="#/add">+ Ajouter un livre</a></div>' : ''}
       </div>
       <div class="filters">
         <input class="search" type="search" id="q" placeholder="Titre, auteur, éditeur, ISBN${canManage() ? ', code' : ''}…" value="${esc(c.q)}">
@@ -1284,6 +1285,330 @@
     };
   }
 
+  // ================= Import de listes de livres =================
+  // Deux modes : une liste d'ISBN (fiches completees automatiquement), ou un
+  // fichier (.xlsx / .csv) avec une colonne par champ. Le fichier est lu dans le
+  // navigateur, previsualise, puis importe livre par livre (progression visible).
+  const IMPORT_FIELDS = [
+    { key: 'isbn', label: 'ISBN', aliases: ['isbn', 'isbn13', 'isbn10', 'ean', 'ean13', 'code barre', 'codebarres'] },
+    { key: 'title', label: 'Titre', aliases: ['titre', 'title', 'intitule'] },
+    { key: 'subtitle', label: 'Sous-titre', aliases: ['sous-titre', 'soustitre', 'subtitle'] },
+    { key: 'authors', label: 'Auteurs', aliases: ['auteurs', 'auteur', 'author', 'authors', 'ecrivain'] },
+    { key: 'publisher', label: 'Éditeur', aliases: ['editeur', 'editeurs', 'edition', 'editions', 'maison d edition', 'publisher'] },
+    { key: 'year', label: 'Année', aliases: ['annee', 'an', 'date', 'year', 'parution', 'date de parution', 'annee de parution'] },
+    { key: 'pages', label: 'Pages', aliases: ['pages', 'pagination', 'nombre de pages', 'nb pages', 'nbpages'] },
+    { key: 'summary', label: 'Résumé', aliases: ['resume', 'summary', 'description', 'presentation'] },
+    { key: 'categories', label: 'Catégories', aliases: ['categories', 'categorie', 'theme', 'themes', 'genre', 'genres', 'sujet', 'sujets'] },
+    { key: 'location', label: 'Emplacement', aliases: ['emplacement', 'localisation', 'location', 'etagere', 'rayon', 'armoire'] },
+    { key: 'copies', label: 'Exemplaires', aliases: ['exemplaires', 'exemplaire', 'nb exemplaires', 'quantite', 'qte', 'nombre', 'copies'] },
+    { key: 'notes', label: 'Notes', aliases: ['notes', 'note', 'remarque', 'remarques', 'commentaire', 'commentaires'] },
+    { key: 'coverUrl', label: 'Couverture (URL)', aliases: ['couverture', 'couverture url', 'image', 'illustration', 'cover', 'url image'] },
+  ];
+  const normHeader = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  function guessField(header) {
+    const n = normHeader(header);
+    if (!n) return '';
+    for (const f of IMPORT_FIELDS) if (f.aliases.some((a) => normHeader(a) === n)) return f.key;
+    for (const f of IMPORT_FIELDS) if (f.aliases.some((a) => normHeader(a).length >= 4 && n.startsWith(normHeader(a)))) return f.key;
+    return '';
+  }
+
+  function cellText(v) {
+    if (v == null) return '';
+    if (v instanceof Date) return String(v.getFullYear());
+    return String(v).trim();
+  }
+
+  function validIsbn10(d) {
+    if (!/^\d{9}[\dX]$/.test(d)) return false;
+    return d.split('').reduce((acc, c, i) => acc + (c === 'X' ? 10 : Number(c)) * (10 - i), 0) % 11 === 0;
+  }
+
+  // ISBN d'une cellule : { isbn } si valide, { error } sinon ({} si vide).
+  function isbnFromCell(v) {
+    const s = cellText(v);
+    if (!s) return {};
+    if (/^\d[.,]\d+E\+?\d+$/i.test(s)) {
+      return { error: `ISBN abîmé par Excel (${s}) : utilise le modèle .xlsx fourni ou formate la colonne ISBN en « Texte ».` };
+    }
+    let d = s.toUpperCase().replace(/[^0-9X]/g, '');
+    if (/^\d{9}$/.test(d)) d = '0' + d; // ISBN-10 dont Excel a retire le 0 initial
+    if (isbnFromScan(d) && (d.length === 13 || validIsbn10(d))) return { isbn: d };
+    return { error: `ISBN invalide : ${s}`, raw: s };
+  }
+
+  function parseCsv(text) {
+    const firstLine = text.split(/\r?\n/)[0] || '';
+    const delim = [';', ',', '\t'].map((d) => [d, firstLine.split(d).length]).sort((a, b) => b[1] - a[1])[0][0];
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') quoted = false; else cell += c;
+      } else if (c === '"' && cell === '') quoted = true;
+      else if (c === delim) { row.push(cell); cell = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        row.push(cell); rows.push(row); row = []; cell = '';
+      } else cell += c;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+  }
+
+  // Fichier .xlsx ou .csv/.txt -> lignes (tableaux de cellules), lignes vides retirees.
+  async function readTable(file) {
+    let rows;
+    if (/\.xlsx$/i.test(file.name)) {
+      if (!window.readXlsxFile) await loadScript(ROOT + '/vendor/read-excel-file.min.js');
+      const r = await window.readXlsxFile(file);
+      rows = Array.isArray(r) && r[0] && !Array.isArray(r[0]) && r[0].data ? r[0].data : r;
+    } else if (/\.(xls|ods|numbers)$/i.test(file.name)) {
+      throw new Error('Format non pris en charge : enregistre le fichier en .xlsx (Excel) ou .csv.');
+    } else {
+      const buf = await file.arrayBuffer();
+      let text = new TextDecoder('utf-8').decode(buf);
+      // CSV enregistre par Excel sous Windows : souvent en Windows-1252, pas en UTF-8.
+      if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf);
+      rows = parseCsv(text.replace(/^﻿/, ''));
+    }
+    return rows.filter((r) => r && r.some((c) => cellText(c) !== ''));
+  }
+
+  const importState = { mode: 'isbn', text: '', fileName: '', rows: null, mapping: [], items: [], results: null, running: false, stop: false };
+
+  async function viewImport() {
+    const s = importState;
+    const locations = await api('/api/locations').catch(() => []);
+    const tpl = (type, ext) => `${LIB}/api/import/template.${ext}${type === 'isbn' ? '?type=isbn' : ''}`;
+    view().innerHTML = `
+      <div class="page-head"><div><h1>Importer des livres</h1>
+        <p class="muted">Ajoute d'un coup une liste de livres à « ${esc(state.settings.libraryName)} ». Les exemplaires et leurs codes sont créés automatiquement ; leurs étiquettes passent « en attente ».</p></div></div>
+      <div class="seg" style="max-width:520px">
+        <button type="button" data-mode="isbn" class="${s.mode === 'isbn' ? 'active' : ''}">Liste d'ISBN</button>
+        <button type="button" data-mode="full" class="${s.mode === 'full' ? 'active' : ''}">Fichier complet (tous les champs)</button>
+      </div>
+      <div id="import-body"></div>`;
+    $$('.seg button').forEach((btn) => {
+      btn.onclick = () => {
+        if (s.running) return;
+        Object.assign(s, { mode: btn.dataset.mode, rows: null, mapping: [], items: [], results: null, fileName: '' });
+        viewImport();
+      };
+    });
+    const body = $('#import-body');
+
+    const options = `
+      <div class="grid-2">
+        ${s.mode === 'isbn' ? `
+          <div class="field"><label>Exemplaires par ISBN</label><input type="number" id="opt-copies" min="1" max="50" value="1">
+            <p class="small muted" style="margin-top:4px">Un ISBN présent plusieurs fois dans la liste compte pour plusieurs exemplaires.</p></div>
+          <div class="field"><label>Emplacement</label><input id="opt-location" list="loc-list" placeholder="facultatif"></div>
+          <div class="field"><label>Catégories</label><input id="opt-cats" placeholder="facultatif, séparées par des virgules"></div>` : `
+          <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="opt-fill" checked> Compléter les champs vides grâce à l'ISBN</label>
+            <p class="small muted" style="margin-top:4px">Les valeurs du fichier restent prioritaires.</p></div>
+          <div class="field"><label>Emplacement par défaut</label><input id="opt-location" list="loc-list" placeholder="si la colonne est vide"></div>`}
+        <div class="field"><label>Si l'ISBN est déjà au catalogue</label><select id="opt-dup">
+          <option value="copy">Ajouter un exemplaire au livre existant</option>
+          <option value="skip">Ignorer la ligne</option>
+          <option value="new">Créer quand même une nouvelle fiche</option>
+        </select></div>
+      </div>
+      <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist>`;
+
+    if (s.mode === 'isbn') {
+      body.innerHTML = `
+        <div class="card">
+          <h3 style="margin-top:0">1. La liste</h3>
+          <div class="field"><label for="isbn-list">Colle les ISBN (un par ligne, ou séparés par des espaces, virgules…)</label>
+            <textarea id="isbn-list" placeholder="9782070612758&#10;978-2-07-036822-8&#10;…">${esc(s.text)}</textarea></div>
+          <div class="btn-row">
+            <label class="btn btn-small" style="margin:0">Ou choisir un fichier (.xlsx, .csv, .txt)<input type="file" id="import-file" accept=".xlsx,.csv,.txt" hidden></label>
+            <span class="small muted" id="file-name">${esc(s.fileName)}</span>
+            <span style="margin-left:auto" class="small">Modèle : <a href="${tpl('isbn', 'xlsx')}">Excel (.xlsx)</a> · <a href="${tpl('isbn', 'csv')}">CSV</a></span>
+          </div>
+          <h3>2. Options</h3>
+          ${options}
+          <button class="btn btn-primary" id="analyse">Analyser la liste</button>
+        </div>
+        <div id="preview"></div>`;
+      $('#isbn-list').addEventListener('input', (e) => { s.text = e.target.value; });
+      $('#import-file').onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          const rows = await readTable(file);
+          s.text = rows.flat().map(cellText).filter((c) => c && !/^isbn/i.test(c)).join('\n');
+          s.fileName = file.name;
+          $('#isbn-list').value = s.text;
+          $('#file-name').textContent = file.name;
+        } catch (err) { toast(err.message, 'error'); }
+      };
+      $('#analyse').onclick = () => {
+        const perIsbn = Math.max(1, Math.min(50, parseInt($('#opt-copies').value, 10) || 1));
+        const location = $('#opt-location').value.trim();
+        const categories = $('#opt-cats').value;
+        const counts = new Map();
+        const errors = [];
+        // Virgules : separateurs, sauf dans un ISBN en notation scientifique (9,78207E+12).
+        s.text.split(/[\s;]+/).filter(Boolean)
+          .flatMap((t) => (/^\d[.,]\d+E\+?\d+$/i.test(t) ? [t] : t.split(',')))
+          .filter(Boolean).forEach((token) => {
+          const r = isbnFromCell(token);
+          if (r.isbn) counts.set(r.isbn, (counts.get(r.isbn) || 0) + perIsbn);
+          else if (r.error) errors.push(r.error);
+        });
+        s.items = Array.from(counts).map(([isbn, copies]) => ({ data: { isbn, copies, location, categories }, label: isbn }));
+        s.items.push(...errors.map((e) => ({ error: e, label: '' })));
+        s.options = { onDuplicate: $('#opt-dup').value, fillFromIsbn: true };
+        s.results = null;
+        renderPreview();
+      };
+    } else {
+      body.innerHTML = `
+        <div class="card">
+          <h3 style="margin-top:0">1. Le fichier</h3>
+          <p class="small">Une ligne par livre, une colonne par champ. Télécharge le modèle : <a href="${tpl('full', 'xlsx')}">Excel (.xlsx)</a> · <a href="${tpl('full', 'csv')}">CSV</a>.
+            Seul l'ISBN <em>ou</em> le titre est obligatoire ; les autres colonnes sont facultatives et peuvent être dans n'importe quel ordre.</p>
+          <div class="btn-row">
+            <label class="btn" style="margin:0">Choisir le fichier (.xlsx ou .csv)<input type="file" id="import-file" accept=".xlsx,.csv" hidden></label>
+            <span class="small muted">${esc(s.fileName)}</span>
+          </div>
+          <div id="mapping"></div>
+          <h3>2. Options</h3>
+          ${options}
+          <button class="btn btn-primary" id="analyse" ${s.rows ? '' : 'disabled'}>Analyser le fichier</button>
+        </div>
+        <div id="preview"></div>`;
+      const renderMapping = () => {
+        if (!s.rows) return;
+        const header = s.rows[0];
+        $('#mapping').innerHTML = `
+          <h3>Colonnes du fichier</h3>
+          <p class="small muted">${s.rows.length - 1} ligne(s). Vérifie à quel champ correspond chaque colonne.</p>
+          <div class="table-wrap"><table><thead><tr><th>Colonne</th><th>Exemple</th><th>Champ</th></tr></thead><tbody>
+          ${header.map((hd, i) => `<tr><td><strong>${esc(cellText(hd)) || `(colonne ${i + 1})`}</strong></td>
+            <td class="small muted" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(cellText((s.rows.slice(1).find((r) => cellText(r[i])) || [])[i]))}</td>
+            <td><select data-col="${i}"><option value="">— ignorer —</option>
+              ${IMPORT_FIELDS.map((f) => `<option value="${f.key}" ${s.mapping[i] === f.key ? 'selected' : ''}>${f.label}</option>`).join('')}</select></td></tr>`).join('')}
+          </tbody></table></div>`;
+        $$('[data-col]').forEach((sel) => { sel.onchange = () => { s.mapping[Number(sel.dataset.col)] = sel.value; }; });
+      };
+      renderMapping();
+      $('#import-file').onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          const rows = await readTable(file);
+          if (rows.length < 2) throw new Error('Le fichier doit contenir une ligne de titres de colonnes puis au moins un livre.');
+          s.rows = rows;
+          s.fileName = file.name;
+          s.mapping = rows[0].map(guessField);
+          s.items = [];
+          s.results = null;
+          viewImport();
+        } catch (err) { toast(err.message, 'error'); }
+      };
+      $('#analyse').onclick = () => {
+        const fill = $('#opt-fill').checked;
+        const defLocation = $('#opt-location').value.trim();
+        const col = (key) => s.mapping.lastIndexOf(key);
+        s.items = s.rows.slice(1).map((r, n) => {
+          const get = (key) => (col(key) >= 0 ? cellText(r[col(key)]) : '');
+          const d = {};
+          IMPORT_FIELDS.forEach((f) => { if (f.key !== 'isbn') d[f.key] = get(f.key); });
+          d.location = d.location || defLocation;
+          d.copies = parseInt(d.copies, 10) || 1;
+          const line = `Ligne ${n + 2}`;
+          const isbnCell = col('isbn') >= 0 ? r[col('isbn')] : '';
+          const ir = isbnFromCell(isbnCell);
+          if (ir.error && !d.title) return { error: `${line} : ${ir.error}`, label: line };
+          d.isbn = ir.isbn || ir.raw || '';
+          if (!d.isbn && !d.title) return { error: `${line} : ni ISBN ni titre.`, label: line };
+          if (!d.title && !fill) return { error: `${line} : titre manquant (active « Compléter grâce à l'ISBN »).`, label: line };
+          return { data: d, label: d.title || d.isbn, warning: ir.error ? `ISBN non valide, importé tel quel` : '' };
+        });
+        s.options = { onDuplicate: $('#opt-dup').value, fillFromIsbn: fill };
+        s.results = null;
+        renderPreview();
+      };
+    }
+    if (s.items.length) renderPreview();
+  }
+
+  function renderPreview() {
+    const s = importState;
+    const ok = s.items.filter((i) => i.data);
+    const bad = s.items.filter((i) => i.error);
+    const copies = ok.reduce((n, i) => n + (i.data.copies || 1), 0);
+    const statusHtml = (r) => {
+      if (!r) return '<span class="small muted">en attente</span>';
+      if (r.status === 'created') return `<span class="badge badge-ok">Ajouté</span> <a href="#/book/${r.bookId}">${esc(r.title)}</a> <span class="small muted code">${esc(r.codes.join(', '))}</span>`;
+      if (r.status === 'copies') return `<span class="badge badge-ok">+ ${r.codes.length} ex.</span> <a href="#/book/${r.bookId}">${esc(r.title)}</a> <span class="small muted code">${esc(r.codes.join(', '))}</span>`;
+      if (r.status === 'skipped') return `<span class="badge badge-muted">Ignoré</span> déjà au catalogue : <a href="#/book/${r.bookId}">${esc(r.title)}</a>`;
+      return `<span class="badge badge-warn">Erreur</span> <span class="small">${esc(r.error)}</span>`;
+    };
+    const done = s.results ? s.results.filter(Boolean).length : 0;
+    const summary = s.results && !s.running ? (() => {
+      const c = (st) => s.results.filter((r) => r && r.status === st).length;
+      return `<div class="info-box"><strong>Import terminé${s.stop ? ' (arrêté)' : ''}.</strong> ${c('created')} livre(s) ajouté(s), ${c('copies')} exemplaire(s) ajouté(s) à des livres existants, ${c('skipped')} ignoré(s), ${c('error')} erreur(s).</div>
+        <div class="btn-row" style="margin-bottom:12px"><button class="btn btn-primary" id="go-labels">Imprimer les étiquettes en attente</button><a class="btn" href="#/">Voir le catalogue</a></div>`;
+    })() : '';
+    $('#preview').innerHTML = `
+      <h2>3. ${s.results ? 'Import' : 'Vérification'}</h2>
+      <div class="card">
+        ${summary}
+        <p><strong>${ok.length} livre(s)</strong> à importer (${copies} exemplaire(s))${bad.length ? `, <span style="color:var(--danger)">${bad.length} ligne(s) en erreur ignorée(s)</span>` : ''}.
+          ${s.mode === 'isbn' || s.options.fillFromIsbn ? '<span class="small muted">La recherche des informations prend 1 à 2 secondes par ISBN.</span>' : ''}</p>
+        ${bad.length ? `<details ${ok.length ? '' : 'open'}><summary class="small" style="cursor:pointer">Voir les erreurs</summary><ul class="small">${bad.map((b) => `<li>${esc(b.error)}</li>`).join('')}</ul></details>` : ''}
+        ${s.running || s.results ? `<div style="background:var(--surface-2);border-radius:999px;height:10px;overflow:hidden;margin:12px 0"><div style="height:100%;width:${ok.length ? Math.round((done / ok.length) * 100) : 0}%;background:var(--accent);transition:width .2s"></div></div>
+          <p class="small muted">${done} / ${ok.length}</p>` : ''}
+        <div class="btn-row" style="margin:12px 0">
+          ${s.running ? '<button class="btn btn-danger" id="stop">Arrêter</button>'
+            : (!s.results && ok.length ? `<button class="btn btn-primary" id="run">Importer ${ok.length} livre(s)</button>` : '')}
+        </div>
+        ${ok.length ? `<div class="table-wrap" style="max-height:420px;overflow:auto"><table><thead><tr><th>#</th><th>ISBN</th><th>Titre</th><th>Ex.</th><th>Résultat</th></tr></thead><tbody>
+          ${ok.map((it, i) => `<tr><td class="small muted">${i + 1}</td><td class="code small">${esc(it.data.isbn || '—')}</td>
+            <td>${it.data.title ? esc(it.data.title) : '<span class="muted small">(complété via l\'ISBN)</span>'}${it.warning ? `<div class="small" style="color:var(--warn)">${esc(it.warning)}</div>` : ''}</td>
+            <td>${it.data.copies || 1}</td><td>${statusHtml(s.results && s.results[i])}</td></tr>`).join('')}
+        </tbody></table></div>` : ''}
+      </div>`;
+    const run = $('#run');
+    if (run) run.onclick = runImport;
+    const stop = $('#stop');
+    if (stop) stop.onclick = () => { s.stop = true; stop.disabled = true; stop.textContent = 'Arrêt après le livre en cours…'; };
+    const gl = $('#go-labels');
+    if (gl) gl.onclick = () => { state.labels = { mode: 'pending', manual: [] }; go('#/labels'); };
+  }
+
+  function warnBeforeLeaving(e) { e.preventDefault(); e.returnValue = ''; }
+
+  async function runImport() {
+    const s = importState;
+    const ok = s.items.filter((i) => i.data);
+    s.results = new Array(ok.length).fill(null);
+    s.running = true;
+    s.stop = false;
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    renderPreview();
+    for (let i = 0; i < ok.length && !s.stop; i++) {
+      try {
+        s.results[i] = await api('/api/import/book', { method: 'POST', body: { ...ok[i].data, ...s.options } });
+      } catch (err) {
+        s.results[i] = { status: 'error', error: err.message };
+      }
+      if ($('#preview')) renderPreview();
+    }
+    s.running = false;
+    window.removeEventListener('beforeunload', warnBeforeLeaving);
+    if ($('#preview')) renderPreview();
+    toast('Import terminé.');
+  }
+
   // ================= Prets =================
   async function viewLoans() {
     let tab = 'open';
@@ -1725,8 +2050,15 @@
       </div>
 
       <h2>Données</h2>
-      <div class="card btn-row">
-        <a class="btn" href="${LIB}/api/export/copies.csv">Exporter le catalogue (CSV / Excel)</a>
+      <div class="card">
+        <p><strong>Inventaire des livres</strong> — une ligne par livre avec tous les champs, le nombre d'exemplaires et leurs codes.
+          Mêmes colonnes que le modèle d'import : il peut être modifié puis réimporté (<a href="#/import">Importer</a>).</p>
+        <div class="btn-row">
+          <a class="btn btn-primary" href="${LIB}/api/export/inventory.xlsx">Inventaire Excel (.xlsx)</a>
+          <a class="btn" href="${LIB}/api/export/inventory.csv">Inventaire CSV</a>
+        </div>
+        <p style="margin-top:16px"><strong>Liste des exemplaires</strong> — une ligne par exemplaire (code, emplacement, prêt en cours).</p>
+        <a class="btn" href="${LIB}/api/export/copies.csv">Exemplaires CSV</a>
       </div>`;
 
     $('#lib-form').onsubmit = async (e) => {

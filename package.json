@@ -13,7 +13,9 @@
     "@ericblade/quagga2": "^1.12.1",
     "barcode-detector": "^3.2.2",
     "express": "^4.19.2",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "read-excel-file": "^9.3.10",
+    "write-excel-file": "^4.1.1"
   },
   "engines": {
     "node": ">=22.5.0"

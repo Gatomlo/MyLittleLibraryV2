@@ -23,6 +23,14 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   résumé, couverture, catégories, notes internes (visibles une fois connecté).
 - **Ajout par ISBN** : scan du code-barres (webcam ou caméra du téléphone), saisie de
   l'ISBN ou encodage manuel. Recherche dans la BnF, Open Library et Google Books.
+- **Import** (page Importer) : liste d'ISBN (fiches complétées automatiquement,
+  exemplaires créés) ou fichier `.xlsx` / `.csv` avec une colonne par champ
+  (correspondance des colonnes détectée et modifiable, aperçu, progression).
+  Modèles à télécharger ; en `.xlsx`, la colonne ISBN est au format Texte pour
+  qu'Excel ne la transforme pas en notation scientifique.
+- **Export** (Réglages > Données) : inventaire `.xlsx` / `.csv`, une ligne par livre
+  avec tous les champs, le nombre d'exemplaires et leurs codes — mêmes colonnes que
+  l'import, donc réimportable (y compris dans une autre bibliothèque).
 - **Exemplaires** : chaque exemplaire a un code unique (`BIB-00001`…), un
   emplacement et son étiquette.
 - **Prêts** : scan du QR de l'étiquette → prêter (emprunteur choisi ou créé à la

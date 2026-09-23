@@ -37,6 +37,7 @@ function nodeModuleFile(...parts) {
 }
 app.get('/vendor/barcode-detector.js', (req, res) => res.sendFile(nodeModuleFile('barcode-detector', 'dist', 'iife', 'ponyfill.js')));
 app.get('/vendor/quagga.min.js', (req, res) => res.sendFile(nodeModuleFile('@ericblade', 'quagga2', 'dist', 'quagga.min.js')));
+app.get('/vendor/read-excel-file.min.js', (req, res) => res.sendFile(nodeModuleFile('read-excel-file', 'bundle', 'read-excel-file.min.js')));
 app.get('/vendor/zxing_reader.wasm', (req, res) => res.type('application/wasm').sendFile(nodeModuleFile('zxing-wasm', 'dist', 'reader', 'zxing_reader.wasm')));
 
 // Les POST/PUT doivent etre en JSON : un formulaire d'un autre site ne peut pas en
