@@ -564,3 +564,21 @@ tr:last-child td { border-bottom: 0; }
 .strip-item { width: 76px; flex-shrink: 0; }
 .strip-item .mini-cover { width: 76px; }
 .strip-title { font-size: 11px; line-height: 1.25; margin-top: 4px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* ---------- Selection multiple (catalogue) ---------- */
+.book-card .coll.coll-muted { color: var(--muted); font-weight: 500; }
+.book-card { position: relative; }
+.book-card.selectable { cursor: pointer; }
+.book-card.selectable .cover { opacity: .85; }
+.book-card.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
+.book-card.selected .cover { opacity: 1; }
+.select-check { position: absolute; top: 8px; left: 8px; z-index: 2; width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(0, 0, 0, .45); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .3); }
+.book-card.selected .select-check { background: var(--accent); }
+.book-card.selected .select-check::after { content: ''; position: absolute; left: 7px; top: 3px; width: 7px; height: 12px;
+  border: solid var(--accent-contrast); border-width: 0 3px 3px 0; transform: rotate(45deg); }
+.select-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 30; display: flex; flex-wrap: wrap;
+  align-items: center; gap: 8px; width: min(760px, calc(100% - 32px)); padding: 10px 14px; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0, 0, 0, .3); }
+body.selecting .shell { padding-bottom: 110px; }
+.danger-zone { border-color: var(--danger); }

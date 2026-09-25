@@ -37,8 +37,15 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **Catégories** et **tags** (option par bibliothèque) : recherche, regroupement
   alphabétique repliable, fusion de plusieurs termes (les livres suivent), filtres
   avec recherche dans le catalogue.
-- **Collection / série** et numéro dans la collection : récupérés via l'ISBN quand la
-  BnF / Open Library les connaissent ; filtre du catalogue trié par numéro.
+- **Collection** (de l'éditeur, récupérée via l'ISBN quand la BnF / Open Library la
+  connaissent) et **Série + tome**, indépendants : « 60 jours et après » est dans la
+  collection Pocket Science-fiction et tome 3 de la série Capital code. Filtre par série
+  trié par tome (catalogue et WordPress : `filtres="...,series,..."`).
+- **Sélection multiple** dans le catalogue (Sélectionner → clic sur les couvertures ou
+  « Tout sélectionner » = le filtre en cours) pour supprimer des livres en masse ;
+  **Réglages > Vider la bibliothèque** (sauvegarde automatique de la base avant).
+- **Import** : catégories et tags choisis parmi les existants ; les nouveaux livres
+  peuvent être marqués « À lire » pour soi (coché par défaut).
 - **Filtres du catalogue** au choix (Réglages > Catalogue : recherche, catégories,
   collections, tags, disponibilité, papier/numérique, statuts de lecture, tri), en haut
   ou dans une colonne à gauche. Même choix pour le catalogue WordPress (générateur de

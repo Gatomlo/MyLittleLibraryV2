@@ -16,7 +16,7 @@ const MLL_OPTION = 'mll_catalogue_url';
 
 /**
  * Shortcode : [bibliotheque url="https://exemple.be/mylittlelibrary/ma-bibliotheque" par_page="24" entete="oui"
- *              filtres="recherche,categories,collections,tags,disponibilite,type,tri,nombre" position="gauche"]
+ *              filtres="recherche,categories,collections,series,tags,disponibilite,type,tri,nombre" position="gauche"]
  * L'attribut url est facultatif si l'adresse est renseignee dans Reglages > Bibliotheque.
  * filtres : champs de filtre proposes, dans cet ordre ("nombre" = nombre de livres, sous les filtres) ("aucun" pour n'en afficher aucun).
  * entete : "oui" (nom et logo, par defaut), "nom", "logo" ou "non".
@@ -85,7 +85,7 @@ function mll_catalogue_settings_page() {
                             Place <code>[bibliotheque]</code> dans une page (module Texte ou Code de Divi), ou
                             <code>[bibliotheque url="…"]</code> pour une autre bibliothèque.
                             Options : <code>par_page="24"</code>, <code>entete="nom"</code>, <code>entete="logo"</code> ou <code>entete="non"</code> (par défaut : nom et logo),
-                            <code>filtres="recherche,categories,collections,tags,disponibilite,type,tri,nombre"</code> pour choisir les filtres
+                            <code>filtres="recherche,categories,collections,series,tags,disponibilite,type,tri,nombre"</code> pour choisir les filtres
                             (le générateur de shortcode se trouve dans les Réglages de chaque bibliothèque).</p>
                     </td>
                 </tr>

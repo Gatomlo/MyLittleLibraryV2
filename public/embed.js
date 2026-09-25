@@ -86,6 +86,7 @@
     recherche: 'search', search: 'search',
     categories: 'category', categorie: 'category', category: 'category',
     collections: 'collection', collection: 'collection',
+    series: 'series', serie: 'series', séries: 'series', série: 'series',
     tags: 'tag', tag: 'tag',
     disponibilite: 'availability', disponibilité: 'availability', availability: 'availability',
     type: 'format', format: 'format',
@@ -106,6 +107,7 @@
   const PICKERS = {
     category: { path: '/api/public/categories', placeholder: 'Toutes les catégories', value: (c) => String(c.id), label: (c) => c.name },
     collection: { path: '/api/public/collections', placeholder: 'Toutes les collections', value: (c) => c.name, label: (c) => c.name },
+    series: { path: '/api/public/series', placeholder: 'Toutes les séries', value: (c) => c.name, label: (c) => c.name },
     tag: { path: '/api/public/tags', placeholder: 'Tous les tags', value: (c) => String(c.id), label: (c) => '#' + c.name },
   };
 
@@ -166,7 +168,7 @@
         <div class="main"><div class="count"></div><div class="grid"></div><div class="more"></div></div>
       </div>`;
     const $ = (s) => root.querySelector(s);
-    const state = { q: '', category: '', collection: '', tag: '', status: '', format: '', sort: 'title', page: 1 };
+    const state = { q: '', category: '', collection: '', series: '', tag: '', status: '', format: '', sort: 'title', page: 1 };
 
     const get = (path) => fetch(base + path).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
     const media = (u) => (u ? `${base}/${u}` : '');
@@ -232,7 +234,7 @@
     }).catch(() => {});
 
     async function load(append) {
-      const params = new URLSearchParams({ q: state.q, category: state.category, collection: state.collection, tag: state.tag,
+      const params = new URLSearchParams({ q: state.q, category: state.category, collection: state.collection, series: state.series, tag: state.tag,
         status: state.status, format: state.format, sort: state.sort, page: state.page, limit: perPage });
       let data;
       try { data = await get('/api/public/books?' + params); } catch (e) {
@@ -241,7 +243,7 @@
       }
       const html = data.items.map((b) => `<button class="card" data-id="${b.id}">${cover(b)}<div class="meta">
         <span class="t">${esc(b.title)}</span><span class="a">${esc(b.authors)}</span>
-        ${b.collection ? `<span class="coll">${esc(b.collection)}${b.collectionNumber ? ' · n° ' + esc(b.collectionNumber) : ''}</span>` : ''}${badge(b)}</div></button>`).join('');
+        ${b.series ? `<span class="coll">${esc(b.series)}${b.seriesNumber ? ' · tome ' + esc(b.seriesNumber) : ''}</span>` : b.collection ? `<span class="coll">${esc(b.collection)}</span>` : ''}${badge(b)}</div></button>`).join('');
       if (append) $('.grid').insertAdjacentHTML('beforeend', html);
       else $('.grid').innerHTML = html || '<div class="empty">Aucun livre ne correspond.</div>';
       $('.count').textContent = `${data.total} livre${data.total > 1 ? 's' : ''}`;
@@ -252,7 +254,7 @@
     async function openBook(id) {
       const b = await get('/api/public/books/' + id);
       const facts = [['Auteur(s)', b.authors], ['Éditeur', b.publisher],
-        ['Collection', b.collection ? b.collection + (b.collectionNumber ? ' · n° ' + b.collectionNumber : '') : ''], ['Année', b.year], ['Pages', b.pages], ['ISBN', b.isbn],
+        ['Collection', b.collection || ''], ['Série', b.series ? b.series + (b.seriesNumber ? ' · tome ' + b.seriesNumber : '') : ''], ['Année', b.year], ['Pages', b.pages], ['ISBN', b.isbn],
         ['Catégories', b.categories.map((c) => c.name).join(', ')], ['Tags', (b.tags || []).map((t) => '#' + t.name).join(' ')]].filter(([, v]) => v);
       // La fenetre est attachee directement a <body>, au-dessus de tout (z-index
       // maximal) : dans le catalogue, elle resterait prisonniere du contexte
