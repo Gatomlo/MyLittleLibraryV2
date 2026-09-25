@@ -2,7 +2,7 @@
 /**
  * Plugin Name: MyLittleLibrary – Catalogue
  * Description: Affiche le catalogue (lecture seule) de MyLittleLibrary via le shortcode [bibliotheque]. Compatible Divi 5 (module Texte ou Code).
- * Version: 1.2.0
+ * Version: 1.3.0
  * Author: Ranch du Phoenix
  * License: GPL-2.0-or-later
  * Text Domain: mylittlelibrary-catalogue
@@ -19,6 +19,7 @@ const MLL_OPTION = 'mll_catalogue_url';
  *              filtres="recherche,categories,collections,tags,disponibilite,type,tri" position="gauche"]
  * L'attribut url est facultatif si l'adresse est renseignee dans Reglages > Bibliotheque.
  * filtres : champs de filtre proposes, dans cet ordre ("aucun" pour n'en afficher aucun).
+ * entete : "oui" (nom et logo, par defaut), "nom", "logo" ou "non".
  * position : "haut" (par defaut) ou "gauche" (filtres dans une colonne a gauche).
  */
 function mll_catalogue_shortcode($atts) {
@@ -83,7 +84,7 @@ function mll_catalogue_settings_page() {
                         <p class="description">Adresse de la bibliothèque (donnée dans ses Réglages), utilisée quand le shortcode n'a pas d'attribut <code>url</code>.
                             Place <code>[bibliotheque]</code> dans une page (module Texte ou Code de Divi), ou
                             <code>[bibliotheque url="…"]</code> pour une autre bibliothèque.
-                            Options : <code>par_page="24"</code>, <code>entete="non"</code> pour masquer logo et nom,
+                            Options : <code>par_page="24"</code>, <code>entete="nom"</code>, <code>entete="logo"</code> ou <code>entete="non"</code> (par défaut : nom et logo),
                             <code>filtres="recherche,categories,collections,tags,disponibilite,type,tri"</code> pour choisir les filtres
                             (le générateur de shortcode se trouve dans les Réglages de chaque bibliothèque).</p>
                     </td>

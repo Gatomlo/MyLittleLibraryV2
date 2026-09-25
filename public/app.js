@@ -423,9 +423,15 @@
     document.title = s.libraryName;
     const brand = $('.brand');
     brand.href = LIBRARY ? `${LIB}/#/` : `${ROOT}/#/`;
+    // Reglage de la bibliotheque : nom et logo, nom seul ou logo seul (sans logo,
+    // le nom reste affiche pour que l'en-tete ne soit jamais vide).
+    const display = s.brandDisplay || 'both';
     const logo = $('#brand-logo');
-    logo.hidden = !s.logoUrl;
+    logo.hidden = !s.logoUrl || display === 'name';
     if (s.logoUrl) logo.src = mediaSrc(s.logoUrl);
+    logo.alt = display === 'logo' ? s.libraryName : '';
+    $('#brand-name').hidden = display === 'logo' && !!s.logoUrl;
+    brand.classList.toggle('logo-only', display === 'logo' && !!s.logoUrl);
   }
 
   function renderHeader() {
@@ -2636,6 +2642,15 @@
           </div>
           <p class="small muted" style="margin-top:6px">Affiché dans l'en-tête, sur les étiquettes et dans le catalogue intégré. PNG à fond transparent conseillé.</p>
         </div>
+        <div class="field">
+          <label>Afficher dans l'en-tête de l'application</label>
+          <div class="btn-row" id="brand-display">
+            <label class="check"><input type="radio" name="brandDisplay" value="both" ${(s.brandDisplay || 'both') === 'both' ? 'checked' : ''}> Nom et logo</label>
+            <label class="check"><input type="radio" name="brandDisplay" value="name" ${s.brandDisplay === 'name' ? 'checked' : ''}> Nom seul</label>
+            <label class="check"><input type="radio" name="brandDisplay" value="logo" ${s.brandDisplay === 'logo' ? 'checked' : ''}> Logo seul</label>
+          </div>
+          ${s.logoUrl ? '' : '<p class="small muted" style="margin-top:4px">Sans logo, le nom est toujours affiché.</p>'}
+        </div>
         <button class="btn btn-primary" type="submit">Enregistrer</button>
       </form>
 
@@ -2713,7 +2728,12 @@
         </div>
         <div class="grid-2">
           <div class="field"><label>Livres par page</label><input type="number" id="emb-per" min="1" max="100" value="24"></div>
-          <div class="field"><label class="check" style="margin-top:26px"><input type="checkbox" id="emb-head" checked> Afficher le logo et le nom</label></div>
+          <div class="field"><label>En-tête du catalogue</label><select id="emb-head">
+            <option value="oui">Nom et logo</option>
+            <option value="nom">Nom seul</option>
+            <option value="logo">Logo seul</option>
+            <option value="non">Rien</option>
+          </select></div>
         </div>
         <p>Avec l'extension fournie (dossier <span class="code">wordpress/</span> du projet), dans un module Texte ou Code de Divi :</p>
         <div class="snippet" id="emb-shortcode"></div>
@@ -2808,13 +2828,13 @@
       const filtersSel = $$('[data-filter-opt]:checked').map((cb) => cb.dataset.filterOpt);
       const filtres = filtersSel.length ? filtersSel.join(',') : 'aucun';
       const per = Math.max(1, Math.min(100, parseInt($('#emb-per').value, 10) || 24));
-      const head = $('#emb-head').checked;
+      const head = $('#emb-head').value; // oui (nom et logo), nom, logo, non
       const pos = ($('[name=emb-pos]:checked') || {}).value === 'gauche' ? 'gauche' : '';
-      $('#emb-shortcode').textContent = `[bibliotheque url="${libraryUrl}" filtres="${filtres}"${pos ? ' position="gauche"' : ''}${per !== 24 ? ` par_page="${per}"` : ''}${head ? '' : ' entete="non"'}]`;
-      $('#emb-html').textContent = `<div class="mll-catalogue" data-url="${libraryUrl}" data-filters="${filtres}"${pos ? ' data-position="gauche"' : ''} data-per-page="${per}"${head ? '' : ' data-header="non"'}></div>\n<script src="${libraryUrl}/embed.js" defer></script>`;
+      $('#emb-shortcode').textContent = `[bibliotheque url="${libraryUrl}" filtres="${filtres}"${pos ? ' position="gauche"' : ''}${per !== 24 ? ` par_page="${per}"` : ''}${head !== 'oui' ? ` entete="${head}"` : ''}]`;
+      $('#emb-html').textContent = `<div class="mll-catalogue" data-url="${libraryUrl}" data-filters="${filtres}"${pos ? ' data-position="gauche"' : ''} data-per-page="${per}"${head !== 'oui' ? ` data-header="${head}"` : ''}></div>\n<script src="${libraryUrl}/embed.js" defer></script>`;
     };
     $$('#embed-builder input').forEach((i) => i.addEventListener('input', updateEmbed));
-    $$('#embed-builder input').forEach((i) => i.addEventListener('change', updateEmbed));
+    $$('#embed-builder input, #embed-builder select').forEach((i) => i.addEventListener('change', updateEmbed));
     $$('[data-copy]').forEach((btn) => {
       btn.onclick = async () => {
         const text = $(`#${btn.dataset.copy}`).textContent;
@@ -2822,6 +2842,18 @@
       };
     });
     updateEmbed();
+
+    // En-tete : applique tout de suite, sans bouton.
+    $$('#brand-display input').forEach((r) => {
+      r.onchange = async () => {
+        try {
+          await api('/api/settings', { method: 'PUT', body: { brandDisplay: r.value } });
+          await loadSettings();
+          renderBrand();
+          toast('En-tête mis à jour.');
+        } catch (err) { toast(err.message, 'error'); }
+      };
+    });
 
     // Catalogue : filtres affiches et position, enregistres des qu'on change.
     $('#catalog-form').addEventListener('change', async () => {

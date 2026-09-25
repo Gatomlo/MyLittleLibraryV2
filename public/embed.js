@@ -18,6 +18,7 @@
     * { box-sizing: border-box; }
     .head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
     .head img { height: 36px; max-width: 120px; object-fit: contain; }
+    .head img.alone { height: 56px; max-width: 240px; }
     .head strong { font-size: 18px; }
     .filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-bottom: 14px; }
     .filters[hidden] { display: none; }
@@ -144,7 +145,11 @@
     host.__mll = true;
     const base = (host.dataset.url || SCRIPT_BASE).replace(/\/$/, '');
     const perPage = Math.min(parseInt(host.dataset.perPage, 10) || 24, 100);
-    const showHeader = host.dataset.header !== 'non' && host.dataset.header !== 'false';
+    // En-tete : "oui" (nom et logo, par defaut), "nom", "logo" ou "non" (rien).
+    const headerAttr = String(host.dataset.header || 'oui').toLowerCase();
+    const headerMode = /^(non|false|aucun|none)$/.test(headerAttr) ? 'none'
+      : /^(nom|name)$/.test(headerAttr) ? 'name'
+        : headerAttr === 'logo' ? 'logo' : 'both';
     const filters = parseFilters(host.dataset.filters);
     // Position des filtres : en haut (par defaut) ou dans une colonne a gauche.
     const left = /^(gauche|left)$/i.test(host.dataset.position || '');
@@ -168,9 +173,12 @@
     // Barre de filtres, dans l'ordre demande. Les listes vides (ex. aucune
     // collection) et les options desactivees de la bibliotheque sont masquees.
     get('/api/public/settings').then((s) => {
-      if (showHeader) {
+      if (headerMode !== 'none') {
+        // Logo seul sans logo disponible : le nom est affiche a la place.
+        const withLogo = s.logoUrl && headerMode !== 'name';
+        const withName = headerMode !== 'logo' || !s.logoUrl;
         const head = $('.head');
-        head.innerHTML = `${s.logoUrl ? `<img src="${esc(media(s.logoUrl))}" alt="">` : ''}<strong>${esc(s.libraryName)}</strong>`;
+        head.innerHTML = `${withLogo ? `<img src="${esc(media(s.logoUrl))}" alt="${withName ? '' : esc(s.libraryName)}" class="${withName ? '' : 'alone'}">` : ''}${withName ? `<strong>${esc(s.libraryName)}</strong>` : ''}`;
         head.hidden = false;
       }
       const features = s.features || {};
