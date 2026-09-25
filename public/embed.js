@@ -26,6 +26,11 @@
     input.q { grid-column: span 2; }
     @media (max-width: 420px) { input.q { grid-column: 1 / -1; } }
     .combo { position: relative; }
+    .layout.left { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 18px; align-items: start; }
+    .filters.side { display: flex; flex-direction: column; gap: 10px; }
+    .filters.side input.q { grid-column: auto; }
+    .filters.side > *, .filters.side .combo, .filters.side select, .filters.side input { width: 100%; }
+    @media (max-width: 640px) { .layout.left { grid-template-columns: minmax(0, 1fr); } }
     .combo input { width: 100%; }
     .combo-list { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 10; max-height: 280px; overflow: auto; background: #fff; border: 1px solid #d9d2c9; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15); padding: 4px; }
     .combo-list[hidden] { display: none; }
@@ -141,11 +146,15 @@
     const perPage = Math.min(parseInt(host.dataset.perPage, 10) || 24, 100);
     const showHeader = host.dataset.header !== 'non' && host.dataset.header !== 'false';
     const filters = parseFilters(host.dataset.filters);
+    // Position des filtres : en haut (par defaut) ou dans une colonne a gauche.
+    const left = /^(gauche|left)$/i.test(host.dataset.position || '');
     const root = host.attachShadow({ mode: 'open' });
     root.innerHTML = `<style>${CSS}</style>
       <div class="head" hidden></div>
-      <div class="filters" ${filters.length ? '' : 'hidden'}></div>
-      <div class="count"></div><div class="grid"></div><div class="more"></div>`;
+      <div class="layout ${left && filters.length ? 'left' : ''}">
+        <div class="filters ${left ? 'side' : ''}" ${filters.length ? '' : 'hidden'}></div>
+        <div class="main"><div class="count"></div><div class="grid"></div><div class="more"></div></div>
+      </div>`;
     const $ = (s) => root.querySelector(s);
     const state = { q: '', category: '', collection: '', tag: '', status: '', format: '', sort: 'title', page: 1 };
 

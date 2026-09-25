@@ -35,6 +35,10 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   avec recherche dans le catalogue.
 - **Collection / série** et numéro dans la collection : récupérés via l'ISBN quand la
   BnF / Open Library les connaissent ; filtre du catalogue trié par numéro.
+- **Filtres du catalogue** au choix (Réglages > Catalogue : recherche, catégories,
+  collections, tags, disponibilité, papier/numérique, statuts de lecture, tri), en haut
+  ou dans une colonne à gauche. Même choix pour le catalogue WordPress (générateur de
+  shortcode : `filtres="..."`, `position="gauche"`). Réglages présentés en accordéon.
 - **Rapport d'import** filtrable par statut (ajoutés, ignorés, erreurs, non importés),
   avec copie des ISBN en erreur et nouvel essai des erreurs.
 - **ISBN** : ISBN-13 (978/979), ISBN-10, avec ou sans tirets/espaces, reconnus à la

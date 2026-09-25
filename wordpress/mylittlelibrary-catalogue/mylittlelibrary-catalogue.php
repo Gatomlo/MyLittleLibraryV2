@@ -2,7 +2,7 @@
 /**
  * Plugin Name: MyLittleLibrary – Catalogue
  * Description: Affiche le catalogue (lecture seule) de MyLittleLibrary via le shortcode [bibliotheque]. Compatible Divi 5 (module Texte ou Code).
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Ranch du Phoenix
  * License: GPL-2.0-or-later
  * Text Domain: mylittlelibrary-catalogue
@@ -16,9 +16,10 @@ const MLL_OPTION = 'mll_catalogue_url';
 
 /**
  * Shortcode : [bibliotheque url="https://exemple.be/mylittlelibrary/ma-bibliotheque" par_page="24" entete="oui"
- *              filtres="recherche,categories,collections,tags,disponibilite,type,tri"]
+ *              filtres="recherche,categories,collections,tags,disponibilite,type,tri" position="gauche"]
  * L'attribut url est facultatif si l'adresse est renseignee dans Reglages > Bibliotheque.
  * filtres : champs de filtre proposes, dans cet ordre ("aucun" pour n'en afficher aucun).
+ * position : "haut" (par defaut) ou "gauche" (filtres dans une colonne a gauche).
  */
 function mll_catalogue_shortcode($atts) {
     $atts = shortcode_atts(array(
@@ -26,6 +27,7 @@ function mll_catalogue_shortcode($atts) {
         'par_page' => 24,
         'entete'   => 'oui',
         'filtres'  => 'recherche,categories',
+        'position' => 'haut',
     ), $atts, 'bibliotheque');
 
     $url = untrailingslashit(esc_url_raw(trim($atts['url'])));
@@ -40,11 +42,12 @@ function mll_catalogue_shortcode($atts) {
     wp_enqueue_script('mll-catalogue', $url . '/embed.js', array(), null, array('strategy' => 'defer', 'in_footer' => true));
 
     return sprintf(
-        '<div class="mll-catalogue" data-url="%s" data-per-page="%d" data-header="%s" data-filters="%s"></div>',
+        '<div class="mll-catalogue" data-url="%s" data-per-page="%d" data-header="%s" data-filters="%s" data-position="%s"></div>',
         esc_attr($url),
         max(1, min(100, intval($atts['par_page']))),
         esc_attr($atts['entete']),
-        esc_attr(sanitize_text_field($atts['filtres']))
+        esc_attr(sanitize_text_field($atts['filtres'])),
+        esc_attr(sanitize_text_field($atts['position']))
     );
 }
 add_shortcode('bibliotheque', 'mll_catalogue_shortcode');

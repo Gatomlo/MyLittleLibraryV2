@@ -689,70 +689,142 @@
     input.addEventListener('input', () => { if (!input.value) onPick(''); });
   }
 
+  // Filtres du catalogue : choisis dans les Reglages (liste + position en haut ou
+  // dans une colonne a gauche). Sans reglage : tous, en haut.
+  const ALL_CATALOG_FILTERS = ['search', 'category', 'collection', 'tag', 'availability', 'format', 'status', 'sort'];
+  const catalogConf = () => {
+    const conf = (state.settings && state.settings.catalog) || {};
+    return { filters: Array.isArray(conf.filters) ? conf.filters : ALL_CATALOG_FILTERS, position: conf.position === 'left' ? 'left' : 'top' };
+  };
+
+  // [cle, libelle, option de la bibliotheque necessaire]
+  const CATALOG_FILTER_LABELS = [
+    ['search', 'Recherche'], ['category', 'Catégories'], ['collection', 'Collections'], ['tag', 'Tags', 'tags'],
+    ['availability', 'Disponibilité'], ['format', 'Papier / numérique', 'ebooks'], ['status', 'Statuts de lecture', 'readingStatus'], ['sort', 'Tri'],
+  ];
+
+  // Transforme une page "titre h2 + contenu" en sections repliables (accordeon) ;
+  // les sections ouvertes sont memorisees (par navigateur).
+  function accordionize(container, storageKey) {
+    let open = null;
+    try { open = JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch (e) { open = null; }
+    const save = () => {
+      const titles = $$('.settings-section[open]', container).map((d) => d.dataset.title);
+      try { localStorage.setItem(storageKey, JSON.stringify(titles)); } catch (e) { /* stockage indisponible */ }
+    };
+    $$(':scope > h2', container).forEach((h2, i) => {
+      const title = h2.textContent.trim();
+      const details = document.createElement('details');
+      details.className = 'settings-section';
+      details.dataset.title = title;
+      // Par defaut, seule la premiere section est ouverte.
+      if (open ? open.includes(title) : i === 0) details.open = true;
+      const summary = document.createElement('summary');
+      summary.textContent = title;
+      const body = document.createElement('div');
+      body.className = 'section-body';
+      details.append(summary, body);
+      h2.replaceWith(details);
+      while (details.nextElementSibling && details.nextElementSibling.tagName !== 'H2') body.appendChild(details.nextElementSibling);
+      details.addEventListener('toggle', save);
+    });
+  }
+
   let membersCache = null;
   async function viewCatalog() {
     const c = state.catalog;
-    const withStatus = statusesOn();
+    const conf = catalogConf();
+    const show = (k) => conf.filters.includes(k);
+    const withStatus = statusesOn() && show('status');
     const [cats, collections, tags, members] = await Promise.all([
-      loadCategories(),
-      api('/api/public/collections').catch(() => []),
-      features().tags ? api('/api/public/tags').catch(() => []) : [],
+      show('category') ? loadCategories() : [],
+      show('collection') ? api('/api/public/collections').catch(() => []) : [],
+      show('tag') && features().tags ? api('/api/public/tags').catch(() => []) : [],
       withStatus ? (membersCache || api('/api/members').then((m) => (membersCache = m))) : [],
     ]);
     if (withStatus && !c.statusUser) c.statusUser = String(state.user.id);
+    const left = conf.position === 'left';
+    const sel = (v, x) => (v === x ? 'selected' : '');
+
+    // [cle, libelle (colonne de gauche), html]
+    const controls = [];
+    if (show('search')) {
+      controls.push(['search', 'Recherche', `<input class="search" type="search" id="q" placeholder="Titre, auteur, éditeur, ISBN${canManage() ? ', code' : ''}…" value="${esc(c.q)}">`]);
+    }
+    if (show('category') && cats.some((x) => x.count > 0)) controls.push(['category', 'Catégorie', '<input type="search" id="cat" placeholder="Toutes les catégories">']);
+    if (show('collection') && collections.length) controls.push(['collection', 'Collection', '<input type="search" id="coll" placeholder="Toutes les collections">']);
+    if (show('tag') && tags.some((t) => t.count)) controls.push(['tag', 'Tag', '<input type="search" id="tagf" placeholder="Tous les tags">']);
+    if (show('availability')) {
+      controls.push(['availability', 'Disponibilité', `<select id="status">
+        <option value="">Tous les livres</option>
+        <option value="available" ${sel(c.status, 'available')}>Disponibles</option>
+        <option value="onloan" ${sel(c.status, 'onloan')}>En prêt</option></select>`]);
+    }
+    if (show('format') && features().ebooks) {
+      controls.push(['format', 'Type', `<select id="format">
+        <option value="">Papier et numérique</option>
+        <option value="physical" ${sel(c.format, 'physical')}>Livres papier</option>
+        <option value="ebook" ${sel(c.format, 'ebook')}>Livres numériques</option></select>`]);
+    }
+    if (withStatus) {
+      controls.push(['status-user', 'Statuts de lecture', `<select id="status-user" title="Statuts de lecture de…">
+        ${members.map((m) => `<option value="${m.id}" ${String(m.id) === c.statusUser ? 'selected' : ''}>${m.id === state.user.id ? 'Mes statuts' : 'Statuts de ' + esc(m.username)}</option>`).join('')}</select>`]);
+      controls.push(['reading', '', `<select id="reading">
+        <option value="">Lecture : tous</option>
+        <option value="to_read" ${sel(c.reading, 'to_read')}>À lire</option>
+        <option value="read" ${sel(c.reading, 'read')}>Lu</option>
+        <option value="none" ${sel(c.reading, 'none')}>Sans statut</option></select>`]);
+      controls.push(['opinion', '', `<select id="opinion">
+        <option value="">Avis : tous</option>
+        <option value="liked" ${sel(c.opinion, 'liked')}>Aimé</option>
+        <option value="disliked" ${sel(c.opinion, 'disliked')}>Pas aimé</option></select>`]);
+    }
+    if (show('sort')) {
+      controls.push(['sort', 'Tri', `<select id="sort">
+        <option value="title">Tri : titre</option>
+        <option value="recent" ${sel(c.sort, 'recent')}>Tri : ajout récent</option>
+        <option value="year" ${sel(c.sort, 'year')}>Tri : année</option></select>`]);
+    }
+
+    const filtersHtml = left
+      ? controls.map(([, label, html]) => `<div class="fgroup">${label ? `<label>${label}</label>` : ''}${html}</div>`).join('')
+      : controls.map(([, , html]) => html).join('');
+    const results = '<div class="books" id="books"></div><div class="more" id="more"></div>';
+    let body = results;
+    if (controls.length && left) body = `<div class="catalog-layout"><aside class="filters-side">${filtersHtml}</aside><div>${results}</div></div>`;
+    else if (controls.length) body = `<div class="filters">${filtersHtml}</div>${results}`;
     view().innerHTML = `
       <div class="page-head">
         <div><h1>Catalogue</h1><p class="muted" id="count"></p></div>
         ${canManage() ? '<div class="btn-row"><a class="btn" href="#/import">Importer une liste</a><a class="btn btn-primary" href="#/add">+ Ajouter un livre</a></div>' : ''}
       </div>
-      <div class="filters">
-        <input class="search" type="search" id="q" placeholder="Titre, auteur, éditeur, ISBN${canManage() ? ', code' : ''}…" value="${esc(c.q)}">
-        <input type="search" id="cat" placeholder="Toutes les catégories" autocomplete="off">
-        ${collections.length ? '<input type="search" id="coll" placeholder="Toutes les collections" autocomplete="off">' : ''}
-        ${tags.some((t) => t.count) ? '<input type="search" id="tagf" placeholder="Tous les tags" autocomplete="off">' : ''}
-        <select id="status">
-          <option value="">Tous</option>
-          <option value="available" ${c.status === 'available' ? 'selected' : ''}>Disponibles</option>
-          <option value="onloan" ${c.status === 'onloan' ? 'selected' : ''}>En prêt</option>
-        </select>
-        <select id="sort">
-          <option value="title">Tri : titre</option>
-          <option value="recent" ${c.sort === 'recent' ? 'selected' : ''}>Tri : ajout récent</option>
-          <option value="year" ${c.sort === 'year' ? 'selected' : ''}>Tri : année</option>
-        </select>
-      </div>
-      ${features().ebooks || withStatus ? `<div class="filters filters-2">
-        ${features().ebooks ? `<select id="format">
-          <option value="">Papier et numérique</option>
-          <option value="physical" ${c.format === 'physical' ? 'selected' : ''}>Livres papier</option>
-          <option value="ebook" ${c.format === 'ebook' ? 'selected' : ''}>Livres numériques</option>
-        </select>` : ''}
-        ${withStatus ? `
-          <select id="status-user" title="Statuts de lecture de…">
-            ${members.map((m) => `<option value="${m.id}" ${String(m.id) === c.statusUser ? 'selected' : ''}>${m.id === state.user.id ? 'Mes statuts' : 'Statuts de ' + esc(m.username)}</option>`).join('')}
-          </select>
-          <select id="reading">
-            <option value="">Lecture : tous</option>
-            <option value="to_read" ${c.reading === 'to_read' ? 'selected' : ''}>À lire</option>
-            <option value="read" ${c.reading === 'read' ? 'selected' : ''}>Lu</option>
-            <option value="none" ${c.reading === 'none' ? 'selected' : ''}>Sans statut</option>
-          </select>
-          <select id="opinion">
-            <option value="">Avis : tous</option>
-            <option value="liked" ${c.opinion === 'liked' ? 'selected' : ''}>Aimé</option>
-            <option value="disliked" ${c.opinion === 'disliked' ? 'selected' : ''}>Pas aimé</option>
-          </select>` : ''}
-      </div>` : ''}
-      <div class="books" id="books"></div>
-      <div class="more" id="more"></div>`;
-    const reload = () => { c.page = 1; loadBooks(false); };
-    $('#q').addEventListener('input', debounce((e) => { c.q = e.target.value; reload(); }, 250));
-    searchPicker({
-      input: $('#cat'),
-      items: cats.filter((x) => x.count > 0).map((x) => ({ id: x.id, name: x.name, count: x.count })),
-      value: c.category,
-      onPick: (id) => { if (id !== c.category) { c.category = id; reload(); } },
-    });
+      <div id="active-filters"></div>
+      ${body}`;
+
+    const reload = () => { c.page = 1; renderActive(); loadBooks(false); };
+    // Filtre actif sans champ visible (ex. collection choisie depuis une fiche alors
+    // que ce filtre est masque) : affiche en pastille pour pouvoir le retirer.
+    function renderActive() {
+      const chips = [];
+      if (c.collection && !$('#coll')) chips.push(['collection', 'Collection : ' + c.collection]);
+      if (c.tag && !$('#tagf')) chips.push(['tag', 'Filtré par tag']);
+      if (c.category && !$('#cat')) chips.push(['category', 'Filtré par catégorie']);
+      $('#active-filters').innerHTML = chips.length
+        ? `<div class="btn-row" style="margin-bottom:12px">${chips.map(([k, l]) => `<span class="chip">${esc(l)}<button type="button" data-clear="${k}" aria-label="Retirer">×</button></span>`).join('')}</div>`
+        : '';
+      $$('[data-clear]').forEach((b) => { b.onclick = () => { c[b.dataset.clear] = ''; reload(); }; });
+    }
+    renderActive();
+
+    if ($('#q')) $('#q').addEventListener('input', debounce((e) => { c.q = e.target.value; reload(); }, 250));
+    if ($('#cat')) {
+      searchPicker({
+        input: $('#cat'),
+        items: cats.filter((x) => x.count > 0).map((x) => ({ id: x.id, name: x.name, count: x.count })),
+        value: c.category,
+        onPick: (id) => { if (id !== (c.category || '')) { c.category = id; reload(); } },
+      });
+    }
     if ($('#tagf')) {
       searchPicker({
         input: $('#tagf'),
@@ -769,10 +841,8 @@
         onPick: (name) => { if (name !== (c.collection || '')) { c.collection = name; reload(); } },
       });
     }
-    $('#status').addEventListener('change', (e) => { c.status = e.target.value; reload(); });
-    $('#sort').addEventListener('change', (e) => { c.sort = e.target.value; reload(); });
-    [['#format', 'format'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion']].forEach(([sel, key]) => {
-      const el = $(sel);
+    [['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion']].forEach(([selector, key]) => {
+      const el = $(selector);
       if (el) el.addEventListener('change', (e) => { c[key] = e.target.value; reload(); });
     });
     await loadBooks(false);
@@ -786,14 +856,21 @@
   async function loadBooks(append) {
     const c = state.catalog;
     const withStatus = statusesOn();
-    const params = new URLSearchParams({ q: c.q, category: c.category, status: c.status, sort: c.sort, page: c.page, limit: 48 });
+    // Un filtre masque dans les Reglages ne filtre plus (sauf collection / tag /
+    // categorie choisis depuis une fiche : affiches en pastille, retirables).
+    const show = (k) => catalogConf().filters.includes(k);
+    const params = new URLSearchParams({
+      q: show('search') ? c.q : '', category: c.category || '', status: show('availability') ? c.status || '' : '',
+      sort: show('sort') ? c.sort : 'title', page: c.page, limit: 48,
+    });
     if (c.collection) params.set('collection', c.collection);
     if (features().tags && c.tag) params.set('tag', c.tag);
-    if (features().ebooks && c.format) params.set('format', c.format);
+    if (features().ebooks && c.format && show('format')) params.set('format', c.format);
     if (withStatus) {
-      params.set('statusUser', c.statusUser || '');
-      if (c.reading) params.set('reading', c.reading);
-      if (c.opinion) params.set('opinion', c.opinion);
+      // Statuts affiches sur les couvertures : ceux du compte choisi (le sien par defaut).
+      params.set('statusUser', show('status') ? c.statusUser || '' : String(state.user.id));
+      if (show('status') && c.reading) params.set('reading', c.reading);
+      if (show('status') && c.opinion) params.set('opinion', c.opinion);
     }
     const data = await api(`/api/${canManage() ? 'books' : 'public/books'}?${params}`);
     const list = $('#books');
@@ -2541,6 +2618,7 @@
     const [s, cats, tags] = await Promise.all([api('/api/settings'), api('/api/categories'), api('/api/tags').catch(() => [])]);
     // Options absentes : le serveur tourne encore une version precedente de l'app.
     const feat = s.features || null;
+    const catalog = { filters: (s.catalog && s.catalog.filters) || ALL_CATALOG_FILTERS, position: (s.catalog && s.catalog.position) || 'top' };
     const libraryUrl = location.origin + LIB;
     view().innerHTML = `
       <h1>Réglages</h1>
@@ -2598,6 +2676,22 @@
           <span><strong>Tags</strong><br><span class="small muted">Mots-clés libres en plus des catégories (ex. #incontournable, #formation-2025). Ajoutés sur la fiche d'un livre, visibles et filtrables dans le catalogue.</span></span></label>
       </form>
 
+      <h2>Catalogue</h2>
+      <form class="card" id="catalog-form">
+        <label>Filtres affichés dans le catalogue</label>
+        <div class="btn-row" style="margin-bottom:14px">
+          ${CATALOG_FILTER_LABELS.map(([k, l, needs]) => {
+            const off = needs && !(feat && feat[needs]);
+            return `<label class="check" ${off ? 'title="Active d\'abord l\'option correspondante"' : ''}><input type="checkbox" name="f" value="${k}" ${catalog.filters.includes(k) ? 'checked' : ''}> ${l}${off ? ' <span class="small muted">(option désactivée)</span>' : ''}</label>`;
+          }).join('')}
+        </div>
+        <label>Position des filtres</label>
+        <div class="btn-row">
+          <label class="check"><input type="radio" name="position" value="top" ${catalog.position !== 'left' ? 'checked' : ''}> En haut du catalogue</label>
+          <label class="check"><input type="radio" name="position" value="left" ${catalog.position === 'left' ? 'checked' : ''}> Dans une colonne à gauche</label>
+        </div>
+      </form>
+
       <h2>Catégories</h2>
       <div class="card" id="cat-manager"></div>
       ${feat && feat.tags ? '<h2>Tags</h2><div class="card" id="tag-manager"></div>' : ''}
@@ -2611,6 +2705,11 @@
             ...(feat && feat.tags ? [['tags', 'Tags', false]] : []), ['disponibilite', 'Disponibilité', false],
             ...(feat && feat.ebooks ? [['type', 'Papier / numérique', false]] : []), ['tri', 'Tri', false]]
             .map(([k, l, on]) => `<label class="check"><input type="checkbox" data-filter-opt="${k}" ${on ? 'checked' : ''}> ${l}</label>`).join('')}
+        </div>
+        <label>Position des filtres</label>
+        <div class="btn-row" style="margin-bottom:12px">
+          <label class="check"><input type="radio" name="emb-pos" value="haut" checked> En haut</label>
+          <label class="check"><input type="radio" name="emb-pos" value="gauche"> Dans une colonne à gauche</label>
         </div>
         <div class="grid-2">
           <div class="field"><label>Livres par page</label><input type="number" id="emb-per" min="1" max="100" value="24"></div>
@@ -2710,8 +2809,9 @@
       const filtres = filtersSel.length ? filtersSel.join(',') : 'aucun';
       const per = Math.max(1, Math.min(100, parseInt($('#emb-per').value, 10) || 24));
       const head = $('#emb-head').checked;
-      $('#emb-shortcode').textContent = `[bibliotheque url="${libraryUrl}" filtres="${filtres}"${per !== 24 ? ` par_page="${per}"` : ''}${head ? '' : ' entete="non"'}]`;
-      $('#emb-html').textContent = `<div class="mll-catalogue" data-url="${libraryUrl}" data-filters="${filtres}" data-per-page="${per}"${head ? '' : ' data-header="non"'}></div>\n<script src="${libraryUrl}/embed.js" defer></script>`;
+      const pos = ($('[name=emb-pos]:checked') || {}).value === 'gauche' ? 'gauche' : '';
+      $('#emb-shortcode').textContent = `[bibliotheque url="${libraryUrl}" filtres="${filtres}"${pos ? ' position="gauche"' : ''}${per !== 24 ? ` par_page="${per}"` : ''}${head ? '' : ' entete="non"'}]`;
+      $('#emb-html').textContent = `<div class="mll-catalogue" data-url="${libraryUrl}" data-filters="${filtres}"${pos ? ' data-position="gauche"' : ''} data-per-page="${per}"${head ? '' : ' data-header="non"'}></div>\n<script src="${libraryUrl}/embed.js" defer></script>`;
     };
     $$('#embed-builder input').forEach((i) => i.addEventListener('input', updateEmbed));
     $$('#embed-builder input').forEach((i) => i.addEventListener('change', updateEmbed));
@@ -2723,6 +2823,18 @@
     });
     updateEmbed();
 
+    // Catalogue : filtres affiches et position, enregistres des qu'on change.
+    $('#catalog-form').addEventListener('change', async () => {
+      const filters = $$('#catalog-form [name=f]:checked').map((cb) => cb.value);
+      const position = ($('#catalog-form [name=position]:checked') || {}).value || 'top';
+      try {
+        await api('/api/settings', { method: 'PUT', body: { catalog: { filters, position } } });
+        await loadSettings();
+        toast('Catalogue mis à jour.');
+      } catch (err) { toast(err.message, 'error'); }
+    });
+
+    accordionize(view(), `mll-settings-${LIBRARY.slug}`);
     categoryManager($('#cat-manager'), cats, 'categories');
     if ($('#tag-manager')) categoryManager($('#tag-manager'), tags, 'tags');
   }
