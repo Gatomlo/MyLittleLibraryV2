@@ -2359,6 +2359,8 @@
   // ================= Reglages de la bibliotheque =================
   async function viewSettings() {
     const [s, cats] = await Promise.all([api('/api/settings'), api('/api/categories')]);
+    // Options absentes : le serveur tourne encore une version precedente de l'app.
+    const feat = s.features || null;
     const libraryUrl = location.origin + LIB;
     view().innerHTML = `
       <h1>Réglages</h1>
@@ -2406,9 +2408,11 @@
 
       <h2>Options</h2>
       <form class="card" id="features-form">
-        <label class="check" style="align-items:flex-start"><input type="checkbox" name="ebooks" ${s.features.ebooks ? 'checked' : ''} style="margin-top:4px">
+        ${feat ? '' : `<div class="error-box">Le serveur n'est pas à jour (options indisponibles). Vérifie que tous les fichiers de l'app ont été envoyés,
+          y compris le dossier <span class="code">lib/</span>, puis redémarre l'application Node.</div>`}
+        <label class="check" style="align-items:flex-start"><input type="checkbox" name="ebooks" ${feat && feat.ebooks ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
           <span><strong>Livres numériques</strong><br><span class="small muted">Permet d'ajouter des livres de type « numérique » : ils apparaissent au catalogue avec leur étiquette « Livre numérique », sans exemplaire, code, étiquette ni prêt.</span></span></label>
-        <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="readingStatus" ${s.features.readingStatus ? 'checked' : ''} style="margin-top:4px">
+        <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="readingStatus" ${feat && feat.readingStatus ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
           <span><strong>Statuts de lecture</strong><br><span class="small muted">Chaque compte peut marquer un livre « À lire » ou « Lu », et « Aimé » ou « Pas aimé ». Visibles dans le catalogue (gestion), avec des filtres par compte. Jamais affichés sur le catalogue public.</span></span></label>
       </form>
 
