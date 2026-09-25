@@ -24,6 +24,13 @@
   const isAdmin = () => !!state.user && state.user.role === 'admin';
   // Le compte connecte peut-il gerer la bibliotheque de la page ?
   const canManage = () => !!state.user && !!LIBRARY && (isAdmin() || state.libraries.some((l) => l.slug === LIBRARY.slug));
+  // Options de la bibliotheque (Reglages) : livres numeriques, statuts de lecture.
+  const features = () => (state.settings && state.settings.features) || {};
+  const statusesOn = () => canManage() && !!features().readingStatus;
+
+  const READING_LABELS = { to_read: 'À lire', read: 'Lu' };
+  const OPINION_LABELS = { liked: 'Aimé', disliked: 'Pas aimé' };
+  const OPINION_ICONS = { liked: '♥', disliked: '✕' };
 
   // ================= Utilitaires =================
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -93,6 +100,7 @@
   }
 
   function availabilityBadge(b) {
+    if (b.format === 'ebook') return '<span class="badge badge-ebook">Livre numérique</span>';
     if (!b.totalCopies) return '<span class="badge badge-muted">Aucun exemplaire</span>';
     if (b.availableCopies === 0) return '<span class="badge badge-warn">Emprunté</span>';
     if (b.totalCopies > 1) return `<span class="badge badge-ok">${b.availableCopies}/${b.totalCopies} disponibles</span>`;
@@ -194,8 +202,129 @@
     });
   }
 
-  // Ouvre la camera et renvoie la premiere valeur lue acceptee par `accept`
-  // (ou null si l'utilisateur ferme). Saisie manuelle et photo en secours.
+  // Codes lus sur une photo (valeurs acceptees par `accept`), sans ouvrir la camera.
+  async function decodePhoto(file, formats, accept) {
+    const detector = await getDetector(formats);
+    const bitmap = await createImageBitmap(file);
+    const values = (await detector.detect(bitmap)).map((c) => accept(String(c.rawValue || '').trim())).filter(Boolean);
+    if (values.length || formats.includes('qr_code')) return values;
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0);
+    await loadQuagga();
+    const q = await quaggaDecode(canvas);
+    const v = q && accept(q);
+    return v ? [v] : [];
+  }
+
+  // Moteur de lecture : camera + detection sur un element <video>. onValue(valeur)
+  // est appele pour chaque code accepte par `accept` ; s'il renvoie true, la lecture
+  // s'arrete (scan unique), sinon elle continue (scan en serie). Renvoie
+  // { stop(), readPhoto(file) }.
+  function startCamera({ video, formats, accept, onValue, onStatus, hint }) {
+    const isBarcode = !formats.includes('qr_code');
+    let stream = null;
+    let stopped = false;
+    let timer = null;
+
+    function stop() {
+      stopped = true;
+      clearTimeout(timer);
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+    }
+
+    function tryValue(raw) {
+      const value = accept(String(raw || '').trim());
+      if (!value) return false;
+      if (onValue(value)) { stop(); return true; }
+      return false;
+    }
+
+    async function readPhoto(file) {
+      onStatus('Analyse de la photo…');
+      try {
+        const values = await decodePhoto(file, formats, accept);
+        if (values.length) { values.some((v) => onValue(v)); return true; }
+        onStatus('Aucun code lisible sur la photo. Réessaie plus près et bien éclairé.');
+      } catch (err) { onStatus('Analyse impossible : ' + err.message); }
+      return false;
+    }
+
+    (async () => {
+      let detector;
+      try {
+        detector = await getDetector(formats);
+        if (isBarcode) await loadQuagga().catch(() => null);
+      } catch (err) {
+        onStatus('Lecteur de codes indisponible : ' + err.message);
+        return;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        onStatus('Caméra inaccessible ici (il faut une connexion https). Utilise la saisie ou une photo.');
+        return;
+      }
+      try {
+        // Resolution maximale : un code-barres ISBN est petit, chaque pixel compte.
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false,
+        });
+      } catch (err) {
+        onStatus('Caméra refusée ou absente. Utilise la saisie manuelle ou une photo.');
+        return;
+      }
+      if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
+      await tuneCamera(stream.getVideoTracks()[0], isBarcode);
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+      if (isBarcode) onStatus(`${hint} Tiens le livre à 15-25 cm, bien éclairé, le code-barres net et à plat dans le cadre.`);
+
+      // Code-barres : on n'analyse que la bande centrale (zone du cadre) en pleine
+      // resolution, avec deux moteurs complementaires : ZXing (rapide) et Quagga2
+      // (plus tolerant au flou des webcams). Une lecture Quagga doit etre confirmee
+      // deux fois pour ecarter les erreurs de lecture.
+      const band = document.createElement('canvas');
+      const quaggaHits = new Map();
+      let frame = 0;
+      const tick = async () => {
+        if (stopped) return;
+        try {
+          if (video.readyState >= 2 && video.videoWidth) {
+            let source = video;
+            if (isBarcode) {
+              const vw = video.videoWidth;
+              const vh = video.videoHeight;
+              band.width = Math.round(vw * 0.9);
+              band.height = Math.round(vh * 0.6);
+              band.getContext('2d').drawImage(video, vw * 0.05, vh * 0.2, band.width, band.height, 0, 0, band.width, band.height);
+              source = band;
+            }
+            const codes = await detector.detect(source);
+            for (const c of codes) if (tryValue(c.rawValue)) return;
+            if (isBarcode && window.Quagga && ++frame % 2 === 0) {
+              const q = accept(String((await quaggaDecode(band)) || ''));
+              if (q) {
+                const hits = (quaggaHits.get(q) || 0) + 1;
+                quaggaHits.set(q, hits);
+                if (hits >= 2) {
+                  quaggaHits.delete(q);
+                  if (tryValue(q)) return;
+                }
+              }
+            }
+          }
+        } catch (e) { /* image suivante */ }
+        if (!stopped) timer = setTimeout(tick, 120);
+      };
+      tick();
+    })();
+
+    return { stop, readPhoto };
+  }
+
+  // Ouvre la camera dans une fenetre et renvoie la premiere valeur lue acceptee par
+  // `accept` (ou null si l'utilisateur ferme). Saisie manuelle et photo en secours.
   function openScanner({ title, hint, formats, accept, manualLabel }) {
     return new Promise((resolve) => {
       const isBarcode = !formats.includes('qr_code');
@@ -216,125 +345,36 @@
           </div>
         </div>`;
       document.body.appendChild(backdrop);
-      const video = $('video', backdrop);
       const status = $('.scanner-status', backdrop);
-      let stream = null;
       let done = false;
-      let timer = null;
-
       function finish(value) {
         if (done) return;
         done = true;
-        clearTimeout(timer);
-        if (stream) stream.getTracks().forEach((t) => t.stop());
+        camera.stop();
         backdrop.remove();
         resolve(value);
       }
-
-      function tryValue(raw) {
-        const value = accept(String(raw || '').trim());
-        if (value) {
+      const camera = startCamera({
+        video: $('video', backdrop),
+        formats,
+        accept,
+        hint,
+        onStatus: (msg) => { status.textContent = msg; },
+        onValue: (value) => {
           if (navigator.vibrate) navigator.vibrate(80);
           finish(value);
           return true;
-        }
-        return false;
-      }
-
+        },
+      });
       backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) finish(null); });
       $('form.manual', backdrop).addEventListener('submit', (e) => {
         e.preventDefault();
-        const v = e.target.manual.value;
-        if (!tryValue(v)) status.textContent = 'Valeur non reconnue, vérifie la saisie.';
+        const value = accept(e.target.manual.value.trim());
+        if (value) finish(value); else status.textContent = 'Valeur non reconnue, vérifie la saisie.';
       });
-      $('input[type=file]', backdrop).addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        status.textContent = 'Analyse de la photo…';
-        try {
-          const detector = await getDetector(formats);
-          const bitmap = await createImageBitmap(file);
-          const codes = await detector.detect(bitmap);
-          if (codes.some((c) => tryValue(c.rawValue))) return;
-          if (isBarcode) {
-            const canvas = document.createElement('canvas');
-            canvas.width = bitmap.width;
-            canvas.height = bitmap.height;
-            canvas.getContext('2d').drawImage(bitmap, 0, 0);
-            await loadQuagga();
-            if (tryValue(await quaggaDecode(canvas))) return;
-          }
-          status.textContent = 'Aucun code lisible sur la photo. Réessaie plus près et bien éclairé.';
-        } catch (err) { status.textContent = 'Analyse impossible : ' + err.message; }
+      $('input[type=file]', backdrop).addEventListener('change', (e) => {
+        if (e.target.files[0]) camera.readPhoto(e.target.files[0]);
       });
-
-      (async () => {
-        let detector;
-        try {
-          detector = await getDetector(formats);
-          if (isBarcode) await loadQuagga().catch(() => null);
-        } catch (err) {
-          status.textContent = 'Lecteur de codes indisponible : ' + err.message;
-          return;
-        }
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          status.textContent = 'Caméra inaccessible ici (il faut une connexion https). Utilise la saisie ou une photo.';
-          return;
-        }
-        try {
-          // Resolution maximale : un code-barres ISBN est petit, chaque pixel compte.
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-            audio: false,
-          });
-        } catch (err) {
-          status.textContent = 'Caméra refusée ou absente. Utilise la saisie manuelle ou une photo.';
-          return;
-        }
-        if (done) { stream.getTracks().forEach((t) => t.stop()); return; }
-        await tuneCamera(stream.getVideoTracks()[0], isBarcode);
-        video.srcObject = stream;
-        await video.play().catch(() => {});
-        if (isBarcode) {
-          status.textContent = `${hint} Tiens le livre à 15-25 cm, bien éclairé, le code-barres net et à plat dans le cadre.`;
-        }
-
-        // Code-barres : on n'analyse que la bande centrale (zone du cadre) en pleine
-        // resolution, avec deux moteurs complementaires : ZXing (rapide) et Quagga2
-        // (plus tolerant au flou des webcams). Une lecture Quagga doit etre confirmee
-        // deux fois pour ecarter les erreurs de lecture.
-        const band = document.createElement('canvas');
-        const quaggaHits = new Map();
-        let frame = 0;
-        const tick = async () => {
-          if (done) return;
-          try {
-            if (video.readyState >= 2 && video.videoWidth) {
-              let source = video;
-              if (isBarcode) {
-                const vw = video.videoWidth;
-                const vh = video.videoHeight;
-                band.width = Math.round(vw * 0.9);
-                band.height = Math.round(vh * 0.6);
-                band.getContext('2d').drawImage(video, vw * 0.05, vh * 0.2, band.width, band.height, 0, 0, band.width, band.height);
-                source = band;
-              }
-              const codes = await detector.detect(source);
-              for (const c of codes) if (tryValue(c.rawValue)) return;
-              if (isBarcode && window.Quagga && ++frame % 2 === 0) {
-                const q = accept(String((await quaggaDecode(band)) || ''));
-                if (q) {
-                  const hits = (quaggaHits.get(q) || 0) + 1;
-                  quaggaHits.set(q, hits);
-                  if (hits >= 2 && tryValue(q)) return;
-                }
-              }
-            }
-          } catch (e) { /* image suivante */ }
-          timer = setTimeout(tick, 120);
-        };
-        tick();
-      })();
     });
   }
 
@@ -512,8 +552,13 @@
     [/^\/(c\/[^/]+|book\/\d+)$/, viewLegacyRedirect],
   ];
 
+  // Nettoyage de la page quittee (ex. couper la camera du scan en serie).
+  let pageCleanup = null;
+  function onLeave(fn) { pageCleanup = fn; }
+
   async function route() {
     closeMenu();
+    if (pageCleanup) { try { pageCleanup(); } catch (e) { /* rien */ } pageCleanup = null; }
     const path = decodeURIComponent(location.hash.replace(/^#/, '')) || '/';
     renderNav();
     window.scrollTo(0, 0);
@@ -571,9 +616,33 @@
     return api('/api/public/categories');
   }
 
+  // Champ de choix avec recherche (saisie + liste de suggestions) : pratique quand
+  // la liste est longue (categories). onPick(id|'') est appele au choix / a l'effacement.
+  function searchPicker({ input, items, value, onPick }) {
+    const listId = input.id + '-list';
+    input.setAttribute('list', listId);
+    input.insertAdjacentHTML('afterend', `<datalist id="${listId}">${items.map((i) => `<option value="${esc(i.label)}">`).join('')}</datalist>`);
+    const current = items.find((i) => String(i.id) === String(value));
+    input.value = current ? current.label : '';
+    const pick = () => {
+      const v = input.value.trim().toLowerCase();
+      if (!v) return onPick('');
+      const found = items.find((i) => i.label.toLowerCase() === v) || items.find((i) => i.name.toLowerCase() === v);
+      if (found) { input.value = found.label; onPick(String(found.id)); }
+    };
+    input.addEventListener('change', pick);
+    input.addEventListener('input', () => { if (!input.value) onPick(''); else if (items.some((i) => i.label === input.value)) pick(); });
+  }
+
+  let membersCache = null;
   async function viewCatalog() {
     const c = state.catalog;
-    const cats = await loadCategories();
+    const withStatus = statusesOn();
+    const [cats, members] = await Promise.all([
+      loadCategories(),
+      withStatus ? (membersCache || api('/api/members').then((m) => (membersCache = m))) : [],
+    ]);
+    if (withStatus && !c.statusUser) c.statusUser = String(state.user.id);
     view().innerHTML = `
       <div class="page-head">
         <div><h1>Catalogue</h1><p class="muted" id="count"></p></div>
@@ -581,9 +650,7 @@
       </div>
       <div class="filters">
         <input class="search" type="search" id="q" placeholder="Titre, auteur, éditeur, ISBN${canManage() ? ', code' : ''}…" value="${esc(c.q)}">
-        <select id="cat"><option value="">Toutes les catégories</option>
-          ${cats.filter((x) => x.count > 0).map((x) => `<option value="${x.id}" ${String(x.id) === c.category ? 'selected' : ''}>${esc(x.name)} (${x.count})</option>`).join('')}
-        </select>
+        <input type="search" id="cat" placeholder="Toutes les catégories" autocomplete="off">
         <select id="status">
           <option value="">Tous</option>
           <option value="available" ${c.status === 'available' ? 'selected' : ''}>Disponibles</option>
@@ -595,19 +662,62 @@
           <option value="year" ${c.sort === 'year' ? 'selected' : ''}>Tri : année</option>
         </select>
       </div>
+      ${features().ebooks || withStatus ? `<div class="filters filters-2">
+        ${features().ebooks ? `<select id="format">
+          <option value="">Papier et numérique</option>
+          <option value="physical" ${c.format === 'physical' ? 'selected' : ''}>Livres papier</option>
+          <option value="ebook" ${c.format === 'ebook' ? 'selected' : ''}>Livres numériques</option>
+        </select>` : ''}
+        ${withStatus ? `
+          <select id="status-user" title="Statuts de lecture de…">
+            ${members.map((m) => `<option value="${m.id}" ${String(m.id) === c.statusUser ? 'selected' : ''}>${m.id === state.user.id ? 'Mes statuts' : 'Statuts de ' + esc(m.username)}</option>`).join('')}
+          </select>
+          <select id="reading">
+            <option value="">Lecture : tous</option>
+            <option value="to_read" ${c.reading === 'to_read' ? 'selected' : ''}>À lire</option>
+            <option value="read" ${c.reading === 'read' ? 'selected' : ''}>Lu</option>
+            <option value="none" ${c.reading === 'none' ? 'selected' : ''}>Sans statut</option>
+          </select>
+          <select id="opinion">
+            <option value="">Avis : tous</option>
+            <option value="liked" ${c.opinion === 'liked' ? 'selected' : ''}>Aimé</option>
+            <option value="disliked" ${c.opinion === 'disliked' ? 'selected' : ''}>Pas aimé</option>
+          </select>` : ''}
+      </div>` : ''}
       <div class="books" id="books"></div>
       <div class="more" id="more"></div>`;
     const reload = () => { c.page = 1; loadBooks(false); };
     $('#q').addEventListener('input', debounce((e) => { c.q = e.target.value; reload(); }, 250));
-    $('#cat').addEventListener('change', (e) => { c.category = e.target.value; reload(); });
+    searchPicker({
+      input: $('#cat'),
+      items: cats.filter((x) => x.count > 0).map((x) => ({ id: x.id, name: x.name, label: `${x.name} (${x.count})` })),
+      value: c.category,
+      onPick: (id) => { if (id !== c.category) { c.category = id; reload(); } },
+    });
     $('#status').addEventListener('change', (e) => { c.status = e.target.value; reload(); });
     $('#sort').addEventListener('change', (e) => { c.sort = e.target.value; reload(); });
+    [['#format', 'format'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion']].forEach(([sel, key]) => {
+      const el = $(sel);
+      if (el) el.addEventListener('change', (e) => { c[key] = e.target.value; reload(); });
+    });
     await loadBooks(false);
+  }
+
+  function statusIcons(s) {
+    if (!s || (!s.reading && !s.opinion)) return '';
+    return `<span class="status-icons">${s.reading ? `<span class="st st-${s.reading}">${READING_LABELS[s.reading]}</span>` : ''}${s.opinion ? `<span class="st st-${s.opinion}" title="${OPINION_LABELS[s.opinion]}">${OPINION_ICONS[s.opinion]}</span>` : ''}</span>`;
   }
 
   async function loadBooks(append) {
     const c = state.catalog;
+    const withStatus = statusesOn();
     const params = new URLSearchParams({ q: c.q, category: c.category, status: c.status, sort: c.sort, page: c.page, limit: 48 });
+    if (features().ebooks && c.format) params.set('format', c.format);
+    if (withStatus) {
+      params.set('statusUser', c.statusUser || '');
+      if (c.reading) params.set('reading', c.reading);
+      if (c.opinion) params.set('opinion', c.opinion);
+    }
     const data = await api(`/api/${canManage() ? 'books' : 'public/books'}?${params}`);
     const list = $('#books');
     if (!list) return;
@@ -617,11 +727,13 @@
         <div class="meta">
           <span class="t">${esc(b.title)}</span>
           <span class="a">${esc(b.authors)}${b.year ? ' · ' + b.year : ''}</span>
+          ${withStatus ? statusIcons(b.status) : ''}
           ${availabilityBadge(b)}
         </div>
       </a>`).join('');
+    const filtered = c.q || c.category || c.status || c.format || c.reading || c.opinion;
     if (append) list.insertAdjacentHTML('beforeend', html);
-    else list.innerHTML = html || `<div class="empty" style="grid-column:1/-1">${c.q || c.category || c.status ? 'Aucun livre ne correspond.' : 'Le catalogue est vide pour le moment.'}</div>`;
+    else list.innerHTML = html || `<div class="empty" style="grid-column:1/-1">${filtered ? 'Aucun livre ne correspond.' : 'Le catalogue est vide pour le moment.'}</div>`;
     $('#count').textContent = `${data.total} livre${data.total > 1 ? 's' : ''}`;
     const shown = (data.page - 1) * data.limit + data.items.length;
     $('#more').innerHTML = shown < data.total ? '<button class="btn" id="more-btn">Afficher plus</button>' : '';
@@ -649,6 +761,7 @@
           <h1>${esc(book.title)}</h1>
           ${book.subtitle ? `<div class="subtitle">${esc(book.subtitle)}</div>` : ''}
           ${availabilityBadge(book)}
+          ${manage && book.myStatus ? statusEditorHtml(book) : ''}
           <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
           ${book.summary ? `<h3>Résumé</h3><p class="summary">${esc(book.summary)}</p>` : ''}
           ${manage && book.notes ? `<h3>Notes internes</h3><p class="summary muted">${esc(book.notes)}</p>` : ''}
@@ -658,10 +771,44 @@
             </div>` : ''}
         </div>
       </div>
-      <h2>Exemplaires</h2>
-      <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
+      ${book.format === 'ebook'
+        ? '<div class="info-box" style="margin-top:20px">Livre numérique : pas d\'exemplaire, pas d\'étiquette ni de prêt.</div>'
+        : `<h2>Exemplaires</h2>
+      <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>`}
       ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}`;
     if (manage) bindAdminBook(book);
+    if (manage && book.myStatus) bindStatusEditor(book);
+  }
+
+  // Statuts de lecture (propres a chaque compte) : A lire / Lu, et Aime / Pas aime.
+  // Un clic sur le statut actif le retire.
+  function statusEditorHtml(book) {
+    const s = book.myStatus;
+    const btn = (group, value, label) => `<button type="button" class="pill ${s[group] === value ? 'on pill-' + value : ''}" data-${group}="${value}">${label}</button>`;
+    const others = (book.statuses || []).map((o) => `<span class="small">${esc(o.username)} : ${[o.reading && READING_LABELS[o.reading], o.opinion && OPINION_LABELS[o.opinion]].filter(Boolean).join(', ')}</span>`);
+    return `<div class="status-editor">
+      <div class="btn-row">
+        <span class="small muted">Ma lecture</span>${btn('reading', 'to_read', 'À lire')}${btn('reading', 'read', 'Lu')}
+        <span class="small muted" style="margin-left:8px">Mon avis</span>${btn('opinion', 'liked', '♥ Aimé')}${btn('opinion', 'disliked', '✕ Pas aimé')}
+      </div>
+      ${others.length ? `<div class="others">${others.join(' · ')}</div>` : ''}
+    </div>`;
+  }
+
+  function bindStatusEditor(book) {
+    $$('.status-editor [data-reading], .status-editor [data-opinion]').forEach((btn) => {
+      btn.onclick = async () => {
+        const group = btn.dataset.reading ? 'reading' : 'opinion';
+        const value = btn.dataset[group];
+        const next = { ...book.myStatus, [group]: book.myStatus[group] === value ? null : value };
+        try {
+          book.myStatus = await api(`/api/books/${book.id}/status`, { method: 'PUT', body: next });
+          const box = $('.status-editor');
+          box.outerHTML = statusEditorHtml(book);
+          bindStatusEditor(book);
+        } catch (err) { toast(err.message, 'error'); }
+      };
+    });
   }
 
   function publicCopiesHtml(book) {
@@ -710,7 +857,8 @@
         go('#/');
       } catch (err) { toast(err.message, 'error'); }
     };
-    $('#add-copy').onclick = async () => {
+    const addCopy = $('#add-copy');
+    if (addCopy) addCopy.onclick = async () => {
       const location = prompt("Emplacement du nouvel exemplaire (facultatif) :", (book.copies[0] && book.copies[0].location) || '');
       if (location === null) return;
       try {
@@ -1118,8 +1266,9 @@
       loadCategories(),
       api('/api/locations'),
     ]);
-    const b = book || { isbn: '', title: '', subtitle: '', authors: '', publisher: '', year: '', pages: '', summary: '', notes: '', categories: [], coverUrl: null };
+    const b = book || { isbn: '', title: '', subtitle: '', authors: '', publisher: '', year: '', pages: '', summary: '', notes: '', categories: [], coverUrl: null, format: 'physical' };
     const form = { categories: b.categories.map((c) => c.name), cover: { url: b.coverUrl ? mediaSrc(b.coverUrl) : '', remoteUrl: '', data: '', removed: false } };
+    const showFormat = features().ebooks || b.format === 'ebook';
 
     view().innerHTML = `
       <p><a href="${editing ? `#/book/${b.id}` : '#/'}">← ${editing ? 'Retour à la fiche' : 'Catalogue'}</a></p>
@@ -1145,6 +1294,11 @@
             <p class="small muted" style="margin-top:8px">La couverture trouvée par la recherche ISBN est enregistrée automatiquement.</p>
           </div>
         </div>
+        ${showFormat ? `<div class="field"><label>Type</label>
+          <div class="btn-row">
+            <label class="check"><input type="radio" name="format" value="physical" ${b.format !== 'ebook' ? 'checked' : ''}> Livre papier</label>
+            <label class="check"><input type="radio" name="format" value="ebook" ${b.format === 'ebook' ? 'checked' : ''}> Livre numérique <span class="small muted">(pas d'exemplaire ni d'étiquette)</span></label>
+          </div></div>` : ''}
         <div class="field"><label for="title">Titre *</label><input id="title" name="title" required value="${esc(b.title)}"></div>
         <div class="field"><label for="subtitle">Sous-titre</label><input id="subtitle" name="subtitle" value="${esc(b.subtitle)}"></div>
         <div class="field"><label for="authors">Auteur(s)</label><input id="authors" name="authors" placeholder="Séparés par des virgules" value="${esc(b.authors)}"></div>
@@ -1168,7 +1322,7 @@
           <datalist id="cat-list">${cats.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist>
         </div>
         ${editing ? '' : `
-        <div class="grid-2">
+        <div class="grid-2" id="copies-block" ${b.format === 'ebook' ? 'hidden' : ''}>
           <div class="field"><label for="copies">Nombre d'exemplaires</label><input id="copies" name="copies" type="number" min="1" max="50" value="1"></div>
           <div class="field"><label for="location">Emplacement</label><input id="location" name="location" list="loc-list" placeholder="Étagère, armoire…">
             <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist></div>
@@ -1179,6 +1333,10 @@
       </form>`;
 
     const f = $('#book-form');
+    const currentFormat = () => { const r = $('input[name=format]:checked', f); return r ? r.value : (b.format || 'physical'); };
+    $$('input[name=format]', f).forEach((r) => {
+      r.onchange = () => { const cb = $('#copies-block'); if (cb) cb.hidden = currentFormat() === 'ebook'; };
+    });
 
     function renderCover() {
       const src = form.cover.data || form.cover.remoteUrl || (form.cover.removed ? '' : form.cover.url);
@@ -1252,11 +1410,27 @@
         out.innerHTML = `<span style="color:var(--danger)">${esc(err.message)}</span>`;
       }
     }
-    $('#isbn-go').onclick = () => lookup($('#isbn-search').value);
-    $('#isbn-search').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); lookup(e.target.value); } });
+    // Recherche automatique des qu'un ISBN complet et valide est saisi (scan, frappe,
+    // collage ou lecteur de codes-barres USB) : pas besoin de cliquer sur Rechercher.
+    let lastLookup = '';
+    const autoLookup = (raw, force) => {
+      const isbn = isbnFromCell(raw).isbn;
+      if (!isbn || (!force && isbn === lastLookup)) return;
+      lastLookup = isbn;
+      lookup(isbn);
+    };
+    $('#isbn-go').onclick = () => { lastLookup = ''; lookup($('#isbn-search').value); };
+    $('#isbn-search').addEventListener('input', debounce((e) => autoLookup(e.target.value), 300));
+    $('#isbn-search').addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const isbn = isbnFromCell(e.target.value).isbn;
+      if (isbn) lastLookup = isbn;
+      lookup(isbn || e.target.value);
+    });
     $('#isbn-scan').onclick = async () => {
       const isbn = await scanIsbn();
-      if (isbn) { $('#isbn-search').value = isbn; lookup(isbn); }
+      if (isbn) { $('#isbn-search').value = isbn; lastLookup = isbn; lookup(isbn); }
     };
 
     f.onsubmit = async (e) => {
@@ -1272,7 +1446,8 @@
         coverUrl: !form.cover.data && form.cover.remoteUrl ? form.cover.remoteUrl : undefined,
         removeCover: form.cover.removed || undefined,
       };
-      if (!editing) { body.copies = Number(f.copies.value) || 1; body.location = f.location.value; }
+      body.format = currentFormat();
+      if (!editing && body.format !== 'ebook') { body.copies = Number(f.copies.value) || 1; body.location = f.location.value; }
       try {
         const saved = await api(editing ? `/api/books/${b.id}` : '/api/books', { method: editing ? 'PUT' : 'POST', body });
         if (editing) toast('Fiche enregistrée.');
@@ -1303,6 +1478,7 @@
     { key: 'copies', label: 'Exemplaires', aliases: ['exemplaires', 'exemplaire', 'nb exemplaires', 'quantite', 'qte', 'nombre', 'copies'] },
     { key: 'notes', label: 'Notes', aliases: ['notes', 'note', 'remarque', 'remarques', 'commentaire', 'commentaires'] },
     { key: 'coverUrl', label: 'Couverture (URL)', aliases: ['couverture', 'couverture url', 'image', 'illustration', 'cover', 'url image'] },
+    { key: 'format', label: 'Type (papier / numérique)', aliases: ['type', 'format', 'support', 'type de livre'] },
   ];
   const normHeader = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -1379,7 +1555,7 @@
     return rows.filter((r) => r && r.some((c) => cellText(c) !== ''));
   }
 
-  const importState = { mode: 'isbn', text: '', fileName: '', rows: null, mapping: [], items: [], results: null, running: false, stop: false };
+  const importState = { mode: 'scan', text: '', fileName: '', rows: null, mapping: [], items: [], results: null, running: false, stop: false, batch: [] };
 
   async function viewImport() {
     const s = importState;
@@ -1387,26 +1563,34 @@
     const tpl = (type, ext) => `${LIB}/api/import/template.${ext}${type === 'isbn' ? '?type=isbn' : ''}`;
     view().innerHTML = `
       <div class="page-head"><div><h1>Importer des livres</h1>
-        <p class="muted">Ajoute d'un coup une liste de livres à « ${esc(state.settings.libraryName)} ». Les exemplaires et leurs codes sont créés automatiquement ; leurs étiquettes passent « en attente ».</p></div></div>
-      <div class="seg" style="max-width:520px">
+        <p class="muted">Ajoute d'un coup plusieurs livres à « ${esc(state.settings.libraryName)} ». Les exemplaires et leurs codes sont créés automatiquement ; leurs étiquettes passent « en attente ».</p></div></div>
+      <div class="seg seg-3" style="max-width:640px">
+        <button type="button" data-mode="scan" class="${s.mode === 'scan' ? 'active' : ''}">Scanner en série</button>
         <button type="button" data-mode="isbn" class="${s.mode === 'isbn' ? 'active' : ''}">Liste d'ISBN</button>
-        <button type="button" data-mode="full" class="${s.mode === 'full' ? 'active' : ''}">Fichier complet (tous les champs)</button>
+        <button type="button" data-mode="full" class="${s.mode === 'full' ? 'active' : ''}">Fichier complet</button>
       </div>
       <div id="import-body"></div>`;
     $$('.seg button').forEach((btn) => {
       btn.onclick = () => {
-        if (s.running) return;
+        if (s.running || btn.dataset.mode === s.mode) return;
+        if (pageCleanup) { pageCleanup(); pageCleanup = null; }
         Object.assign(s, { mode: btn.dataset.mode, rows: null, mapping: [], items: [], results: null, fileName: '' });
         viewImport();
       };
     });
     const body = $('#import-body');
 
+    const formatOption = features().ebooks ? `
+      <div class="field"><label>Type</label><select id="opt-format">
+        <option value="physical">Livres papier</option>
+        <option value="ebook">Livres numériques (sans exemplaire)</option>
+      </select></div>` : '';
     const options = `
       <div class="grid-2">
-        ${s.mode === 'isbn' ? `
-          <div class="field"><label>Exemplaires par ISBN</label><input type="number" id="opt-copies" min="1" max="50" value="1">
-            <p class="small muted" style="margin-top:4px">Un ISBN présent plusieurs fois dans la liste compte pour plusieurs exemplaires.</p></div>
+        ${s.mode !== 'full' ? `
+          ${s.mode === 'isbn' ? `<div class="field"><label>Exemplaires par ISBN</label><input type="number" id="opt-copies" min="1" max="50" value="1">
+            <p class="small muted" style="margin-top:4px">Un ISBN présent plusieurs fois dans la liste compte pour plusieurs exemplaires.</p></div>` : ''}
+          ${formatOption}
           <div class="field"><label>Emplacement</label><input id="opt-location" list="loc-list" placeholder="facultatif"></div>
           <div class="field"><label>Catégories</label><input id="opt-cats" placeholder="facultatif, séparées par des virgules"></div>` : `
           <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="opt-fill" checked> Compléter les champs vides grâce à l'ISBN</label>
@@ -1420,7 +1604,9 @@
       </div>
       <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist>`;
 
-    if (s.mode === 'isbn') {
+    if (s.mode === 'scan') {
+      batchScan(body, options);
+    } else if (s.mode === 'isbn') {
       body.innerHTML = `
         <div class="card">
           <h3 style="margin-top:0">1. La liste</h3>
@@ -1462,7 +1648,8 @@
           if (r.isbn) counts.set(r.isbn, (counts.get(r.isbn) || 0) + perIsbn);
           else if (r.error) errors.push(r.error);
         });
-        s.items = Array.from(counts).map(([isbn, copies]) => ({ data: { isbn, copies, location, categories }, label: isbn }));
+        const format = $('#opt-format') ? $('#opt-format').value : 'physical';
+        s.items = Array.from(counts).map(([isbn, copies]) => ({ data: { isbn, copies, location, categories, format }, label: isbn }));
         s.items.push(...errors.map((e) => ({ error: e, label: '' })));
         s.options = { onDuplicate: $('#opt-dup').value, fillFromIsbn: true };
         s.results = null;
@@ -1538,6 +1725,191 @@
       };
     }
     if (s.items.length) renderPreview();
+  }
+
+  // Petit bip de confirmation (scan en serie), sans fichier son.
+  let audioCtx = null;
+  function beep(ok = true) {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.frequency.value = ok ? 1175 : 330;
+      g.gain.value = 0.08;
+      o.connect(g).connect(audioCtx.destination);
+      o.start();
+      o.stop(audioCtx.currentTime + (ok ? 0.09 : 0.25));
+    } catch (e) { /* audio indisponible */ }
+  }
+
+  // Scan en serie : la camera reste ouverte, chaque code-barres lu s'ajoute a une
+  // liste (miniature de couverture + titre des que la recherche aboutit). Les fiches
+  // sont creees ensuite en une fois.
+  function batchScan(body, options) {
+    const s = importState;
+    const lastSeen = new Map();
+    let camera = null;
+    let queue = Promise.resolve();
+
+    body.innerHTML = `
+      <div class="card">
+        <div class="batch-layout">
+          <div>
+            <div class="scanner-video barcode" id="batch-video-box" hidden><video playsinline muted id="batch-video"></video><div class="frame"></div></div>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="button" id="cam-toggle">Démarrer la caméra</button>
+              <label class="btn" style="margin:0">Photo<input type="file" id="batch-photo" accept="image/*" capture="environment" hidden></label>
+            </div>
+            <p class="small muted" id="batch-status" style="margin-top:8px">Scanne les livres les uns après les autres : un bip confirme chaque code-barres pris en compte.
+              Un lecteur de codes-barres USB fonctionne aussi dans le champ ci-dessous.</p>
+            <form class="isbn-row" id="batch-manual">
+              <input name="isbn" placeholder="ISBN tapé ou lu par un lecteur USB" inputmode="numeric" autocomplete="off">
+              <button class="btn" type="submit">Ajouter</button>
+            </form>
+          </div>
+          <div>
+            <div class="btn-row" style="justify-content:space-between"><h3 style="margin:0">Livres scannés (<span id="batch-count">0</span>)</h3>
+              <button class="btn btn-small btn-danger" type="button" id="batch-clear">Vider</button></div>
+            <div id="batch-list" style="margin-top:8px"></div>
+          </div>
+        </div>
+        <h3>Options</h3>
+        ${options}
+        <div class="btn-row"><button class="btn btn-primary" type="button" id="batch-create">Créer les fiches</button></div>
+      </div>
+      <div id="preview"></div>`;
+
+    const status = (msg) => { $('#batch-status').textContent = msg; };
+
+    function itemHtml(it, i) {
+      const f = it.found;
+      const img = f && f.coverUrl ? `<img class="thumb" src="${esc(f.coverUrl)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<span class="thumb"></span>';
+      const title = it.state === 'loading' ? '<span class="muted">Recherche…</span>'
+        : f ? `<strong>${esc(f.title)}</strong><div class="small muted">${esc(f.authors || '')}${f.year ? ' · ' + f.year : ''}</div>`
+          : '<span style="color:var(--warn)">Introuvable</span><div class="small muted">sera créé si un titre est trouvé, sinon ignoré</div>';
+      return `<div class="list-item batch-item ${it.flash ? 'flash' : ''}">
+        ${img}
+        <div class="grow">${title}<div class="small code muted">${esc(it.isbn)}</div>
+          ${it.existing && it.existing.length ? `<span class="badge badge-warn">Déjà au catalogue</span>` : ''}</div>
+        <div class="qty"><button type="button" data-dec="${i}" aria-label="Un exemplaire de moins">−</button><span>${it.copies}</span><button type="button" data-inc="${i}" aria-label="Un exemplaire de plus">+</button></div>
+        <button type="button" class="rm" data-rm="${i}" aria-label="Retirer">×</button>
+      </div>`;
+    }
+
+    function renderList() {
+      $('#batch-count').textContent = s.batch.length;
+      const list = $('#batch-list');
+      if (!list) return;
+      list.innerHTML = s.batch.length ? `<div class="list">${s.batch.map(itemHtml).join('')}</div>`
+        : '<p class="muted small">Aucun livre scanné pour le moment.</p>';
+      $('#batch-create').textContent = s.batch.length ? `Créer ${s.batch.length} fiche(s)` : 'Créer les fiches';
+      $('#batch-create').disabled = !s.batch.length || s.running;
+      $$('[data-inc]', list).forEach((b) => { b.onclick = () => { s.batch[Number(b.dataset.inc)].copies++; renderList(); }; });
+      $$('[data-dec]', list).forEach((b) => { b.onclick = () => { const it = s.batch[Number(b.dataset.dec)]; if (it.copies > 1) it.copies--; renderList(); }; });
+      $$('[data-rm]', list).forEach((b) => { b.onclick = () => { s.batch.splice(Number(b.dataset.rm), 1); renderList(); }; });
+      s.batch.forEach((it) => { it.flash = false; });
+    }
+
+    function lookupItem(it) {
+      queue = queue.then(async () => {
+        try {
+          const r = await api(`/api/isbn/${it.isbn}`);
+          it.found = r.found;
+          it.existing = r.existing;
+          it.state = r.found ? 'found' : 'notfound';
+        } catch (e) { it.state = 'notfound'; }
+        renderList();
+      });
+    }
+
+    // Nouvel ISBN : ajoute en tete de liste ; deja present : un exemplaire de plus
+    // (sauf s'il vient d'etre lu : la camera le voit encore).
+    function addIsbn(isbn, fromCamera) {
+      const now = Date.now();
+      if (fromCamera && now - (lastSeen.get(isbn) || 0) < 2500) { lastSeen.set(isbn, now); return; }
+      lastSeen.set(isbn, now);
+      const existing = s.batch.find((it) => it.isbn === isbn);
+      beep(true);
+      if (navigator.vibrate) navigator.vibrate(60);
+      if (existing) {
+        existing.copies++;
+        existing.flash = true;
+        status(`${isbn} déjà dans la liste : ${existing.copies} exemplaires.`);
+      } else {
+        const it = { isbn, copies: 1, state: 'loading', flash: true };
+        s.batch.unshift(it);
+        status(`✓ ${isbn} ajouté.`);
+        lookupItem(it);
+      }
+      renderList();
+    }
+
+    const accept = (raw) => isbnFromScan(raw);
+    $('#cam-toggle').onclick = () => {
+      if (camera) {
+        camera.stop();
+        camera = null;
+        $('#batch-video-box').hidden = true;
+        $('#cam-toggle').textContent = 'Démarrer la caméra';
+        return;
+      }
+      $('#batch-video-box').hidden = false;
+      $('#cam-toggle').textContent = 'Arrêter la caméra';
+      camera = startCamera({
+        video: $('#batch-video'),
+        formats: ['ean_13'],
+        accept,
+        hint: 'Présente les codes-barres les uns après les autres.',
+        onStatus: status,
+        onValue: (isbn) => { addIsbn(isbn, true); return false; },
+      });
+    };
+    onLeave(() => { if (camera) camera.stop(); });
+    $('#batch-photo').onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      status('Analyse de la photo…');
+      try {
+        const values = await decodePhoto(file, ['ean_13'], accept);
+        if (values.length) values.forEach((v) => addIsbn(v, false));
+        else { beep(false); status('Aucun code-barres lisible sur la photo.'); }
+      } catch (err) { status('Analyse impossible : ' + err.message); }
+      e.target.value = '';
+    };
+    $('#batch-manual').onsubmit = (e) => {
+      e.preventDefault();
+      const r = isbnFromCell(e.target.isbn.value);
+      if (r.isbn) { addIsbn(r.isbn, false); e.target.reset(); } else { beep(false); status(r.error || 'ISBN non reconnu.'); }
+    };
+    $('#batch-clear').onclick = () => {
+      if (s.batch.length && !confirm('Vider la liste des livres scannés ?')) return;
+      s.batch = [];
+      renderList();
+    };
+    $('#batch-create').onclick = () => {
+      if (!s.batch.length) return;
+      const location = $('#opt-location').value.trim();
+      const categories = $('#opt-cats').value;
+      const format = $('#opt-format') ? $('#opt-format').value : 'physical';
+      // Les informations deja trouvees sont envoyees telles quelles (pas de 2e recherche).
+      s.items = s.batch.slice().reverse().map((it) => {
+        const f = it.found || {};
+        return {
+          label: f.title || it.isbn,
+          data: {
+            isbn: it.isbn, copies: it.copies, location, categories, format,
+            title: f.title || '', subtitle: f.subtitle || '', authors: f.authors || '', publisher: f.publisher || '',
+            year: f.year || '', pages: f.pages || '', summary: f.summary || '', coverUrl: f.coverUrl || '',
+          },
+        };
+      });
+      s.options = { onDuplicate: $('#opt-dup').value, fillFromIsbn: true };
+      s.results = null;
+      if (camera) $('#cam-toggle').click();
+      renderPreview();
+      runImport().then(() => { s.batch = s.batch.filter((it, i) => { const r = s.results && s.results[s.batch.length - 1 - i]; return !r || r.status === 'error'; }); renderList(); });
+    };
+    renderList();
   }
 
   function renderPreview() {
@@ -2032,14 +2404,16 @@
         </div>
       </form>
 
+      <h2>Options</h2>
+      <form class="card" id="features-form">
+        <label class="check" style="align-items:flex-start"><input type="checkbox" name="ebooks" ${s.features.ebooks ? 'checked' : ''} style="margin-top:4px">
+          <span><strong>Livres numériques</strong><br><span class="small muted">Permet d'ajouter des livres de type « numérique » : ils apparaissent au catalogue avec leur étiquette « Livre numérique », sans exemplaire, code, étiquette ni prêt.</span></span></label>
+        <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="readingStatus" ${s.features.readingStatus ? 'checked' : ''} style="margin-top:4px">
+          <span><strong>Statuts de lecture</strong><br><span class="small muted">Chaque compte peut marquer un livre « À lire » ou « Lu », et « Aimé » ou « Pas aimé ». Visibles dans le catalogue (gestion), avec des filtres par compte. Jamais affichés sur le catalogue public.</span></span></label>
+      </form>
+
       <h2>Catégories</h2>
-      <div class="card">
-        <div class="list" id="cat-list">${cats.length ? cats.map((c) => `
-          <div class="list-item"><div class="grow">${esc(c.name)} <span class="small muted">(${c.count})</span></div>
-            <button class="btn btn-small" data-rename="${c.id}" data-name="${esc(c.name)}">Renommer</button>
-            <button class="btn btn-small btn-danger" data-delcat="${c.id}" data-name="${esc(c.name)}">Supprimer</button></div>`).join('') : '<p class="muted">Aucune catégorie. Elles se créent depuis la fiche d\'un livre ou ici.</p>'}</div>
-        <form class="isbn-row" id="new-cat" style="margin-top:10px"><input name="name" placeholder="Nouvelle catégorie"><button class="btn" type="submit">Ajouter</button></form>
-      </div>
+      <div class="card" id="cat-manager"></div>
 
       <h2>Intégration WordPress / Divi</h2>
       <div class="card">
@@ -2117,25 +2491,133 @@
     };
     const rm = $('#logo-remove');
     if (rm) rm.onclick = async () => { await api('/api/settings/logo', { method: 'DELETE' }); await loadSettings(); renderHeader(); route(); };
-    $$('[data-rename]').forEach((btn) => {
-      btn.onclick = async () => {
-        const name = prompt('Nouveau nom :', btn.dataset.name);
-        if (!name) return;
-        try { await api(`/api/categories/${btn.dataset.rename}`, { method: 'PUT', body: { name } }); route(); } catch (err) { toast(err.message, 'error'); }
+    // Options : enregistrees des qu'on coche / decoche.
+    $$('#features-form input').forEach((cb) => {
+      cb.onchange = async () => {
+        try {
+          await api('/api/settings', { method: 'PUT', body: { features: { [cb.name]: cb.checked } } });
+          await loadSettings();
+          membersCache = null;
+          toast(cb.checked ? 'Option activée.' : 'Option désactivée.');
+        } catch (err) { cb.checked = !cb.checked; toast(err.message, 'error'); }
       };
     });
-    $$('[data-delcat]').forEach((btn) => {
-      btn.onclick = async () => {
-        if (!confirm(`Supprimer la catégorie « ${btn.dataset.name} » ? Les livres ne sont pas supprimés.`)) return;
-        await api(`/api/categories/${btn.dataset.delcat}`, { method: 'DELETE' });
-        route();
+    categoryManager($('#cat-manager'), cats);
+  }
+
+  // Gestion des categories : recherche, regroupement alphabetique repliable,
+  // renommage, suppression et fusion de plusieurs categories en une seule.
+  function categoryManager(root, initial) {
+    let cats = initial;
+    let q = '';
+    const selected = new Set();
+    const open = new Set();
+    root.innerHTML = `
+      <div class="isbn-row">
+        <input type="search" id="cat-q" placeholder="Rechercher une catégorie…" autocomplete="off">
+      </div>
+      <form class="isbn-row" id="new-cat" style="margin-top:8px"><input name="name" placeholder="Nouvelle catégorie"><button class="btn" type="submit">Ajouter</button></form>
+      <div id="merge-bar"></div>
+      <div id="cat-body" style="margin-top:10px"></div>`;
+
+    const reload = async () => { cats = await api('/api/categories'); render(); };
+    const letterOf = (name) => {
+      const l = normHeader(name).charAt(0).toUpperCase();
+      return /[A-Z]/.test(l) ? l : '#';
+    };
+    const rowHtml = (c) => `
+      <div class="list-item cat-row">
+        <input type="checkbox" data-sel="${c.id}" ${selected.has(c.id) ? 'checked' : ''} aria-label="Sélectionner ${esc(c.name)}">
+        <div class="grow">${esc(c.name)} <span class="small muted">(${c.count} livre${c.count > 1 ? 's' : ''})</span></div>
+        <button class="btn btn-small" data-rename="${c.id}">Renommer</button>
+        <button class="btn btn-small btn-danger" data-delcat="${c.id}">Supprimer</button>
+      </div>`;
+
+    function renderMergeBar() {
+      const bar = $('#merge-bar', root);
+      const chosen = cats.filter((c) => selected.has(c.id));
+      if (!chosen.length) { bar.innerHTML = ''; return; }
+      bar.innerHTML = `<div class="info-box" style="margin:10px 0 0">
+        <strong>${chosen.length} sélectionnée(s)</strong> : ${chosen.map((c) => esc(c.name)).join(', ')}
+        ${chosen.length >= 2 ? `<form class="isbn-row" id="merge-form" style="margin-top:8px">
+          <input name="name" list="merge-names" required placeholder="Nom de la catégorie finale" value="${esc(chosen[0].name)}">
+          <datalist id="merge-names">${chosen.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist>
+          <button class="btn btn-primary" type="submit">Fusionner</button>
+        </form>` : '<p class="small" style="margin:6px 0 0">Coche au moins deux catégories pour les fusionner.</p>'}
+        <button class="btn btn-small" type="button" id="merge-clear" style="margin-top:8px">Désélectionner</button>
+      </div>`;
+      $('#merge-clear', bar).onclick = () => { selected.clear(); render(); };
+      const form = $('#merge-form', bar);
+      if (form) form.onsubmit = async (e) => {
+        e.preventDefault();
+        const name = e.target.name.value.trim();
+        const books = chosen.reduce((n, c) => n + c.count, 0);
+        if (!confirm(`Fusionner ${chosen.map((c) => `« ${c.name} »`).join(', ')} en « ${name} » ?\nLes livres concernés (${books}) seront rangés dans « ${name} ».`)) return;
+        try {
+          const r = await api('/api/categories/merge', { method: 'POST', body: { ids: chosen.map((c) => c.id), name } });
+          selected.clear();
+          toast(`Catégories fusionnées dans « ${r.name} » (${r.books} livre(s)).`);
+          reload();
+        } catch (err) { toast(err.message, 'error'); }
       };
-    });
-    $('#new-cat').onsubmit = async (e) => {
+    }
+
+    function render() {
+      const body = $('#cat-body', root);
+      const nq = normHeader(q);
+      if (!cats.length) {
+        body.innerHTML = '<p class="muted">Aucune catégorie. Elles se créent depuis la fiche d\'un livre ou ici.</p>';
+      } else if (nq) {
+        const found = cats.filter((c) => normHeader(c.name).includes(nq));
+        body.innerHTML = found.length ? `<div class="list">${found.map(rowHtml).join('')}</div>` : '<p class="muted small">Aucune catégorie ne correspond.</p>';
+      } else {
+        const groups = new Map();
+        cats.forEach((c) => { const l = letterOf(c.name); if (!groups.has(l)) groups.set(l, []); groups.get(l).push(c); });
+        body.innerHTML = `<p class="small muted">${cats.length} catégorie(s). Clique sur une lettre pour la déplier.</p>` +
+          Array.from(groups).sort(([a], [b]) => a.localeCompare(b)).map(([l, list]) => `
+          <details class="cat-group" data-letter="${l}" ${open.has(l) ? 'open' : ''}>
+            <summary><strong>${l}</strong> <span class="small muted">${list.length} catégorie(s)${list.some((c) => selected.has(c.id)) ? ' · sélection' : ''}</span></summary>
+            <div class="list">${list.map(rowHtml).join('')}</div>
+          </details>`).join('');
+        $$('.cat-group', body).forEach((d) => d.addEventListener('toggle', () => { if (d.open) open.add(d.dataset.letter); else open.delete(d.dataset.letter); }));
+      }
+      $$('[data-sel]', body).forEach((cb) => {
+        cb.onchange = () => { const id = Number(cb.dataset.sel); if (cb.checked) selected.add(id); else selected.delete(id); renderMergeBar(); };
+      });
+      $$('[data-rename]', body).forEach((btn) => {
+        btn.onclick = async () => {
+          const c = cats.find((x) => x.id === Number(btn.dataset.rename));
+          const name = prompt('Nouveau nom :', c.name);
+          if (!name || name === c.name) return;
+          try { await api(`/api/categories/${c.id}`, { method: 'PUT', body: { name } }); reload(); } catch (err) {
+            // Nom deja pris : proposer la fusion avec la categorie existante.
+            const other = cats.find((x) => x.name.toLowerCase() === name.toLowerCase());
+            if (other && confirm(`La catégorie « ${other.name} » existe déjà. Fusionner « ${c.name} » dedans ?`)) {
+              await api('/api/categories/merge', { method: 'POST', body: { ids: [c.id, other.id], name: other.name } }).catch((e) => toast(e.message, 'error'));
+              reload();
+            } else toast(err.message, 'error');
+          }
+        };
+      });
+      $$('[data-delcat]', body).forEach((btn) => {
+        btn.onclick = async () => {
+          const c = cats.find((x) => x.id === Number(btn.dataset.delcat));
+          if (!confirm(`Supprimer la catégorie « ${c.name} » ? Les ${c.count} livre(s) concernés restent au catalogue.`)) return;
+          await api(`/api/categories/${c.id}`, { method: 'DELETE' });
+          selected.delete(c.id);
+          reload();
+        };
+      });
+      renderMergeBar();
+    }
+
+    $('#cat-q', root).addEventListener('input', debounce((e) => { q = e.target.value; render(); }, 150));
+    $('#new-cat', root).onsubmit = async (e) => {
       e.preventDefault();
       if (!e.target.name.value.trim()) return;
-      try { await api('/api/categories', { method: 'POST', body: { name: e.target.name.value } }); route(); } catch (err) { toast(err.message, 'error'); }
+      try { await api('/api/categories', { method: 'POST', body: { name: e.target.name.value } }); e.target.reset(); reload(); } catch (err) { toast(err.message, 'error'); }
     };
+    render();
   }
 
   // ================= Demarrage =================

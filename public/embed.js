@@ -21,8 +21,8 @@
     .head strong { font-size: 18px; }
     .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
     input, select { font: inherit; padding: 9px 11px; border: 1px solid #d9d2c9; border-radius: 10px; background: #fff; color: inherit; min-height: 40px; }
-    input { flex: 2 1 220px; }
-    select { flex: 1 1 160px; }
+    input.q { flex: 2 1 220px; }
+    input.cat { flex: 1 1 180px; }
     .count { font-size: 13px; color: #776c62; margin-bottom: 10px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
     .card { display: flex; flex-direction: column; text-align: left; background: #fff; border: 1px solid #e6dfd6; border-radius: 12px; overflow: hidden; cursor: pointer; padding: 0; font: inherit; color: inherit; }
@@ -36,10 +36,11 @@
     .badge { align-self: flex-start; margin-top: auto; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
     .ok { background: #dcefe3; color: #2e7d4f; }
     .warn { background: #f6e7d4; color: #a4611c; }
+    .ebook { background: #e3e4fa; color: #3f46a8; }
     .more { text-align: center; margin-top: 16px; }
     button.btn { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 10px; border: 1px solid #d9d2c9; background: #fff; cursor: pointer; color: inherit; }
     .empty { padding: 30px; text-align: center; color: #776c62; grid-column: 1 / -1; }
-    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; padding: 16px; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     .dialog { background: #fff; color: #2a2420; border-radius: 16px; max-width: 720px; width: 100%; max-height: calc(100vh - 32px); overflow: auto; padding: 20px; position: relative; }
     .dialog .close { position: absolute; top: 10px; right: 10px; border: 0; background: #efebe5; width: 34px; height: 34px; border-radius: 50%; font-size: 20px; cursor: pointer; }
     .detail { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 18px; }
@@ -67,15 +68,18 @@
     const root = host.attachShadow({ mode: 'open' });
     root.innerHTML = `<style>${CSS}</style>
       <div class="head" hidden></div>
-      <div class="filters"><input type="search" placeholder="Rechercher un titre, un auteur…"><select><option value="">Toutes les catégories</option></select></div>
+      <div class="filters"><input class="q" type="search" placeholder="Rechercher un titre, un auteur, un ISBN…">
+        <input class="cat" type="search" list="mll-cats" placeholder="Toutes les catégories" autocomplete="off"><datalist id="mll-cats"></datalist></div>
       <div class="count"></div><div class="grid"></div><div class="more"></div>`;
     const $ = (s) => root.querySelector(s);
     const state = { q: '', category: '', page: 1 };
+    let categories = [];
 
     const get = (path) => fetch(base + path).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
     const media = (u) => (u ? `${base}/${u}` : '');
     const cover = (b) => `<div class="cover">${b.coverUrl ? `<img src="${esc(media(b.coverUrl))}" alt="" loading="lazy">` : `<span>${esc(b.title)}</span>`}</div>`;
-    const badge = (b) => (b.availableCopies > 0 ? '<span class="badge ok">Disponible</span>' : b.totalCopies ? '<span class="badge warn">Emprunté</span>' : '');
+    const badge = (b) => (b.format === 'ebook' ? '<span class="badge ebook">Livre numérique</span>'
+      : b.availableCopies > 0 ? '<span class="badge ok">Disponible</span>' : b.totalCopies ? '<span class="badge warn">Emprunté</span>' : '');
 
     if (showHeader) {
       get('/api/public/settings').then((s) => {
@@ -84,9 +88,20 @@
         head.hidden = false;
       }).catch(() => {});
     }
+    // Filtre de categorie avec recherche (saisie + suggestions).
     get('/api/public/categories').then((cats) => {
-      $('select').insertAdjacentHTML('beforeend', cats.filter((c) => c.count > 0).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join(''));
+      categories = cats.filter((c) => c.count > 0);
+      $('#mll-cats').innerHTML = categories.map((c) => `<option value="${esc(c.name)}">`).join('');
     }).catch(() => {});
+    function pickCategory() {
+      const v = $('.cat').value.trim().toLowerCase();
+      const found = categories.find((c) => c.name.toLowerCase() === v);
+      const id = v ? (found ? String(found.id) : null) : '';
+      if (id === null || id === state.category) return;
+      state.category = id;
+      state.page = 1;
+      load(false);
+    }
 
     async function load(append) {
       const params = new URLSearchParams({ q: state.q, category: state.category, page: state.page, limit: perPage });
@@ -108,6 +123,12 @@
       const b = await get('/api/public/books/' + id);
       const facts = [['Auteur(s)', b.authors], ['Éditeur', b.publisher], ['Année', b.year], ['Pages', b.pages], ['ISBN', b.isbn],
         ['Catégories', b.categories.map((c) => c.name).join(', ')]].filter(([, v]) => v);
+      // La fenetre est attachee directement a <body>, au-dessus de tout (z-index
+      // maximal) : dans le catalogue, elle resterait prisonniere du contexte
+      // d'empilement de la section Divi et passerait sous le menu fixe du theme.
+      const layer = document.createElement('div');
+      layer.style.cssText = 'position:fixed;inset:0;z-index:2147483647;';
+      const layerRoot = layer.attachShadow({ mode: 'open' });
       const overlay = document.createElement('div');
       overlay.className = 'overlay';
       overlay.innerHTML = `<div class="dialog" role="dialog" aria-modal="true"><button class="close" aria-label="Fermer">×</button>
@@ -118,13 +139,26 @@
           ${b.copies.length ? `<table>${b.copies.map((c) => `<tr><td class="code">${esc(c.code)}</td><td>${esc(c.location)}</td>
             <td>${c.available ? '<span class="badge ok">Disponible</span>' : '<span class="badge warn">Emprunté</span>'}</td></tr>`).join('')}</table>` : ''}
         </div></div></div>`;
-      overlay.addEventListener('click', (e) => { if (e.target === overlay || e.target.classList.contains('close')) overlay.remove(); });
-      root.appendChild(overlay);
+      const prevOverflow = document.documentElement.style.overflow;
+      const close = () => {
+        layer.remove();
+        document.documentElement.style.overflow = prevOverflow;
+        document.removeEventListener('keydown', onKey);
+      };
+      const onKey = (e) => { if (e.key === 'Escape') close(); };
+      overlay.addEventListener('click', (e) => { if (e.target === overlay || e.target.classList.contains('close')) close(); });
+      document.addEventListener('keydown', onKey);
+      layerRoot.innerHTML = `<style>${CSS}</style>`;
+      layerRoot.appendChild(overlay);
+      document.body.appendChild(layer);
+      document.documentElement.style.overflow = 'hidden'; // pas de defilement de la page derriere
+      layerRoot.querySelector('.close').focus();
     }
 
     let t;
-    $('input').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => { state.q = e.target.value; state.page = 1; load(false); }, 250); });
-    $('select').addEventListener('change', (e) => { state.category = e.target.value; state.page = 1; load(false); });
+    $('.q').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => { state.q = e.target.value; state.page = 1; load(false); }, 250); });
+    $('.cat').addEventListener('input', pickCategory);
+    $('.cat').addEventListener('change', pickCategory);
     $('.more').addEventListener('click', (e) => { if (e.target.tagName === 'BUTTON') { state.page++; load(true); } });
     $('.grid').addEventListener('click', (e) => { const card = e.target.closest('.card'); if (card) openBook(card.dataset.id); });
     load(false);

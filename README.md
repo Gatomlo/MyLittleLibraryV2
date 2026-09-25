@@ -23,6 +23,17 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   résumé, couverture, catégories, notes internes (visibles une fois connecté).
 - **Ajout par ISBN** : scan du code-barres (webcam ou caméra du téléphone), saisie de
   l'ISBN ou encodage manuel. Recherche dans la BnF, Open Library et Google Books.
+- **Scan en série** (page Importer) : caméra ouverte en continu (ou lecteur USB),
+  chaque code-barres lu s'ajoute à une liste avec miniature et titre ; toutes les
+  fiches sont créées en une fois. Dans « Ajouter », un ISBN complet lance la
+  recherche tout seul.
+- **Options par bibliothèque** (Réglages) : livres numériques (sans exemplaire,
+  étiquette ni prêt) et statuts de lecture par compte (À lire / Lu, Aimé / Pas aimé),
+  affichés et filtrables dans le catalogue de gestion.
+- **Catégories** : recherche, regroupement alphabétique repliable, fusion de
+  plusieurs catégories (les livres suivent).
+- **ISBN** : ISBN-13 (978/979), ISBN-10, avec ou sans tirets/espaces, reconnus à la
+  saisie, au scan (EAN-13), à l'import et dans la recherche du catalogue.
 - **Import** (page Importer) : liste d'ISBN (fiches complétées automatiquement,
   exemplaires créés) ou fichier `.xlsx` / `.csv` avec une colonne par champ
   (correspondance des colonnes détectée et modifiable, aperçu, progression).

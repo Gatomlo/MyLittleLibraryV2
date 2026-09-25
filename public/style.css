@@ -121,6 +121,47 @@ p { margin: 0 0 10px; }
 .search-results { border: 1px solid var(--border); border-radius: 10px; margin-top: 6px; max-height: 280px; overflow: auto; }
 .search-results .sel-row button.add { color: var(--accent); font-size: 13px; font-weight: 700; border: 1px solid var(--border); border-radius: 8px; padding: 3px 8px; }
 .summary-line { font-weight: 700; margin: 10px 0 4px; }
+.seg-3 { grid-template-columns: repeat(3, 1fr); }
+
+/* ---------- Livres numeriques, statuts de lecture ---------- */
+.badge-ebook { background: #e3e4fa; color: #3f46a8; }
+@media (prefers-color-scheme: dark) { .badge-ebook { background: #26284a; color: #a9aefc; } }
+.filters-2 { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: -6px; }
+@media (max-width: 760px) { .filters-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.status-icons { display: flex; gap: 4px; flex-wrap: wrap; }
+.st { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.st-to_read { background: var(--warn-soft); color: var(--warn); }
+.st-read { background: var(--ok-soft); color: var(--ok); }
+.st-liked { background: #fbe0e6; color: #c2185b; }
+.st-disliked { background: var(--surface-2); color: var(--muted); }
+.status-editor { margin: 12px 0 4px; }
+.status-editor .others { margin-top: 6px; color: var(--muted); }
+.pill { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.pill:hover { background: var(--surface-2); }
+.pill.on { border-color: transparent; }
+.pill.pill-to_read { background: var(--warn-soft); color: var(--warn); }
+.pill.pill-read { background: var(--ok-soft); color: var(--ok); }
+.pill.pill-liked { background: #fbe0e6; color: #c2185b; }
+.pill.pill-disliked { background: var(--text); color: var(--bg); }
+
+/* ---------- Scan en serie ---------- */
+.batch-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 800px) { .batch-layout { grid-template-columns: minmax(0, 1fr); } }
+#batch-list .list { max-height: 460px; overflow: auto; }
+.batch-item .thumb { width: 40px; height: 58px; }
+.batch-item.flash { animation: flash 1.2s ease; }
+@keyframes flash { from { background: var(--accent-soft); } to { background: transparent; } }
+.qty { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.qty span { min-width: 20px; text-align: center; font-weight: 700; }
+.qty button, .batch-item .rm { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-size: 16px; line-height: 1; }
+.batch-item .rm { border: 0; color: var(--muted); font-size: 20px; }
+.batch-item .rm:hover { color: var(--danger); }
+
+/* ---------- Categories (reglages) ---------- */
+.cat-group { border: 1px solid var(--border); border-radius: 10px; margin-top: 8px; }
+.cat-group summary { cursor: pointer; padding: 10px 12px; list-style-position: inside; }
+.cat-group .list { padding: 0 12px 4px; }
+.cat-row input[type=checkbox] { flex-shrink: 0; }
 
 .shell { max-width: 1100px; margin: 0 auto; padding: 20px 16px 64px; }
 
