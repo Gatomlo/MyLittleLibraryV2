@@ -638,8 +638,10 @@
   async function viewCatalog() {
     const c = state.catalog;
     const withStatus = statusesOn();
-    const [cats, members] = await Promise.all([
+    const [cats, collections, tags, members] = await Promise.all([
       loadCategories(),
+      api('/api/public/collections').catch(() => []),
+      features().tags ? api('/api/public/tags').catch(() => []) : [],
       withStatus ? (membersCache || api('/api/members').then((m) => (membersCache = m))) : [],
     ]);
     if (withStatus && !c.statusUser) c.statusUser = String(state.user.id);
@@ -651,6 +653,8 @@
       <div class="filters">
         <input class="search" type="search" id="q" placeholder="Titre, auteur, éditeur, ISBN${canManage() ? ', code' : ''}…" value="${esc(c.q)}">
         <input type="search" id="cat" placeholder="Toutes les catégories" autocomplete="off">
+        ${collections.length ? '<input type="search" id="coll" placeholder="Toutes les collections" autocomplete="off">' : ''}
+        ${tags.some((t) => t.count) ? '<input type="search" id="tagf" placeholder="Tous les tags" autocomplete="off">' : ''}
         <select id="status">
           <option value="">Tous</option>
           <option value="available" ${c.status === 'available' ? 'selected' : ''}>Disponibles</option>
@@ -694,6 +698,22 @@
       value: c.category,
       onPick: (id) => { if (id !== c.category) { c.category = id; reload(); } },
     });
+    if ($('#tagf')) {
+      searchPicker({
+        input: $('#tagf'),
+        items: tags.filter((t) => t.count > 0).map((t) => ({ id: t.id, name: t.name, label: `#${t.name} (${t.count})` })),
+        value: c.tag,
+        onPick: (id) => { if (id !== (c.tag || '')) { c.tag = id; reload(); } },
+      });
+    }
+    if ($('#coll')) {
+      searchPicker({
+        input: $('#coll'),
+        items: collections.map((x) => ({ id: x.name, name: x.name, label: `${x.name} (${x.count})` })),
+        value: c.collection,
+        onPick: (name) => { if (name !== (c.collection || '')) { c.collection = name; reload(); } },
+      });
+    }
     $('#status').addEventListener('change', (e) => { c.status = e.target.value; reload(); });
     $('#sort').addEventListener('change', (e) => { c.sort = e.target.value; reload(); });
     [['#format', 'format'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion']].forEach(([sel, key]) => {
@@ -712,6 +732,8 @@
     const c = state.catalog;
     const withStatus = statusesOn();
     const params = new URLSearchParams({ q: c.q, category: c.category, status: c.status, sort: c.sort, page: c.page, limit: 48 });
+    if (c.collection) params.set('collection', c.collection);
+    if (features().tags && c.tag) params.set('tag', c.tag);
     if (features().ebooks && c.format) params.set('format', c.format);
     if (withStatus) {
       params.set('statusUser', c.statusUser || '');
@@ -727,11 +749,12 @@
         <div class="meta">
           <span class="t">${esc(b.title)}</span>
           <span class="a">${esc(b.authors)}${b.year ? ' · ' + b.year : ''}</span>
+          ${b.collection ? `<span class="coll">${esc(b.collection)}${b.collectionNumber ? ' · n° ' + esc(b.collectionNumber) : ''}</span>` : ''}
           ${withStatus ? statusIcons(b.status) : ''}
           ${availabilityBadge(b)}
         </div>
       </a>`).join('');
-    const filtered = c.q || c.category || c.status || c.format || c.reading || c.opinion;
+    const filtered = c.q || c.category || c.tag || c.collection || c.status || c.format || c.reading || c.opinion;
     if (append) list.insertAdjacentHTML('beforeend', html);
     else list.innerHTML = html || `<div class="empty" style="grid-column:1/-1">${filtered ? 'Aucun livre ne correspond.' : 'Le catalogue est vide pour le moment.'}</div>`;
     $('#count').textContent = `${data.total} livre${data.total > 1 ? 's' : ''}`;
@@ -748,10 +771,12 @@
     const facts = [
       ['Auteur(s)', esc(book.authors)],
       ['Éditeur', esc(book.publisher)],
+      ['Collection', book.collection ? `<a href="#/" data-collection="${esc(book.collection)}">${esc(book.collection)}</a>${book.collectionNumber ? ` · n° ${esc(book.collectionNumber)}` : ''}` : ''],
       ['Année', book.year || ''],
       ['Pages', book.pages || ''],
       ['ISBN', esc(book.isbn)],
       ['Catégories', book.categories.map((c) => `<span class="chip">${esc(c.name)}</span>`).join('')],
+      ['Tags', (book.tags || []).map((t) => `<a href="#/" class="chip chip-tag" data-tag="${t.id}">#${esc(t.name)}</a>`).join('')],
     ].filter(([, v]) => v);
     view().innerHTML = `
       <p><a href="#/">← Catalogue</a></p>
@@ -778,6 +803,22 @@
       ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}`;
     if (manage) bindAdminBook(book);
     if (manage && book.myStatus) bindStatusEditor(book);
+    // Tag : catalogue filtre sur ce tag.
+    $$('[data-tag]').forEach((a) => {
+      a.onclick = (e) => {
+        e.preventDefault();
+        Object.assign(state.catalog, { q: '', category: '', collection: '', status: '', format: '', reading: '', opinion: '', tag: a.dataset.tag, page: 1 });
+        go('#/');
+      };
+    });
+    // Lien "collection" : catalogue filtre sur toute la collection, dans l'ordre des numeros.
+    $$('[data-collection]').forEach((a) => {
+      a.onclick = (e) => {
+        e.preventDefault();
+        Object.assign(state.catalog, { q: '', category: '', tag: '', status: '', format: '', reading: '', opinion: '', collection: a.dataset.collection, page: 1 });
+        go('#/');
+      };
+    });
   }
 
   // Statuts de lecture (propres a chaque compte) : A lire / Lu, et Aime / Pas aime.
@@ -1261,13 +1302,15 @@
   // ================= Ajout / modification d'un livre =================
   async function viewBookForm(id) {
     const editing = !!id;
-    const [book, cats, locations] = await Promise.all([
+    const [book, cats, locations, collections, allTags] = await Promise.all([
       editing ? api(`/api/books/${id}`) : null,
       loadCategories(),
       api('/api/locations'),
+      api('/api/public/collections').catch(() => []),
+      features().tags ? api('/api/tags').catch(() => []) : [],
     ]);
-    const b = book || { isbn: '', title: '', subtitle: '', authors: '', publisher: '', year: '', pages: '', summary: '', notes: '', categories: [], coverUrl: null, format: 'physical' };
-    const form = { categories: b.categories.map((c) => c.name), cover: { url: b.coverUrl ? mediaSrc(b.coverUrl) : '', remoteUrl: '', data: '', removed: false } };
+    const b = book || { isbn: '', title: '', subtitle: '', authors: '', publisher: '', collection: '', collectionNumber: '', year: '', pages: '', summary: '', notes: '', categories: [], coverUrl: null, format: 'physical' };
+    const form = { categories: b.categories.map((c) => c.name), tags: (b.tags || []).map((t) => t.name), cover: { url: b.coverUrl ? mediaSrc(b.coverUrl) : '', remoteUrl: '', data: '', removed: false } };
     const showFormat = features().ebooks || b.format === 'ebook';
 
     view().innerHTML = `
@@ -1306,6 +1349,11 @@
           <div class="field"><label for="publisher">Éditeur</label><input id="publisher" name="publisher" value="${esc(b.publisher)}"></div>
           <div class="field"><label for="isbn">ISBN</label><input id="isbn" name="isbn" inputmode="numeric" value="${esc(b.isbn)}"></div>
         </div>
+        <div class="grid-collection">
+          <div class="field"><label for="collection">Collection / série</label><input id="collection" name="collection" list="coll-list" placeholder="facultatif" value="${esc(b.collection || '')}" autocomplete="off">
+            <datalist id="coll-list">${collections.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist></div>
+          <div class="field"><label for="collectionNumber">N° dans la collection</label><input id="collectionNumber" name="collectionNumber" placeholder="ex. 3" value="${esc(b.collectionNumber || '')}"></div>
+        </div>
         <div class="grid-2">
           <div class="field"><label for="year">Année</label><input id="year" name="year" type="number" min="1400" max="2100" value="${esc(b.year || '')}"></div>
           <div class="field"><label for="pages">Pagination (nombre de pages)</label><input id="pages" name="pages" type="number" min="1" value="${esc(b.pages || '')}"></div>
@@ -1321,6 +1369,15 @@
           </div>
           <datalist id="cat-list">${cats.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist>
         </div>
+        ${features().tags ? `<div class="field">
+          <label for="tag-input">Tags</label>
+          <div id="tag-chips"></div>
+          <div class="isbn-row">
+            <input id="tag-input" list="tag-list" placeholder="Ajouter un tag…" autocomplete="off">
+            <button class="btn" type="button" id="tag-add">Ajouter</button>
+          </div>
+          <datalist id="tag-list">${allTags.map((t) => `<option value="${esc(t.name)}">`).join('')}</datalist>
+        </div>` : ''}
         ${editing ? '' : `
         <div class="grid-2" id="copies-block" ${b.format === 'ebook' ? 'hidden' : ''}>
           <div class="field"><label for="copies">Nombre d'exemplaires</label><input id="copies" name="copies" type="number" min="1" max="50" value="1"></div>
@@ -1343,21 +1400,30 @@
       $('#cover-preview').innerHTML = src ? `<img src="${esc(src)}" alt="">` : '<span class="cover-fallback">Pas d\'image</span>';
       $('#cover-remove').hidden = !src;
     }
-    function renderCats() {
-      $('#cat-chips').innerHTML = form.categories.map((c, i) => `<span class="chip">${esc(c)}<button type="button" data-i="${i}" aria-label="Retirer">×</button></span>`).join('');
-      $$('#cat-chips button').forEach((btn) => { btn.onclick = () => { form.categories.splice(Number(btn.dataset.i), 1); renderCats(); }; });
-    }
-    function addCat() {
-      const v = $('#cat-input').value.trim();
-      if (v && !form.categories.some((c) => c.toLowerCase() === v.toLowerCase())) form.categories.push(v);
-      $('#cat-input').value = '';
-      renderCats();
+    // Champ "pastilles" (categories, tags) : saisie avec suggestions, Entree ou
+    // Ajouter pour valider, x pour retirer. Renvoie la fonction d'ajout.
+    function chipField(prefix, list, shown = (v) => v) {
+      const render = () => {
+        $(`#${prefix}-chips`).innerHTML = list.map((c, i) => `<span class="chip">${esc(shown(c))}<button type="button" data-i="${i}" aria-label="Retirer">×</button></span>`).join('');
+        $$(`#${prefix}-chips button`).forEach((btn) => { btn.onclick = () => { list.splice(Number(btn.dataset.i), 1); render(); }; });
+      };
+      const add = () => {
+        const input = $(`#${prefix}-input`);
+        input.value.split(',').map((v) => v.trim().replace(/^#/, '')).filter(Boolean).forEach((v) => {
+          if (!list.some((c) => c.toLowerCase() === v.toLowerCase())) list.push(v);
+        });
+        input.value = '';
+        render();
+      };
+      render();
+      $(`#${prefix}-add`).onclick = add;
+      $(`#${prefix}-input`).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+      $(`#${prefix}-input`).addEventListener('change', add);
+      return add;
     }
     renderCover();
-    renderCats();
-    $('#cat-add').onclick = addCat;
-    $('#cat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addCat(); } });
-    $('#cat-input').addEventListener('change', addCat);
+    const addCat = chipField('cat', form.categories);
+    const addTag = $('#tag-input') ? chipField('tag', form.tags, (t) => '#' + t) : () => {};
 
     $('#cover-file').onchange = async (e) => {
       const file = e.target.files[0];
@@ -1388,6 +1454,7 @@
           const d = r.found;
           const fill = (name, value) => { if (value && (!editing || !f[name].value)) f[name].value = value; };
           fill('title', d.title); fill('subtitle', d.subtitle); fill('authors', d.authors); fill('publisher', d.publisher);
+          fill('collection', d.collection); fill('collectionNumber', d.collectionNumber);
           fill('year', d.year); fill('pages', d.pages); fill('summary', d.summary);
           if (d.coverUrl && !form.cover.data && (!editing || !form.cover.url || form.cover.removed)) {
             form.cover.remoteUrl = d.coverUrl;
@@ -1436,12 +1503,14 @@
     f.onsubmit = async (e) => {
       e.preventDefault();
       addCat();
+      addTag();
       const btn = $('button[type=submit]', f);
       btn.disabled = true;
       const body = {
         isbn: f.isbn.value, title: f.title.value, subtitle: f.subtitle.value, authors: f.authors.value,
-        publisher: f.publisher.value, year: f.year.value, pages: f.pages.value, summary: f.summary.value,
+        publisher: f.publisher.value, collection: f.collection.value, collectionNumber: f.collectionNumber.value, year: f.year.value, pages: f.pages.value, summary: f.summary.value,
         notes: f.notes.value, categories: form.categories,
+        tags: features().tags ? form.tags : undefined,
         coverData: form.cover.data || undefined,
         coverUrl: !form.cover.data && form.cover.remoteUrl ? form.cover.remoteUrl : undefined,
         removeCover: form.cover.removed || undefined,
@@ -1478,6 +1547,9 @@
     { key: 'copies', label: 'Exemplaires', aliases: ['exemplaires', 'exemplaire', 'nb exemplaires', 'quantite', 'qte', 'nombre', 'copies'] },
     { key: 'notes', label: 'Notes', aliases: ['notes', 'note', 'remarque', 'remarques', 'commentaire', 'commentaires'] },
     { key: 'coverUrl', label: 'Couverture (URL)', aliases: ['couverture', 'couverture url', 'image', 'illustration', 'cover', 'url image'] },
+    { key: 'collection', label: 'Collection / série', aliases: ['collection', 'serie', 'series', 'saga', 'cycle'] },
+    { key: 'collectionNumber', label: 'N° dans la collection', aliases: ['n dans la collection', 'numero dans la collection', 'numero', 'num', 'no', 'tome', 'volume', 'n serie', 'numero de serie'] },
+    { key: 'tags', label: 'Tags', aliases: ['tags', 'tag', 'mots cles', 'mots-cles', 'motscles', 'keywords', 'etiquettes libres'] },
     { key: 'format', label: 'Type (papier / numérique)', aliases: ['type', 'format', 'support', 'type de livre'] },
   ];
   const normHeader = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -1592,7 +1664,8 @@
             <p class="small muted" style="margin-top:4px">Un ISBN présent plusieurs fois dans la liste compte pour plusieurs exemplaires.</p></div>` : ''}
           ${formatOption}
           <div class="field"><label>Emplacement</label><input id="opt-location" list="loc-list" placeholder="facultatif"></div>
-          <div class="field"><label>Catégories</label><input id="opt-cats" placeholder="facultatif, séparées par des virgules"></div>` : `
+          <div class="field"><label>Catégories</label><input id="opt-cats" placeholder="facultatif, séparées par des virgules"></div>
+          ${features().tags ? '<div class="field"><label>Tags</label><input id="opt-tags" placeholder="facultatif, séparés par des virgules"></div>' : ''}` : `
           <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="opt-fill" checked> Compléter les champs vides grâce à l'ISBN</label>
             <p class="small muted" style="margin-top:4px">Les valeurs du fichier restent prioritaires.</p></div>
           <div class="field"><label>Emplacement par défaut</label><input id="opt-location" list="loc-list" placeholder="si la colonne est vide"></div>`}
@@ -1649,7 +1722,8 @@
           else if (r.error) errors.push(r.error);
         });
         const format = $('#opt-format') ? $('#opt-format').value : 'physical';
-        s.items = Array.from(counts).map(([isbn, copies]) => ({ data: { isbn, copies, location, categories, format }, label: isbn }));
+        const tags = $('#opt-tags') ? $('#opt-tags').value : undefined;
+        s.items = Array.from(counts).map(([isbn, copies]) => ({ data: { isbn, copies, location, categories, tags, format }, label: isbn }));
         s.items.push(...errors.map((e) => ({ error: e, label: '' })));
         s.options = { onDuplicate: $('#opt-dup').value, fillFromIsbn: true };
         s.results = null;
@@ -1898,6 +1972,7 @@
           label: f.title || it.isbn,
           data: {
             isbn: it.isbn, copies: it.copies, location, categories, format,
+            tags: $('#opt-tags') ? $('#opt-tags').value : undefined,
             title: f.title || '', subtitle: f.subtitle || '', authors: f.authors || '', publisher: f.publisher || '',
             year: f.year || '', pages: f.pages || '', summary: f.summary || '', coverUrl: f.coverUrl || '',
           },
@@ -1925,6 +2000,29 @@
       return `<span class="badge badge-warn">Erreur</span> <span class="small">${esc(r.error)}</span>`;
     };
     const done = s.results ? s.results.filter(Boolean).length : 0;
+
+    // Rapport filtrable : chaque ligne a un statut (lignes non valides de la liste
+    // comprises), pour retrouver d'un coup ce qui n'a pas ete importe.
+    const rows = ok.map((it, i) => ({ it, i, r: s.results ? s.results[i] : null }))
+      .concat(bad.map((it) => ({ it, bad: true })));
+    const keyOf = (row) => (row.bad ? 'invalid' : row.r ? row.r.status : 'pending');
+    const notImported = (k) => k === 'error' || k === 'invalid' || k === 'skipped' || (k === 'pending' && s.results && !s.running);
+    const count = (pred) => rows.filter((row) => pred(keyOf(row))).length;
+    const filters = [
+      { key: 'all', label: 'Tous', count: rows.length, test: () => true },
+      { key: 'created', label: 'Ajoutés', count: count((k) => k === 'created'), test: (k) => k === 'created' },
+      { key: 'copies', label: 'Exemplaires ajoutés', count: count((k) => k === 'copies'), test: (k) => k === 'copies' },
+      { key: 'skipped', label: 'Ignorés', count: count((k) => k === 'skipped'), test: (k) => k === 'skipped' },
+      { key: 'error', label: 'Erreurs', count: count((k) => k === 'error' || k === 'invalid'), test: (k) => k === 'error' || k === 'invalid' },
+      { key: 'not', label: 'Non importés', count: count(notImported), test: notImported },
+      { key: 'pending', label: 'En attente', count: count((k) => k === 'pending'), test: (k) => k === 'pending' },
+    ];
+    let filter = s.filter || 'all';
+    if (!filters.some((f) => f.key === filter && (f.count || f.key === 'all'))) filter = 'all';
+    const shown = rows.filter((row) => filters.find((f) => f.key === filter).test(keyOf(row)));
+    const errorRows = rows.filter((row) => !row.bad && keyOf(row) === 'error');
+    const failedIsbns = errorRows.map((row) => row.it.data.isbn).filter(Boolean);
+    const retryable = errorRows.map((row) => row.i);
     const summary = s.results && !s.running ? (() => {
       const c = (st) => s.results.filter((r) => r && r.status === st).length;
       return `<div class="info-box"><strong>Import terminé${s.stop ? ' (arrêté)' : ''}.</strong> ${c('created')} livre(s) ajouté(s), ${c('copies')} exemplaire(s) ajouté(s) à des livres existants, ${c('skipped')} ignoré(s), ${c('error')} erreur(s).</div>
@@ -1936,21 +2034,35 @@
         ${summary}
         <p><strong>${ok.length} livre(s)</strong> à importer (${copies} exemplaire(s))${bad.length ? `, <span style="color:var(--danger)">${bad.length} ligne(s) en erreur ignorée(s)</span>` : ''}.
           ${s.mode === 'isbn' || s.options.fillFromIsbn ? '<span class="small muted">La recherche des informations prend 1 à 2 secondes par ISBN.</span>' : ''}</p>
-        ${bad.length ? `<details ${ok.length ? '' : 'open'}><summary class="small" style="cursor:pointer">Voir les erreurs</summary><ul class="small">${bad.map((b) => `<li>${esc(b.error)}</li>`).join('')}</ul></details>` : ''}
         ${s.running || s.results ? `<div style="background:var(--surface-2);border-radius:999px;height:10px;overflow:hidden;margin:12px 0"><div style="height:100%;width:${ok.length ? Math.round((done / ok.length) * 100) : 0}%;background:var(--accent);transition:width .2s"></div></div>
           <p class="small muted">${done} / ${ok.length}</p>` : ''}
         <div class="btn-row" style="margin:12px 0">
           ${s.running ? '<button class="btn btn-danger" id="stop">Arrêter</button>'
             : (!s.results && ok.length ? `<button class="btn btn-primary" id="run">Importer ${ok.length} livre(s)</button>` : '')}
+          ${!s.running && failedIsbns.length ? `<button class="btn" id="copy-failed">Copier les ${failedIsbns.length} ISBN en erreur</button>` : ''}
+          ${!s.running && retryable.length ? `<button class="btn" id="retry">Réessayer les ${retryable.length} erreur(s)</button>` : ''}
         </div>
-        ${ok.length ? `<div class="table-wrap" style="max-height:420px;overflow:auto"><table><thead><tr><th>#</th><th>ISBN</th><th>Titre</th><th>Ex.</th><th>Résultat</th></tr></thead><tbody>
-          ${ok.map((it, i) => `<tr><td class="small muted">${i + 1}</td><td class="code small">${esc(it.data.isbn || '—')}</td>
-            <td>${it.data.title ? esc(it.data.title) : '<span class="muted small">(complété via l\'ISBN)</span>'}${it.warning ? `<div class="small" style="color:var(--warn)">${esc(it.warning)}</div>` : ''}</td>
-            <td>${it.data.copies || 1}</td><td>${statusHtml(s.results && s.results[i])}</td></tr>`).join('')}
-        </tbody></table></div>` : ''}
+        ${rows.length ? `
+          <div class="chips-filter">${filters.filter((f) => f.key === 'all' || f.count).map((f) => `
+            <button type="button" class="pill ${filter === f.key ? 'on pill-read' : ''}" data-filter="${f.key}">${f.label} (${f.count})</button>`).join('')}</div>
+          <div class="table-wrap" style="max-height:460px;overflow:auto"><table><thead><tr><th>#</th><th>ISBN</th><th>Titre</th><th>Ex.</th><th>Résultat</th></tr></thead><tbody>
+          ${shown.map((row) => row.bad
+            ? `<tr><td class="small muted">—</td><td class="code small">—</td><td colspan="2" class="small">${esc(row.it.error)}</td><td><span class="badge badge-warn">Non valide</span></td></tr>`
+            : `<tr><td class="small muted">${row.i + 1}</td><td class="code small">${esc(row.it.data.isbn || '—')}</td>
+              <td>${row.it.data.title ? esc(row.it.data.title) : '<span class="muted small">(complété via l\'ISBN)</span>'}${row.it.warning ? `<div class="small" style="color:var(--warn)">${esc(row.it.warning)}</div>` : ''}</td>
+              <td>${row.it.data.copies || 1}</td><td>${statusHtml(row.r)}</td></tr>`).join('')
+            || '<tr><td colspan="5" class="muted small">Aucune ligne pour ce filtre.</td></tr>'}
+          </tbody></table></div>` : ''}
       </div>`;
+    $$('[data-filter]').forEach((btn) => { btn.onclick = () => { s.filter = btn.dataset.filter; renderPreview(); }; });
+    const cf = $('#copy-failed');
+    if (cf) cf.onclick = async () => {
+      try { await navigator.clipboard.writeText(failedIsbns.join('\n')); toast('ISBN copiés : colle-les dans « Liste d\'ISBN » pour les réessayer plus tard.'); } catch (e) { prompt('ISBN en erreur :', failedIsbns.join(' ')); }
+    };
+    const rt = $('#retry');
+    if (rt) rt.onclick = () => runImport(retryable);
     const run = $('#run');
-    if (run) run.onclick = runImport;
+    if (run) run.onclick = () => runImport();
     const stop = $('#stop');
     if (stop) stop.onclick = () => { s.stop = true; stop.disabled = true; stop.textContent = 'Arrêt après le livre en cours…'; };
     const gl = $('#go-labels');
@@ -1959,15 +2071,19 @@
 
   function warnBeforeLeaving(e) { e.preventDefault(); e.returnValue = ''; }
 
-  async function runImport() {
+  // Import de toutes les lignes, ou seulement de celles indiquees (nouvel essai des erreurs).
+  async function runImport(onlyIndexes) {
     const s = importState;
     const ok = s.items.filter((i) => i.data);
-    s.results = new Array(ok.length).fill(null);
+    if (!onlyIndexes || !s.results) { s.results = new Array(ok.length).fill(null); s.filter = 'all'; }
+    const indexes = onlyIndexes || ok.map((_, i) => i);
+    indexes.forEach((i) => { s.results[i] = null; });
     s.running = true;
     s.stop = false;
     window.addEventListener('beforeunload', warnBeforeLeaving);
     renderPreview();
-    for (let i = 0; i < ok.length && !s.stop; i++) {
+    for (const i of indexes) {
+      if (s.stop) break;
       try {
         s.results[i] = await api('/api/import/book', { method: 'POST', body: { ...ok[i].data, ...s.options } });
       } catch (err) {
@@ -2358,7 +2474,7 @@
 
   // ================= Reglages de la bibliotheque =================
   async function viewSettings() {
-    const [s, cats] = await Promise.all([api('/api/settings'), api('/api/categories')]);
+    const [s, cats, tags] = await Promise.all([api('/api/settings'), api('/api/categories'), api('/api/tags').catch(() => [])]);
     // Options absentes : le serveur tourne encore une version precedente de l'app.
     const feat = s.features || null;
     const libraryUrl = location.origin + LIB;
@@ -2414,10 +2530,13 @@
           <span><strong>Livres numériques</strong><br><span class="small muted">Permet d'ajouter des livres de type « numérique » : ils apparaissent au catalogue avec leur étiquette « Livre numérique », sans exemplaire, code, étiquette ni prêt.</span></span></label>
         <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="readingStatus" ${feat && feat.readingStatus ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
           <span><strong>Statuts de lecture</strong><br><span class="small muted">Chaque compte peut marquer un livre « À lire » ou « Lu », et « Aimé » ou « Pas aimé ». Visibles dans le catalogue (gestion), avec des filtres par compte. Jamais affichés sur le catalogue public.</span></span></label>
+        <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="tags" ${feat && feat.tags ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
+          <span><strong>Tags</strong><br><span class="small muted">Mots-clés libres en plus des catégories (ex. #incontournable, #formation-2025). Ajoutés sur la fiche d'un livre, visibles et filtrables dans le catalogue.</span></span></label>
       </form>
 
       <h2>Catégories</h2>
       <div class="card" id="cat-manager"></div>
+      ${feat && feat.tags ? '<h2>Tags</h2><div class="card" id="tag-manager"></div>' : ''}
 
       <h2>Intégration WordPress / Divi</h2>
       <div class="card">
@@ -2503,28 +2622,37 @@
           await loadSettings();
           membersCache = null;
           toast(cb.checked ? 'Option activée.' : 'Option désactivée.');
+          if (cb.name === 'tags') route(); // affiche / masque la gestion des tags
         } catch (err) { cb.checked = !cb.checked; toast(err.message, 'error'); }
       };
     });
-    categoryManager($('#cat-manager'), cats);
+    categoryManager($('#cat-manager'), cats, 'categories');
+    if ($('#tag-manager')) categoryManager($('#tag-manager'), tags, 'tags');
   }
 
-  // Gestion des categories : recherche, regroupement alphabetique repliable,
-  // renommage, suppression et fusion de plusieurs categories en une seule.
-  function categoryManager(root, initial) {
+  // Gestion des categories (ou des tags) : recherche, regroupement alphabetique
+  // repliable, renommage, suppression et fusion de plusieurs termes en un seul.
+  const TERM_KINDS = {
+    categories: { path: 'categories', one: 'catégorie', many: 'catégories', the: 'la catégorie', prefix: '' },
+    tags: { path: 'tags', one: 'tag', many: 'tags', the: 'le tag', prefix: '#' },
+  };
+  function categoryManager(root, initial, kindName = 'categories') {
+    const K = TERM_KINDS[kindName];
+    const id = (x) => `${K.path}-${x}`;
+    const label = (n) => K.prefix + n;
     let cats = initial;
     let q = '';
     const selected = new Set();
     const open = new Set();
     root.innerHTML = `
       <div class="isbn-row">
-        <input type="search" id="cat-q" placeholder="Rechercher une catégorie…" autocomplete="off">
+        <input type="search" id="${id('q')}" placeholder="Rechercher ${K.one === 'tag' ? 'un tag' : 'une catégorie'}…" autocomplete="off">
       </div>
-      <form class="isbn-row" id="new-cat" style="margin-top:8px"><input name="name" placeholder="Nouvelle catégorie"><button class="btn" type="submit">Ajouter</button></form>
-      <div id="merge-bar"></div>
-      <div id="cat-body" style="margin-top:10px"></div>`;
+      <form class="isbn-row" id="${id('new')}" style="margin-top:8px"><input name="name" placeholder="${K.one === 'tag' ? 'Nouveau tag' : 'Nouvelle catégorie'}"><button class="btn" type="submit">Ajouter</button></form>
+      <div class="merge-bar"></div>
+      <div class="term-body" style="margin-top:10px"></div>`;
 
-    const reload = async () => { cats = await api('/api/categories'); render(); };
+    const reload = async () => { cats = await api(`/api/${K.path}`); render(); };
     const letterOf = (name) => {
       const l = normHeader(name).charAt(0).toUpperCase();
       return /[A-Z]/.test(l) ? l : '#';
@@ -2532,55 +2660,55 @@
     const rowHtml = (c) => `
       <div class="list-item cat-row">
         <input type="checkbox" data-sel="${c.id}" ${selected.has(c.id) ? 'checked' : ''} aria-label="Sélectionner ${esc(c.name)}">
-        <div class="grow">${esc(c.name)} <span class="small muted">(${c.count} livre${c.count > 1 ? 's' : ''})</span></div>
+        <div class="grow">${esc(label(c.name))} <span class="small muted">(${c.count} livre${c.count > 1 ? 's' : ''})</span></div>
         <button class="btn btn-small" data-rename="${c.id}">Renommer</button>
         <button class="btn btn-small btn-danger" data-delcat="${c.id}">Supprimer</button>
       </div>`;
 
     function renderMergeBar() {
-      const bar = $('#merge-bar', root);
+      const bar = $('.merge-bar', root);
       const chosen = cats.filter((c) => selected.has(c.id));
       if (!chosen.length) { bar.innerHTML = ''; return; }
       bar.innerHTML = `<div class="info-box" style="margin:10px 0 0">
-        <strong>${chosen.length} sélectionnée(s)</strong> : ${chosen.map((c) => esc(c.name)).join(', ')}
-        ${chosen.length >= 2 ? `<form class="isbn-row" id="merge-form" style="margin-top:8px">
-          <input name="name" list="merge-names" required placeholder="Nom de la catégorie finale" value="${esc(chosen[0].name)}">
-          <datalist id="merge-names">${chosen.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist>
+        <strong>${chosen.length} sélectionnée(s)</strong> : ${chosen.map((c) => esc(label(c.name))).join(', ')}
+        ${chosen.length >= 2 ? `<form class="isbn-row" class="merge-form" style="margin-top:8px">
+          <input name="name" list="${id('merge-names')}" required placeholder="Nom final" value="${esc(chosen[0].name)}">
+          <datalist id="${id('merge-names')}">${chosen.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist>
           <button class="btn btn-primary" type="submit">Fusionner</button>
-        </form>` : '<p class="small" style="margin:6px 0 0">Coche au moins deux catégories pour les fusionner.</p>'}
-        <button class="btn btn-small" type="button" id="merge-clear" style="margin-top:8px">Désélectionner</button>
+        </form>` : '<p class="small" style="margin:6px 0 0">Coche au moins deux ${K.many} pour les fusionner.</p>'}
+        <button type="button" class="btn btn-small btn-merge-clear" style="margin-top:8px">Désélectionner</button>
       </div>`;
-      $('#merge-clear', bar).onclick = () => { selected.clear(); render(); };
-      const form = $('#merge-form', bar);
+      $('.btn-merge-clear', bar).onclick = () => { selected.clear(); render(); };
+      const form = $('.merge-form', bar);
       if (form) form.onsubmit = async (e) => {
         e.preventDefault();
         const name = e.target.name.value.trim();
         const books = chosen.reduce((n, c) => n + c.count, 0);
         if (!confirm(`Fusionner ${chosen.map((c) => `« ${c.name} »`).join(', ')} en « ${name} » ?\nLes livres concernés (${books}) seront rangés dans « ${name} ».`)) return;
         try {
-          const r = await api('/api/categories/merge', { method: 'POST', body: { ids: chosen.map((c) => c.id), name } });
+          const r = await api(`/api/${K.path}/merge`, { method: 'POST', body: { ids: chosen.map((c) => c.id), name } });
           selected.clear();
-          toast(`Catégories fusionnées dans « ${r.name} » (${r.books} livre(s)).`);
+          toast(`Fusion effectuée dans « ${r.name} » (${r.books} livre(s)).`);
           reload();
         } catch (err) { toast(err.message, 'error'); }
       };
     }
 
     function render() {
-      const body = $('#cat-body', root);
+      const body = $('.term-body', root);
       const nq = normHeader(q);
       if (!cats.length) {
-        body.innerHTML = '<p class="muted">Aucune catégorie. Elles se créent depuis la fiche d\'un livre ou ici.</p>';
+        body.innerHTML = `<p class="muted">Rien pour le moment : ${K.many === 'tags' ? 'les tags' : 'les catégories'} se créent depuis la fiche d'un livre ou ici.</p>`;
       } else if (nq) {
         const found = cats.filter((c) => normHeader(c.name).includes(nq));
-        body.innerHTML = found.length ? `<div class="list">${found.map(rowHtml).join('')}</div>` : '<p class="muted small">Aucune catégorie ne correspond.</p>';
+        body.innerHTML = found.length ? `<div class="list">${found.map(rowHtml).join('')}</div>` : '<p class="muted small">Aucun résultat.</p>';
       } else {
         const groups = new Map();
         cats.forEach((c) => { const l = letterOf(c.name); if (!groups.has(l)) groups.set(l, []); groups.get(l).push(c); });
-        body.innerHTML = `<p class="small muted">${cats.length} catégorie(s). Clique sur une lettre pour la déplier.</p>` +
+        body.innerHTML = `<p class="small muted">${cats.length} ${K.one}(s). Clique sur une lettre pour la déplier.</p>` +
           Array.from(groups).sort(([a], [b]) => a.localeCompare(b)).map(([l, list]) => `
           <details class="cat-group" data-letter="${l}" ${open.has(l) ? 'open' : ''}>
-            <summary><strong>${l}</strong> <span class="small muted">${list.length} catégorie(s)${list.some((c) => selected.has(c.id)) ? ' · sélection' : ''}</span></summary>
+            <summary><strong>${l}</strong> <span class="small muted">${list.length} ${K.one}(s)${list.some((c) => selected.has(c.id)) ? ' · sélection' : ''}</span></summary>
             <div class="list">${list.map(rowHtml).join('')}</div>
           </details>`).join('');
         $$('.cat-group', body).forEach((d) => d.addEventListener('toggle', () => { if (d.open) open.add(d.dataset.letter); else open.delete(d.dataset.letter); }));
@@ -2593,11 +2721,11 @@
           const c = cats.find((x) => x.id === Number(btn.dataset.rename));
           const name = prompt('Nouveau nom :', c.name);
           if (!name || name === c.name) return;
-          try { await api(`/api/categories/${c.id}`, { method: 'PUT', body: { name } }); reload(); } catch (err) {
+          try { await api(`/api/${K.path}/${c.id}`, { method: 'PUT', body: { name } }); reload(); } catch (err) {
             // Nom deja pris : proposer la fusion avec la categorie existante.
             const other = cats.find((x) => x.name.toLowerCase() === name.toLowerCase());
-            if (other && confirm(`La catégorie « ${other.name} » existe déjà. Fusionner « ${c.name} » dedans ?`)) {
-              await api('/api/categories/merge', { method: 'POST', body: { ids: [c.id, other.id], name: other.name } }).catch((e) => toast(e.message, 'error'));
+            if (other && confirm(`${K.the.charAt(0).toUpperCase() + K.the.slice(1)} « ${other.name} » existe déjà. Fusionner « ${c.name} » dedans ?`)) {
+              await api(`/api/${K.path}/merge`, { method: 'POST', body: { ids: [c.id, other.id], name: other.name } }).catch((e) => toast(e.message, 'error'));
               reload();
             } else toast(err.message, 'error');
           }
@@ -2606,8 +2734,8 @@
       $$('[data-delcat]', body).forEach((btn) => {
         btn.onclick = async () => {
           const c = cats.find((x) => x.id === Number(btn.dataset.delcat));
-          if (!confirm(`Supprimer la catégorie « ${c.name} » ? Les ${c.count} livre(s) concernés restent au catalogue.`)) return;
-          await api(`/api/categories/${c.id}`, { method: 'DELETE' });
+          if (!confirm(`Supprimer ${K.the} « ${c.name} » ? Les ${c.count} livre(s) concernés restent au catalogue.`)) return;
+          await api(`/api/${K.path}/${c.id}`, { method: 'DELETE' });
           selected.delete(c.id);
           reload();
         };
@@ -2615,11 +2743,11 @@
       renderMergeBar();
     }
 
-    $('#cat-q', root).addEventListener('input', debounce((e) => { q = e.target.value; render(); }, 150));
-    $('#new-cat', root).onsubmit = async (e) => {
+    $(`#${id('q')}`, root).addEventListener('input', debounce((e) => { q = e.target.value; render(); }, 150));
+    $(`#${id('new')}`, root).onsubmit = async (e) => {
       e.preventDefault();
       if (!e.target.name.value.trim()) return;
-      try { await api('/api/categories', { method: 'POST', body: { name: e.target.name.value } }); e.target.reset(); reload(); } catch (err) { toast(err.message, 'error'); }
+      try { await api(`/api/${K.path}`, { method: 'POST', body: { name: e.target.name.value } }); e.target.reset(); reload(); } catch (err) { toast(err.message, 'error'); }
     };
     render();
   }

@@ -122,12 +122,12 @@ p { margin: 0 0 10px; }
 .search-results .sel-row button.add { color: var(--accent); font-size: 13px; font-weight: 700; border: 1px solid var(--border); border-radius: 8px; padding: 3px 8px; }
 .summary-line { font-weight: 700; margin: 10px 0 4px; }
 .seg-3 { grid-template-columns: repeat(3, 1fr); }
+.chips-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 
 /* ---------- Livres numeriques, statuts de lecture ---------- */
 .badge-ebook { background: #e3e4fa; color: #3f46a8; }
 @media (prefers-color-scheme: dark) { .badge-ebook { background: #26284a; color: #a9aefc; } }
-.filters-2 { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: -6px; }
-@media (max-width: 760px) { .filters-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.filters-2 { margin-top: -6px; }
 .status-icons { display: flex; gap: 4px; flex-wrap: wrap; }
 .st { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
 .st-to_read { background: var(--warn-soft); color: var(--warn); }
@@ -212,6 +212,8 @@ input[type="checkbox"] { width: auto; min-height: 0; accent-color: var(--accent)
 .badge-warn { background: var(--warn-soft); color: var(--warn); }
 .badge-muted { background: var(--surface-2); color: var(--muted); }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 600; margin: 0 4px 4px 0; }
+.chip-tag { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.chip-tag:hover { background: var(--accent-soft); color: var(--accent); }
 .chip button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 0 0 2px; }
 
 .empty { text-align: center; padding: 40px 16px; color: var(--muted); }
@@ -219,8 +221,10 @@ input[type="checkbox"] { width: auto; min-height: 0; accent-color: var(--accent)
 .info-box { background: var(--accent-soft); padding: 10px 12px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
 
 /* ---------- Catalogue ---------- */
-.filters { display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
-@media (max-width: 760px) { .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .filters .search { grid-column: 1 / -1; } }
+/* Filtres : se repartissent sur la largeur et passent a la ligne selon la place. */
+.filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.filters > * { flex: 1 1 160px; min-width: 0; width: auto; }
+.filters > .search { flex: 2 1 260px; }
 .books { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
 @media (max-width: 420px) { .books { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
 .book-card {
@@ -235,6 +239,8 @@ input[type="checkbox"] { width: auto; min-height: 0; accent-color: var(--accent)
 .book-card .t { font-weight: 700; font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .book-card .a { font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .book-card .badge { align-self: flex-start; margin-top: auto; }
+.book-card .coll { font-size: 12px; color: var(--accent); font-weight: 600; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.grid-collection { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); gap: 0 14px; }
 .more { text-align: center; margin-top: 18px; }
 
 /* ---------- Fiche livre ---------- */

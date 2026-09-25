@@ -30,8 +30,13 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **Options par bibliothèque** (Réglages) : livres numériques (sans exemplaire,
   étiquette ni prêt) et statuts de lecture par compte (À lire / Lu, Aimé / Pas aimé),
   affichés et filtrables dans le catalogue de gestion.
-- **Catégories** : recherche, regroupement alphabétique repliable, fusion de
-  plusieurs catégories (les livres suivent).
+- **Catégories** et **tags** (option par bibliothèque) : recherche, regroupement
+  alphabétique repliable, fusion de plusieurs termes (les livres suivent), filtres
+  avec recherche dans le catalogue.
+- **Collection / série** et numéro dans la collection : récupérés via l'ISBN quand la
+  BnF / Open Library les connaissent ; filtre du catalogue trié par numéro.
+- **Rapport d'import** filtrable par statut (ajoutés, ignorés, erreurs, non importés),
+  avec copie des ISBN en erreur et nouvel essai des erreurs.
 - **ISBN** : ISBN-13 (978/979), ISBN-10, avec ou sans tirets/espaces, reconnus à la
   saisie, au scan (EAN-13), à l'import et dans la recherche du catalogue.
 - **Import** (page Importer) : liste d'ISBN (fiches complétées automatiquement,

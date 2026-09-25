@@ -51,6 +51,7 @@ function jsonOnly(req, res, next) {
 function apiErrors(err, req, res, next) { // eslint-disable-line no-unused-vars
   if (err && /UNIQUE constraint failed: categories/.test(err.message)) err = httpError(409, 'Cette catégorie existe déjà.');
   if (err && /UNIQUE constraint failed: users/.test(err.message)) err = httpError(409, 'Cet identifiant est déjà utilisé.');
+  if (err && /UNIQUE constraint failed: tags/.test(err.message)) err = httpError(409, 'Ce tag existe déjà.');
   const status = err.status || err.statusCode || 500;
   if (status >= 500) console.error(err);
   res.status(status).json({ error: status >= 500 ? 'Erreur interne du serveur.' : err.message });

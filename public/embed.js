@@ -121,8 +121,9 @@
 
     async function openBook(id) {
       const b = await get('/api/public/books/' + id);
-      const facts = [['Auteur(s)', b.authors], ['Éditeur', b.publisher], ['Année', b.year], ['Pages', b.pages], ['ISBN', b.isbn],
-        ['Catégories', b.categories.map((c) => c.name).join(', ')]].filter(([, v]) => v);
+      const facts = [['Auteur(s)', b.authors], ['Éditeur', b.publisher],
+        ['Collection', b.collection ? b.collection + (b.collectionNumber ? ' · n° ' + b.collectionNumber : '') : ''], ['Année', b.year], ['Pages', b.pages], ['ISBN', b.isbn],
+        ['Catégories', b.categories.map((c) => c.name).join(', ')], ['Tags', (b.tags || []).map((t) => '#' + t.name).join(' ')]].filter(([, v]) => v);
       // La fenetre est attachee directement a <body>, au-dessus de tout (z-index
       // maximal) : dans le catalogue, elle resterait prisonniere du contexte
       // d'empilement de la section Divi et passerait sous le menu fixe du theme.
