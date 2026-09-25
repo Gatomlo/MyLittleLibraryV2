@@ -323,6 +323,72 @@
     return { stop, readPhoto };
   }
 
+  // Recherche de couvertures en ligne : grille de propositions (meme ISBN, autres
+  // editions...), recherche modifiable et collage d'une URL. Renvoie l'URL choisie ou null.
+  function openCoverSearch(initial) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      backdrop.innerHTML = `
+        <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="cs-title">
+          <h2 id="cs-title">Chercher une couverture</h2>
+          <form class="cover-search-form">
+            <input name="isbn" placeholder="ISBN" inputmode="numeric" value="${esc(initial.isbn || '')}" autocomplete="off">
+            <input name="title" placeholder="Titre" value="${esc(initial.title || '')}" autocomplete="off">
+            <input name="author" placeholder="Auteur" value="${esc(initial.author || '')}" autocomplete="off">
+            <button class="btn btn-primary" type="submit">Chercher</button>
+          </form>
+          <p class="small muted" id="cs-status"></p>
+          <div class="cover-results" id="cs-results"></div>
+          <form class="isbn-row cover-url-form" style="margin-top:12px">
+            <input name="url" type="url" placeholder="…ou colle l'adresse d'une image (https://…)" autocomplete="off">
+            <button class="btn" type="submit">Utiliser</button>
+          </form>
+          <div class="btn-row" style="margin-top:12px"><button class="btn" type="button" data-close style="margin-left:auto">Fermer</button></div>
+        </div>`;
+      document.body.appendChild(backdrop);
+      const finish = (value) => { backdrop.remove(); document.removeEventListener('keydown', onKey); resolve(value); };
+      const onKey = (e) => { if (e.key === 'Escape') finish(null); };
+      document.addEventListener('keydown', onKey);
+      $('[data-close]', backdrop).onclick = () => finish(null);
+      backdrop.addEventListener('click', (e) => { if (e.target === backdrop) finish(null); });
+      const searchForm = $('.cover-search-form', backdrop);
+      const status = $('#cs-status', backdrop);
+      const results = $('#cs-results', backdrop);
+      let seq = 0;
+      async function run() {
+        const q = Object.fromEntries(new FormData(searchForm));
+        if (!q.isbn.trim() && !q.title.trim()) { status.textContent = 'Indique un ISBN ou un titre.'; return; }
+        const my = ++seq;
+        status.textContent = 'Recherche en cours…';
+        results.innerHTML = '';
+        try {
+          const { covers } = await api('/api/covers?' + new URLSearchParams(q));
+          if (my !== seq) return;
+          status.textContent = covers.length ? `${covers.length} couverture(s) trouvée(s) — clique pour choisir.` : 'Aucune couverture trouvée. Essaie avec un autre titre ou colle une adresse d\'image.';
+          results.innerHTML = covers.map((c, i) => `
+            <button type="button" class="cover-choice" data-i="${i}" title="${esc([c.title, c.detail].filter(Boolean).join(' — '))}">
+              <span class="cover-choice-img"><img src="${esc(c.thumb || c.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"
+                onerror="this.closest('.cover-choice').remove()"></span>
+              <span class="cover-choice-src">${esc(c.source)}</span>
+              <span class="cover-choice-title">${esc(c.title)}</span>
+            </button>`).join('');
+          $$('.cover-choice', results).forEach((btn) => { btn.onclick = () => finish(covers[Number(btn.dataset.i)].url); });
+        } catch (err) {
+          if (my === seq) status.textContent = err.message;
+        }
+      }
+      searchForm.onsubmit = (e) => { e.preventDefault(); run(); };
+      $('.cover-url-form', backdrop).onsubmit = (e) => {
+        e.preventDefault();
+        const url = e.target.elements.url.value.trim();
+        if (!/^https?:\/\//i.test(url)) { toast('Adresse d\'image invalide.', 'error'); return; }
+        finish(url);
+      };
+      run();
+    });
+  }
+
   // Ouvre la camera dans une fenetre et renvoie la premiere valeur lue acceptee par
   // `accept` (ou null si l'utilisateur ferme). Saisie manuelle et photo en secours.
   function openScanner({ title, hint, formats, accept, manualLabel }) {
@@ -1519,6 +1585,7 @@
             <label>Illustration (couverture)</label>
             <div class="btn-row">
               <label class="btn btn-small" style="margin:0">Choisir / photographier<input type="file" id="cover-file" accept="image/*" hidden></label>
+              <button class="btn btn-small" type="button" id="cover-online">Chercher en ligne</button>
               <button class="btn btn-small btn-danger" type="button" id="cover-remove">Retirer</button>
             </div>
             <p class="small muted" style="margin-top:8px">La couverture trouvée par la recherche ISBN est enregistrée automatiquement.</p>
@@ -1629,6 +1696,12 @@
         form.cover.remoteUrl = '';
         renderCover();
       } catch (err) { toast(err.message, 'error'); }
+    };
+    $('#cover-online').onclick = async () => {
+      const url = await openCoverSearch({ isbn: f.elements.isbn.value || $('#isbn-search').value, title: f.elements.title.value, author: f.elements.authors.value });
+      if (!url) return;
+      form.cover = { url: form.cover.url, remoteUrl: url, data: '', removed: false };
+      renderCover();
     };
     $('#cover-remove').onclick = () => { form.cover = { url: '', remoteUrl: '', data: '', removed: true }; renderCover(); };
 

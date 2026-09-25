@@ -21,6 +21,8 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   catégorie et disponibilité, fiche détaillée.
 - **Fiche livre** : titre, sous-titre, auteurs, éditeur, année, pagination, ISBN,
   résumé, couverture, catégories, notes internes (visibles une fois connecté).
+- **Couvertures** : envoi d'une image / photo, ou bouton « Chercher en ligne » (Open Library,
+  Google Books, Amazon par ISBN, titre et auteur ; autres éditions proposées ; collage d'une URL).
 - **Ajout par ISBN** : scan du code-barres (webcam ou caméra du téléphone), saisie de
   l'ISBN ou encodage manuel. Recherche dans la BnF, Open Library et Google Books.
 - **Scan en série** (page Importer) : caméra ouverte en continu (ou lecteur USB),
