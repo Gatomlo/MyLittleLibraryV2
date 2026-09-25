@@ -28,7 +28,7 @@
   const features = () => (state.settings && state.settings.features) || {};
   const statusesOn = () => canManage() && !!features().readingStatus;
 
-  const READING_LABELS = { to_read: 'À lire', read: 'Lu' };
+  const READING_LABELS = { to_read: 'À lire', reading: 'En cours', read: 'Lu', abandoned: 'Abandonné' };
   const OPINION_LABELS = { liked: 'Aimé', disliked: 'Pas aimé' };
   const OPINION_ICONS = { liked: '♥', disliked: '✕' };
 
@@ -778,7 +778,9 @@
       controls.push(['reading', '', `<select id="reading">
         <option value="">Lecture : tous</option>
         <option value="to_read" ${sel(c.reading, 'to_read')}>À lire</option>
+        <option value="reading" ${sel(c.reading, 'reading')}>En cours</option>
         <option value="read" ${sel(c.reading, 'read')}>Lu</option>
+        <option value="abandoned" ${sel(c.reading, 'abandoned')}>Abandonné</option>
         <option value="none" ${sel(c.reading, 'none')}>Sans statut</option></select>`]);
       controls.push(['opinion', '', `<select id="opinion">
         <option value="">Avis : tous</option>
@@ -961,33 +963,57 @@
     });
   }
 
-  // Statuts de lecture (propres a chaque compte) : A lire / Lu, et Aime / Pas aime.
-  // Un clic sur le statut actif le retire.
+  // Statuts de lecture (propres a chaque compte) : A lire / En cours / Lu /
+  // Abandonne, et Aime / Pas aime. Un clic sur le statut actif le retire. Les dates
+  // (debut, fin, abandon) sont enregistrees automatiquement et corrigeables.
+  const day = (s) => (s ? s.slice(0, 10) : '');
+  const daysBetween = (a, b) => Math.max(0, Math.round((Date.parse(b.slice(0, 10)) - Date.parse(a.slice(0, 10))) / 86400000));
+
   function statusEditorHtml(book) {
     const s = book.myStatus;
     const btn = (group, value, label) => `<button type="button" class="pill ${s[group] === value ? 'on pill-' + value : ''}" data-${group}="${value}">${label}</button>`;
     const others = (book.statuses || []).map((o) => `<span class="small">${esc(o.username)} : ${[o.reading && READING_LABELS[o.reading], o.opinion && OPINION_LABELS[o.opinion]].filter(Boolean).join(', ')}</span>`);
+    const dateField = (field, label) => `<label class="date-field">${label} <input type="date" data-date="${field}" value="${day(s[field])}" max="${new Date().toISOString().slice(0, 10)}"></label>`;
+    let dates = '';
+    if (s.reading === 'reading') dates = dateField('startedAt', 'Commencé le');
+    if (s.reading === 'read') {
+      dates = dateField('startedAt', 'Commencé le') + dateField('finishedAt', 'Terminé le')
+        + (s.startedAt && s.finishedAt ? `<span class="small muted">${daysBetween(s.startedAt, s.finishedAt)} jour(s) de lecture</span>` : '');
+    }
+    if (s.reading === 'abandoned') dates = dateField('startedAt', 'Commencé le') + dateField('abandonedAt', 'Abandonné le');
     return `<div class="status-editor">
       <div class="btn-row">
-        <span class="small muted">Ma lecture</span>${btn('reading', 'to_read', 'À lire')}${btn('reading', 'read', 'Lu')}
-        <span class="small muted" style="margin-left:8px">Mon avis</span>${btn('opinion', 'liked', '♥ Aimé')}${btn('opinion', 'disliked', '✕ Pas aimé')}
+        <span class="small muted">Ma lecture</span>${btn('reading', 'to_read', 'À lire')}${btn('reading', 'reading', 'En cours')}${btn('reading', 'read', 'Lu')}${btn('reading', 'abandoned', 'Abandonné')}
+      </div>
+      ${dates ? `<div class="btn-row status-dates">${dates}</div>` : ''}
+      <div class="btn-row" style="margin-top:6px">
+        <span class="small muted">Mon avis</span>${btn('opinion', 'liked', '♥ Aimé')}${btn('opinion', 'disliked', '✕ Pas aimé')}
       </div>
       ${others.length ? `<div class="others">${others.join(' · ')}</div>` : ''}
     </div>`;
   }
 
   function bindStatusEditor(book) {
+    const save = async (body) => {
+      try {
+        book.myStatus = await api(`/api/books/${book.id}/status`, { method: 'PUT', body });
+        $('.status-editor').outerHTML = statusEditorHtml(book);
+        bindStatusEditor(book);
+      } catch (err) { toast(err.message, 'error'); }
+    };
     $$('.status-editor [data-reading], .status-editor [data-opinion]').forEach((btn) => {
-      btn.onclick = async () => {
+      btn.onclick = () => {
         const group = btn.dataset.reading ? 'reading' : 'opinion';
         const value = btn.dataset[group];
-        const next = { ...book.myStatus, [group]: book.myStatus[group] === value ? null : value };
-        try {
-          book.myStatus = await api(`/api/books/${book.id}/status`, { method: 'PUT', body: next });
-          const box = $('.status-editor');
-          box.outerHTML = statusEditorHtml(book);
-          bindStatusEditor(book);
-        } catch (err) { toast(err.message, 'error'); }
+        const s = book.myStatus;
+        save({ reading: s.reading, opinion: s.opinion, [group]: s[group] === value ? null : value });
+      };
+    });
+    // Correction d'une date (ex. livre commence avant de l'enregistrer).
+    $$('.status-editor [data-date]').forEach((input) => {
+      input.onchange = () => {
+        const s = book.myStatus;
+        save({ reading: s.reading, opinion: s.opinion, [input.dataset.date]: input.value || null });
       };
     });
   }

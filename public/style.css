@@ -133,6 +133,9 @@ p { margin: 0 0 10px; }
 .st { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
 .st-to_read { background: var(--warn-soft); color: var(--warn); }
 .st-read { background: var(--ok-soft); color: var(--ok); }
+.st-reading { background: #dfe9fb; color: #2456a6; }
+.st-abandoned { background: var(--surface-2); color: var(--muted); text-decoration: line-through; }
+@media (prefers-color-scheme: dark) { .st-reading, .pill.pill-reading { background: #1d2c47; color: #9dbcf2; } }
 .st-liked { background: #fbe0e6; color: #c2185b; }
 .st-disliked { background: var(--surface-2); color: var(--muted); }
 .status-editor { margin: 12px 0 4px; }
@@ -142,6 +145,11 @@ p { margin: 0 0 10px; }
 .pill.on { border-color: transparent; }
 .pill.pill-to_read { background: var(--warn-soft); color: var(--warn); }
 .pill.pill-read { background: var(--ok-soft); color: var(--ok); }
+.pill.pill-reading { background: #dfe9fb; color: #2456a6; }
+.pill.pill-abandoned { background: var(--text); color: var(--bg); }
+.status-dates { margin-top: 8px; gap: 12px; }
+.date-field { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: 500; }
+.date-field input { width: auto; min-height: 32px; padding: 4px 8px; font-size: 14px; }
 .pill.pill-liked { background: #fbe0e6; color: #c2185b; }
 .pill.pill-disliked { background: var(--text); color: var(--bg); }
 
