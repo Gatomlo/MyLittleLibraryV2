@@ -24,7 +24,9 @@ const { httpError } = media;
 const h = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 app.use(express.json({ limit: '8mb' }));
-app.use(express.static(PUBLIC_DIR, { index: false }));
+// Fichiers de l'interface toujours revalides par le navigateur (reponse 304 s'ils
+// n'ont pas change) : une mise a jour de l'app est visible sans vider le cache.
+app.use(express.static(PUBLIC_DIR, { index: false, setHeaders: (res) => res.set('Cache-Control', 'no-cache') }));
 app.use('/media', express.static(MEDIA_DIR, { maxAge: '30d', immutable: true }));
 
 // Scanner de codes-barres/QR servi en local : aucune dependance a un CDN externe.
@@ -315,6 +317,8 @@ api.use(apiErrors);
 // index.html est servi avec les chemins absolus de l'app et la bibliotheque courante
 // (window.MLL) : la meme page sert l'accueil et chaque bibliotheque.
 const INDEX_TEMPLATE = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+// Change a chaque demarrage : app.js et style.css sont recharges apres une mise a jour.
+const ASSET_VERSION = Date.now().toString(36);
 function renderIndex(req, library) {
   const root = auth.rootPath(req);
   const config = JSON.stringify({ root, library: library ? { slug: library.slug, name: library.name, logoUrl: mediaUrl(library.logo) } : null })
@@ -322,11 +326,12 @@ function renderIndex(req, library) {
   const title = library ? library.name.replace(/[<&]/g, '') : 'Bibliothèques';
   return INDEX_TEMPLATE
     .replace(/\{\{ROOT\}\}/g, root)
+    .replace(/\{\{VERSION\}\}/g, ASSET_VERSION)
     .replace('{{TITLE}}', title)
     .replace('{{CONFIG}}', config);
 }
 
-app.get('/', (req, res) => res.type('html').send(renderIndex(req, null)));
+app.get('/', (req, res) => res.set('Cache-Control', 'no-cache').type('html').send(renderIndex(req, null)));
 
 // ---------- Une bibliotheque ----------
 app.use('/:slug/api', auth.loadUser, jsonOnly, createLibraryRouter(), apiErrors);
@@ -346,7 +351,7 @@ function libraryPage(req, res, next) {
   if (found.moved || req.params.slug !== found.library.slug || !req.originalUrl.split('?')[0].endsWith('/')) {
     return res.redirect(301, `${auth.rootPath(req)}/${found.library.slug}/`);
   }
-  res.type('html').send(renderIndex(req, found.library));
+  res.set('Cache-Control', 'no-cache').type('html').send(renderIndex(req, found.library));
 }
 app.get('/:slug', libraryPage);
 app.get('/:slug/', libraryPage);

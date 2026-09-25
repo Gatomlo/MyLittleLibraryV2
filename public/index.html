@@ -10,7 +10,7 @@
      meme page sert l'accueil (/) et chaque bibliotheque (/<adresse>/). -->
 <link rel="manifest" href="{{ROOT}}/manifest.json">
 <link rel="icon" href="{{ROOT}}/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="{{ROOT}}/style.css">
+<link rel="stylesheet" href="{{ROOT}}/style.css?v={{VERSION}}">
 <script>window.MLL = {{CONFIG}};</script>
 </head>
 <body>
@@ -28,6 +28,6 @@
 </header>
 <main class="shell" id="view"></main>
 <div class="toasts no-print" id="toasts" aria-live="polite"></div>
-<script src="{{ROOT}}/app.js"></script>
+<script src="{{ROOT}}/app.js?v={{VERSION}}"></script>
 </body>
 </html>
