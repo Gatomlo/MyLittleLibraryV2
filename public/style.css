@@ -222,9 +222,10 @@ input[type="checkbox"] { width: auto; min-height: 0; accent-color: var(--accent)
 
 /* ---------- Catalogue ---------- */
 /* Filtres : se repartissent sur la largeur et passent a la ligne selon la place. */
-.filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
-.filters > * { flex: 1 1 160px; min-width: 0; width: auto; }
-.filters > .search { flex: 2 1 260px; }
+.filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.filters > * { min-width: 0; }
+.filters > .search { grid-column: span 2; }
+@media (max-width: 420px) { .filters > .search { grid-column: 1 / -1; } }
 .books { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
 @media (max-width: 420px) { .books { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
 .book-card {
@@ -342,3 +343,15 @@ tr:last-child td { border-bottom: 0; }
   .sheet:last-child { page-break-after: auto; break-after: auto; }
   .sheet.show-guides .lbl { outline: none; }
 }
+
+/* ---------- Liste deroulante filtrante ---------- */
+.combo { position: relative; flex: 1; min-width: 0; }
+.combo > input { width: 100%; }
+.combo-list {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30; max-height: 290px; overflow: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .16); padding: 4px;
+}
+.combo-item { display: flex; justify-content: space-between; gap: 10px; padding: 7px 10px; border-radius: 7px; cursor: pointer; font-size: 14px; }
+.combo-item:hover, .combo-item.active { background: var(--accent-soft); color: var(--accent); }
+.combo-hint { color: var(--muted); font-size: 12px; flex-shrink: 0; }
+.combo-empty { padding: 8px 10px; color: var(--muted); font-size: 13px; }

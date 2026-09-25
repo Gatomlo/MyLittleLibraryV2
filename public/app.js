@@ -616,22 +616,77 @@
     return api('/api/public/categories');
   }
 
-  // Champ de choix avec recherche (saisie + liste de suggestions) : pratique quand
-  // la liste est longue (categories). onPick(id|'') est appele au choix / a l'effacement.
+  // Liste deroulante filtrante : un clic dans le champ ouvre la liste complete, la
+  // saisie la restreint (sans tenir compte des accents), fleches + Entree ou clic pour
+  // choisir. items : [{ label, hint? }] ; onSelect(item) au choix.
+  const foldText = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  function combo(input, items, onSelect, { emptyText = 'Aucun résultat', showAllOnFocus = true } = {}) {
+    input.removeAttribute('list');
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('role', 'combobox');
+    const wrap = document.createElement('div');
+    wrap.className = 'combo';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    const panel = document.createElement('div');
+    panel.className = 'combo-list';
+    panel.hidden = true;
+    wrap.appendChild(panel);
+    let shown = [];
+    let active = -1;
+    let filterText = '';
+
+    function render() {
+      const q = foldText(filterText);
+      shown = items.filter((it) => !q || foldText(it.label).includes(q)).slice(0, 300);
+      active = shown.length ? Math.max(0, Math.min(active, shown.length - 1)) : -1;
+      panel.innerHTML = shown.length
+        ? shown.map((it, i) => `<div class="combo-item ${i === active ? 'active' : ''}" data-i="${i}"><span>${esc(it.label)}</span>${it.hint ? `<span class="combo-hint">${esc(it.hint)}</span>` : ''}</div>`).join('')
+        : `<div class="combo-empty">${esc(emptyText)}</div>`;
+      const el = panel.querySelector('.active');
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }
+    function open(all) {
+      filterText = all ? '' : input.value;
+      active = -1;
+      render();
+      panel.hidden = false;
+    }
+    function close() { panel.hidden = true; }
+    function choose(i) {
+      const it = shown[i];
+      if (!it) return;
+      close();
+      onSelect(it);
+    }
+    input.addEventListener('focus', () => open(showAllOnFocus));
+    input.addEventListener('click', () => { if (panel.hidden) open(showAllOnFocus); });
+    input.addEventListener('input', () => { filterText = input.value; active = 0; render(); panel.hidden = false; });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (panel.hidden) open(true); else { active = Math.min(active + 1, shown.length - 1); render(); } }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); render(); }
+      else if (e.key === 'Enter' && !panel.hidden && active >= 0 && filterText) { e.preventDefault(); e.stopImmediatePropagation(); choose(active); }
+      else if (e.key === 'Escape') close();
+    });
+    panel.addEventListener('mousedown', (e) => {
+      e.preventDefault(); // garde le focus dans le champ
+      const item = e.target.closest('.combo-item');
+      if (item) choose(Number(item.dataset.i));
+    });
+    input.addEventListener('blur', () => setTimeout(close, 120));
+    return { setItems(list) { items = list; if (!panel.hidden) render(); }, close };
+  }
+
+  // Filtre avec liste deroulante filtrante (categories, collections, tags du
+  // catalogue). onPick(id|'') est appele au choix / a l'effacement.
   function searchPicker({ input, items, value, onPick }) {
-    const listId = input.id + '-list';
-    input.setAttribute('list', listId);
-    input.insertAdjacentHTML('afterend', `<datalist id="${listId}">${items.map((i) => `<option value="${esc(i.label)}">`).join('')}</datalist>`);
     const current = items.find((i) => String(i.id) === String(value));
-    input.value = current ? current.label : '';
-    const pick = () => {
-      const v = input.value.trim().toLowerCase();
-      if (!v) return onPick('');
-      const found = items.find((i) => i.label.toLowerCase() === v) || items.find((i) => i.name.toLowerCase() === v);
-      if (found) { input.value = found.label; onPick(String(found.id)); }
-    };
-    input.addEventListener('change', pick);
-    input.addEventListener('input', () => { if (!input.value) onPick(''); else if (items.some((i) => i.label === input.value)) pick(); });
+    input.value = current ? current.name : '';
+    combo(input, items.map((i) => ({ ...i, label: i.name, hint: i.count != null ? String(i.count) : '' })), (it) => {
+      input.value = it.name;
+      onPick(String(it.id));
+    });
+    input.addEventListener('input', () => { if (!input.value) onPick(''); });
   }
 
   let membersCache = null;
@@ -694,14 +749,14 @@
     $('#q').addEventListener('input', debounce((e) => { c.q = e.target.value; reload(); }, 250));
     searchPicker({
       input: $('#cat'),
-      items: cats.filter((x) => x.count > 0).map((x) => ({ id: x.id, name: x.name, label: `${x.name} (${x.count})` })),
+      items: cats.filter((x) => x.count > 0).map((x) => ({ id: x.id, name: x.name, count: x.count })),
       value: c.category,
       onPick: (id) => { if (id !== c.category) { c.category = id; reload(); } },
     });
     if ($('#tagf')) {
       searchPicker({
         input: $('#tagf'),
-        items: tags.filter((t) => t.count > 0).map((t) => ({ id: t.id, name: t.name, label: `#${t.name} (${t.count})` })),
+        items: tags.filter((t) => t.count > 0).map((t) => ({ id: t.id, name: '#' + t.name, count: t.count })),
         value: c.tag,
         onPick: (id) => { if (id !== (c.tag || '')) { c.tag = id; reload(); } },
       });
@@ -709,7 +764,7 @@
     if ($('#coll')) {
       searchPicker({
         input: $('#coll'),
-        items: collections.map((x) => ({ id: x.name, name: x.name, label: `${x.name} (${x.count})` })),
+        items: collections.map((x) => ({ id: x.name, name: x.name, count: x.count })),
         value: c.collection,
         onPick: (name) => { if (name !== (c.collection || '')) { c.collection = name; reload(); } },
       });
@@ -1416,12 +1471,21 @@
         render();
       };
       render();
+      // Liste deroulante filtrante des termes existants ; un nom nouveau s'ajoute avec
+      // Entree ou le bouton Ajouter.
+      const input = $(`#${prefix}-input`);
+      const dl = $(`#${prefix}-list`);
+      const existing = dl ? Array.from(dl.options).map((o) => o.value) : [];
+      combo(input, existing.map((v) => ({ label: shown(v), value: v })), (it) => { input.value = it.value; add(); },
+        { emptyText: 'Nouveau : Entrée ou « Ajouter » pour le créer' });
       $(`#${prefix}-add`).onclick = add;
-      $(`#${prefix}-input`).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
-      $(`#${prefix}-input`).addEventListener('change', add);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
       return add;
     }
     renderCover();
+    // Collection : liste deroulante filtrante des collections existantes (ou nom libre).
+    combo(f.collection, collections.map((c) => ({ label: c.name, hint: String(c.count) })), (it) => { f.collection.value = it.label; },
+      { emptyText: 'Nouvelle collection' });
     const addCat = chipField('cat', form.categories);
     const addTag = $('#tag-input') ? chipField('tag', form.tags, (t) => '#' + t) : () => {};
 
@@ -2539,11 +2603,25 @@
       ${feat && feat.tags ? '<h2>Tags</h2><div class="card" id="tag-manager"></div>' : ''}
 
       <h2>Intégration WordPress / Divi</h2>
-      <div class="card">
-        <p>Avec l'extension fournie (dossier <span class="code">wordpress/</span> du projet), place ce shortcode dans un module Texte ou Code de Divi :</p>
-        <div class="snippet">[bibliotheque url="${esc(libraryUrl)}"]</div>
-        <p style="margin-top:12px">Sans extension, colle ce code dans un module Code :</p>
-        <div class="snippet">${esc(`<div class="mll-catalogue" data-url="${libraryUrl}"></div>\n<script src="${libraryUrl}/embed.js" defer></script>`)}</div>
+      <div class="card" id="embed-builder">
+        <p>Choisis ce que le catalogue affiché sur ton site propose, puis copie le code.</p>
+        <label>Filtres proposés aux visiteurs</label>
+        <div class="btn-row" style="margin-bottom:12px">
+          ${[['recherche', 'Recherche', true], ['categories', 'Catégories', true], ['collections', 'Collections', false],
+            ...(feat && feat.tags ? [['tags', 'Tags', false]] : []), ['disponibilite', 'Disponibilité', false],
+            ...(feat && feat.ebooks ? [['type', 'Papier / numérique', false]] : []), ['tri', 'Tri', false]]
+            .map(([k, l, on]) => `<label class="check"><input type="checkbox" data-filter-opt="${k}" ${on ? 'checked' : ''}> ${l}</label>`).join('')}
+        </div>
+        <div class="grid-2">
+          <div class="field"><label>Livres par page</label><input type="number" id="emb-per" min="1" max="100" value="24"></div>
+          <div class="field"><label class="check" style="margin-top:26px"><input type="checkbox" id="emb-head" checked> Afficher le logo et le nom</label></div>
+        </div>
+        <p>Avec l'extension fournie (dossier <span class="code">wordpress/</span> du projet), dans un module Texte ou Code de Divi :</p>
+        <div class="snippet" id="emb-shortcode"></div>
+        <button class="btn btn-small" type="button" data-copy="emb-shortcode" style="margin-top:6px">Copier le shortcode</button>
+        <p style="margin-top:14px">Sans extension, dans un module Code :</p>
+        <div class="snippet" id="emb-html"></div>
+        <button class="btn btn-small" type="button" data-copy="emb-html" style="margin-top:6px">Copier le code HTML</button>
       </div>
 
       <h2>Données</h2>
@@ -2626,6 +2704,25 @@
         } catch (err) { cb.checked = !cb.checked; toast(err.message, 'error'); }
       };
     });
+    // Generateur du code d'integration (shortcode WordPress / HTML).
+    const updateEmbed = () => {
+      const filtersSel = $$('[data-filter-opt]:checked').map((cb) => cb.dataset.filterOpt);
+      const filtres = filtersSel.length ? filtersSel.join(',') : 'aucun';
+      const per = Math.max(1, Math.min(100, parseInt($('#emb-per').value, 10) || 24));
+      const head = $('#emb-head').checked;
+      $('#emb-shortcode').textContent = `[bibliotheque url="${libraryUrl}" filtres="${filtres}"${per !== 24 ? ` par_page="${per}"` : ''}${head ? '' : ' entete="non"'}]`;
+      $('#emb-html').textContent = `<div class="mll-catalogue" data-url="${libraryUrl}" data-filters="${filtres}" data-per-page="${per}"${head ? '' : ' data-header="non"'}></div>\n<script src="${libraryUrl}/embed.js" defer></script>`;
+    };
+    $$('#embed-builder input').forEach((i) => i.addEventListener('input', updateEmbed));
+    $$('#embed-builder input').forEach((i) => i.addEventListener('change', updateEmbed));
+    $$('[data-copy]').forEach((btn) => {
+      btn.onclick = async () => {
+        const text = $(`#${btn.dataset.copy}`).textContent;
+        try { await navigator.clipboard.writeText(text); toast('Copié.'); } catch (e) { prompt('Copie ce code :', text); }
+      };
+    });
+    updateEmbed();
+
     categoryManager($('#cat-manager'), cats, 'categories');
     if ($('#tag-manager')) categoryManager($('#tag-manager'), tags, 'tags');
   }

@@ -331,7 +331,12 @@ app.get('/', (req, res) => res.type('html').send(renderIndex(req, null)));
 // ---------- Une bibliotheque ----------
 app.use('/:slug/api', auth.loadUser, jsonOnly, createLibraryRouter(), apiErrors);
 app.use('/:slug/media', express.static(MEDIA_DIR, { maxAge: '30d', immutable: true }));
-app.get('/:slug/embed.js', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'embed.js')));
+// Toujours revalide par le navigateur : une mise a jour de l'app est prise en compte
+// tout de suite sur les sites qui integrent le catalogue (WordPress...).
+app.get('/:slug/embed.js', (req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(path.join(PUBLIC_DIR, 'embed.js'));
+});
 
 function libraryPage(req, res, next) {
   if (!isValidSlug(String(req.params.slug).toLowerCase())) return next();

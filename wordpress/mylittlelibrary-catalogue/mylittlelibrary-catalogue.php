@@ -2,7 +2,7 @@
 /**
  * Plugin Name: MyLittleLibrary – Catalogue
  * Description: Affiche le catalogue (lecture seule) de MyLittleLibrary via le shortcode [bibliotheque]. Compatible Divi 5 (module Texte ou Code).
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Ranch du Phoenix
  * License: GPL-2.0-or-later
  * Text Domain: mylittlelibrary-catalogue
@@ -15,14 +15,17 @@ if (!defined('ABSPATH')) {
 const MLL_OPTION = 'mll_catalogue_url';
 
 /**
- * Shortcode : [bibliotheque url="https://exemple.be/mylittlelibrary" par_page="24" entete="oui"]
+ * Shortcode : [bibliotheque url="https://exemple.be/mylittlelibrary/ma-bibliotheque" par_page="24" entete="oui"
+ *              filtres="recherche,categories,collections,tags,disponibilite,type,tri"]
  * L'attribut url est facultatif si l'adresse est renseignee dans Reglages > Bibliotheque.
+ * filtres : champs de filtre proposes, dans cet ordre ("aucun" pour n'en afficher aucun).
  */
 function mll_catalogue_shortcode($atts) {
     $atts = shortcode_atts(array(
         'url'      => get_option(MLL_OPTION, ''),
         'par_page' => 24,
         'entete'   => 'oui',
+        'filtres'  => 'recherche,categories',
     ), $atts, 'bibliotheque');
 
     $url = untrailingslashit(esc_url_raw(trim($atts['url'])));
@@ -32,13 +35,16 @@ function mll_catalogue_shortcode($atts) {
             : '';
     }
 
-    wp_enqueue_script('mll-catalogue', $url . '/embed.js', array(), '1.0.0', array('strategy' => 'defer', 'in_footer' => true));
+    // Pas de numero de version : le script est toujours celui du serveur de l'app
+    // (qui demande au navigateur de le revalider), jamais une copie perimee.
+    wp_enqueue_script('mll-catalogue', $url . '/embed.js', array(), null, array('strategy' => 'defer', 'in_footer' => true));
 
     return sprintf(
-        '<div class="mll-catalogue" data-url="%s" data-per-page="%d" data-header="%s"></div>',
+        '<div class="mll-catalogue" data-url="%s" data-per-page="%d" data-header="%s" data-filters="%s"></div>',
         esc_attr($url),
         max(1, min(100, intval($atts['par_page']))),
-        esc_attr($atts['entete'])
+        esc_attr($atts['entete']),
+        esc_attr(sanitize_text_field($atts['filtres']))
     );
 }
 add_shortcode('bibliotheque', 'mll_catalogue_shortcode');
@@ -74,7 +80,9 @@ function mll_catalogue_settings_page() {
                         <p class="description">Adresse de la bibliothèque (donnée dans ses Réglages), utilisée quand le shortcode n'a pas d'attribut <code>url</code>.
                             Place <code>[bibliotheque]</code> dans une page (module Texte ou Code de Divi), ou
                             <code>[bibliotheque url="…"]</code> pour une autre bibliothèque.
-                            Options : <code>par_page="24"</code>, <code>entete="non"</code> pour masquer logo et nom.</p>
+                            Options : <code>par_page="24"</code>, <code>entete="non"</code> pour masquer logo et nom,
+                            <code>filtres="recherche,categories,collections,tags,disponibilite,type,tri"</code> pour choisir les filtres
+                            (le générateur de shortcode se trouve dans les Réglages de chaque bibliothèque).</p>
                     </td>
                 </tr>
             </table>
