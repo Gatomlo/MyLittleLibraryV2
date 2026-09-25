@@ -453,6 +453,10 @@
       return `<a href="${href}" class="${active ? 'active' : ''}">${label}</a>`;
     }).join('');
     $('#nav').hidden = links.length <= 1;
+    // Petit ecran : pages regroupees derriere le bouton menu (hamburger).
+    $('#menu-btn').classList.toggle('has-links', links.length > 1);
+    const activeLink = $('#nav a.active');
+    $('#menu-btn').title = activeLink ? activeLink.textContent : 'Menu';
     $('#scan-btn').hidden = !canManage();
   }
 
@@ -529,6 +533,22 @@
     };
   }
   document.addEventListener('click', closeMenu);
+
+  // Menu hamburger (petit ecran) : ouvre / ferme la liste des pages.
+  function setNavOpen(open) {
+    $('#nav').classList.toggle('open', open);
+    $('#menu-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
+    document.body.classList.toggle('nav-open', open);
+  }
+  $('#menu-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeMenu();
+    setNavOpen(!$('#nav').classList.contains('open'));
+  });
+  $('#nav').addEventListener('click', (e) => { e.stopPropagation(); if (e.target.closest('a')) setNavOpen(false); });
+  document.addEventListener('click', () => setNavOpen(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setNavOpen(false); });
+  window.addEventListener('hashchange', () => setNavOpen(false));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
 
   // ================= Routage =================
@@ -2649,54 +2669,181 @@
   }
 
   // ================= Statistiques =================
-  // Mes statistiques (et celles des membres qui les partagent), et statistiques de la
-  // bibliotheque (totaux anonymes pour la lecture, prets, fonds). Graphiques en barres
-  // d'une seule couleur (accent), valeur au survol ; legende pour la comparaison.
+  // Tableau de bord : anneau d'objectif, cartes chiffres avec tendance, donut de
+  // repartition, colonnes et courbe mensuelles (infobulle au survol), podiums avec
+  // couvertures. Couleurs : accent pour une seule serie ; palette categorielle
+  // validee (4 teintes, ordre fixe) pour la repartition des statuts.
   const PERIODS = [['year', 'Cette année'], ['last-year', "L'an dernier"], ['12m', '12 derniers mois'], ['all', 'Depuis le début']];
   const statsState = { period: 'year', who: 'me' };
 
   const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString('fr-BE'));
   const monthLabel = (key, withYear) => new Date(`${key}-15T12:00:00Z`).toLocaleDateString('fr-BE', withYear ? { month: 'short', year: '2-digit' } : { month: 'short' });
+  const coverSrc = (url) => (url ? mediaSrc(url) : '');
+  const initials = (t) => esc(String(t || '?').trim().charAt(0).toUpperCase());
+  const miniCover = (b, cls = '') => `<a class="mini-cover ${cls}" href="#/book/${b.bookId}" title="${esc(b.title || b.name)}">${b.cover
+    ? `<img src="${esc(coverSrc(b.cover))}" alt="" loading="lazy">` : `<span>${initials(b.title || b.name)}</span>`}</a>`;
 
-  function tile(value, label, hint) {
-    return `<div class="stat-tile"><div class="stat-value">${value}</div><div class="stat-label">${esc(label)}</div>${hint ? `<div class="stat-hint">${hint}</div>` : ''}</div>`;
+  // Carte chiffre : icone, valeur, libelle, precision, et petite courbe de tendance.
+  function kpi(icon, value, label, hint, spark) {
+    return `<div class="kpi"><div class="kpi-top"><span class="kpi-icon" aria-hidden="true">${icon}</span>${spark ? sparkline(spark) : ''}</div>
+      <div class="kpi-value">${value}</div><div class="kpi-label">${esc(label)}</div>${hint ? `<div class="kpi-hint">${hint}</div>` : ''}</div>`;
   }
 
-  // Barres verticales par mois. series : [{ month, value, prev? }] ; prev = meme mois
-  // un an plus tot (seconde barre, grise), avec legende.
-  function monthChart(series, { unit, prevLabel } = {}) {
+  function sparkline(values) {
+    if (!values.length || values.every((v) => !v)) return '';
+    const w = 90;
+    const hgt = 28;
+    const max = Math.max(1, ...values);
+    const step = values.length > 1 ? w / (values.length - 1) : w;
+    const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(hgt - 2 - (v / max) * (hgt - 4)).toFixed(1)}`).join(' ');
+    return `<svg class="spark" viewBox="0 0 ${w} ${hgt}" width="${w}" height="${hgt}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  }
+
+  // Anneau de progression (objectif annuel).
+  function ring(pct, center, sub) {
+    const r = 52;
+    const c = 2 * Math.PI * r;
+    const p = Math.max(0, Math.min(100, pct));
+    return `<svg class="ring" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="${p} %">
+      <circle cx="64" cy="64" r="${r}" class="ring-track"/>
+      <circle cx="64" cy="64" r="${r}" class="ring-value" stroke-dasharray="${((p / 100) * c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 64 64)"/>
+      <text x="64" y="62" text-anchor="middle" class="ring-center">${center}</text>
+      <text x="64" y="82" text-anchor="middle" class="ring-sub">${sub}</text></svg>`;
+  }
+
+  // Donut de repartition : segments separes par un fin espace, legende avec valeurs.
+  function donut(segments, centerValue, centerLabel) {
+    const total = segments.reduce((n, s) => n + s.value, 0);
+    const r = 54;
+    const c = 2 * Math.PI * r;
+    let offset = 0;
+    const gap = total && segments.filter((s) => s.value).length > 1 ? 2 : 0;
+    const arcs = total ? segments.filter((s) => s.value).map((s) => {
+      const len = (s.value / total) * c;
+      const arc = `<circle cx="70" cy="70" r="${r}" fill="none" stroke="var(${s.color})" stroke-width="20"
+        stroke-dasharray="${Math.max(0, len - gap).toFixed(2)} ${(c - Math.max(0, len - gap)).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}"
+        transform="rotate(-90 70 70)"><title>${esc(s.label)} : ${fmt(s.value)}</title></circle>`;
+      offset += len;
+      return arc;
+    }).join('') : `<circle cx="70" cy="70" r="${r}" fill="none" class="ring-track" stroke-width="20"/>`;
+    return `<div class="donut-wrap"><svg class="donut" viewBox="0 0 140 140" width="150" height="150" role="img" aria-label="${esc(centerLabel)}">${arcs}
+      <text x="70" y="68" text-anchor="middle" class="ring-center">${fmt(centerValue)}</text>
+      <text x="70" y="88" text-anchor="middle" class="ring-sub">${esc(centerLabel)}</text></svg>
+      <ul class="donut-legend">${segments.map((s) => `<li><i style="background:var(${s.color})"></i><span>${esc(s.label)}</span>
+        <strong>${fmt(s.value)}</strong><span class="muted">${total ? Math.round((s.value / total) * 100) : 0} %</span></li>`).join('')}</ul></div>`;
+  }
+
+  // Colonnes par mois ; comparaison optionnelle (annee precedente, en gris) avec legende.
+  function columns(series, { unit, compareLabel = 'Un an plus tôt' } = {}) {
     const withPrev = series.some((s) => s.prev != null && s.prev > 0);
     const max = Math.max(1, ...series.map((s) => Math.max(s.value, withPrev ? s.prev || 0 : 0)));
     const multiYear = new Set(series.map((s) => s.month.slice(0, 4))).size > 1;
-    const bar = (v, cls, title) => `<div class="bar ${cls}" style="height:${Math.max(v ? 3 : 0, (v / max) * 100)}%" title="${esc(title)}"><span class="bar-tip">${fmt(v)}</span></div>`;
-    return `<div class="chart">
-      ${withPrev ? `<div class="legend"><span><i class="sw sw-cur"></i>Période</span><span><i class="sw sw-prev"></i>${esc(prevLabel || 'Un an plus tôt')}</span></div>` : ''}
-      <div class="bars" role="img" aria-label="Graphique par mois">
-        ${series.map((s) => `<div class="bar-col">
-          <div class="bar-pair">${bar(s.value, 'cur', `${monthLabel(s.month, true)} : ${fmt(s.value)} ${unit}`)}${withPrev ? bar(s.prev || 0, 'prev', `${monthLabel(s.month, true)}, un an plus tôt : ${fmt(s.prev || 0)} ${unit}`) : ''}</div>
-          <div class="bar-label">${monthLabel(s.month, multiYear)}</div>
-        </div>`).join('')}
-      </div>
-      <details class="chart-table"><summary class="small muted">Voir les valeurs</summary>
-        <table><thead><tr><th>Mois</th><th>${esc(unit)}</th>${withPrev ? '<th>Un an plus tôt</th>' : ''}</tr></thead><tbody>
-        ${series.map((s) => `<tr><td>${monthLabel(s.month, true)}</td><td>${fmt(s.value)}</td>${withPrev ? `<td>${fmt(s.prev || 0)}</td>` : ''}</tr>`).join('')}</tbody></table>
-      </details>
-    </div>`;
+    const bar = (v, cls) => `<div class="col ${cls}" style="height:${v ? Math.max(3, (v / max) * 100) : 0}%"></div>`;
+    return `<div class="colchart">
+      ${withPrev ? `<div class="legend"><span><i class="sw sw-cur"></i>Période</span><span><i class="sw sw-prev"></i>${esc(compareLabel)}</span></div>` : ''}
+      <div class="cols">${series.map((s) => `<div class="col-slot" tabindex="0">
+          <div class="col-tip">${monthLabel(s.month, true)} · <strong>${fmt(s.value)}</strong> ${esc(unit)}${withPrev ? `<br><span class="muted">un an plus tôt : ${fmt(s.prev || 0)}</span>` : ''}</div>
+          <div class="col-pair">${bar(s.value, 'cur')}${withPrev ? bar(s.prev || 0, 'prev') : ''}</div>
+          <div class="col-label">${monthLabel(s.month, multiYear)}</div></div>`).join('')}</div>
+      ${tableView(series, unit, withPrev)}</div>`;
   }
 
-  // Classement en barres horizontales. items : [{ name, count, bookId?, sub? }]
-  function rankList(items, { empty = 'Rien pour cette période.', unit = '' } = {}) {
+  // Courbe (aire) par mois ; infobulle et reticule qui suivent la souris.
+  function area(series, { unit } = {}) {
+    const w = 640;
+    const hgt = 190;
+    const pad = { l: 8, r: 8, t: 14, b: 26 };
+    const max = Math.max(1, ...series.map((s) => s.value));
+    const step = series.length > 1 ? (w - pad.l - pad.r) / (series.length - 1) : 0;
+    const pts = series.map((s, i) => [pad.l + i * step, pad.t + (1 - s.value / max) * (hgt - pad.t - pad.b)]);
+    const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+    const fill = `${line} L${pts[pts.length - 1][0].toFixed(1)},${hgt - pad.b} L${pts[0][0].toFixed(1)},${hgt - pad.b} Z`;
+    const id = 'g' + Math.random().toString(36).slice(2, 8);
+    const multiYear = new Set(series.map((s) => s.month.slice(0, 4))).size > 1;
+    const labels = series.map((s, i) => ((series.length <= 12 || i % 3 === 0) ? `<text x="${pts[i][0].toFixed(1)}" y="${hgt - 8}" text-anchor="middle" class="axis-label">${monthLabel(s.month, multiYear)}</text>` : '')).join('');
+    return `<div class="areachart" data-series='${esc(JSON.stringify(series.map((s, i) => ({ x: pts[i][0], y: pts[i][1], label: monthLabel(s.month, true), value: s.value }))))}' data-unit="${esc(unit)}">
+      <svg viewBox="0 0 ${w} ${hgt}" preserveAspectRatio="none" role="img" aria-label="Évolution par mois">
+        <defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".35"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+        <line x1="${pad.l}" x2="${w - pad.r}" y1="${hgt - pad.b}" y2="${hgt - pad.b}" class="axis"/>
+        <path d="${fill}" fill="url(#${id})"/>
+        <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+        ${labels}
+        <line class="crosshair" y1="${pad.t}" y2="${hgt - pad.b}" x1="0" x2="0" vector-effect="non-scaling-stroke"/>
+      </svg><div class="area-dot"></div><div class="area-tip"></div>
+      ${tableView(series, unit, false)}</div>`;
+  }
+
+  function tableView(series, unit, withPrev) {
+    return `<details class="chart-table"><summary class="small muted">Voir les valeurs</summary>
+      <table><thead><tr><th>Mois</th><th>${esc(unit)}</th>${withPrev ? '<th>Un an plus tôt</th>' : ''}</tr></thead><tbody>
+      ${series.map((s) => `<tr><td>${monthLabel(s.month, true)}</td><td>${fmt(s.value)}</td>${withPrev ? `<td>${fmt(s.prev || 0)}</td>` : ''}</tr>`).join('')}</tbody></table></details>`;
+  }
+
+  // Reticule et infobulle des courbes (a lier apres affichage).
+  function bindAreaCharts(root) {
+    $$('.areachart', root).forEach((el) => {
+      const pts = JSON.parse(el.dataset.series || '[]');
+      if (!pts.length) return;
+      const svg = $('svg', el);
+      const cross = $('.crosshair', el);
+      const dot = $('.area-dot', el);
+      const tip = $('.area-tip', el);
+      const vb = svg.viewBox.baseVal;
+      const show = (clientX) => {
+        const box = svg.getBoundingClientRect();
+        const x = ((clientX - box.left) / box.width) * vb.width;
+        const p = pts.reduce((a, b) => (Math.abs(b.x - x) < Math.abs(a.x - x) ? b : a));
+        const px = (p.x / vb.width) * box.width;
+        const py = (p.y / vb.height) * box.height;
+        cross.setAttribute('x1', p.x);
+        cross.setAttribute('x2', p.x);
+        el.classList.add('hover');
+        dot.style.left = `${px}px`;
+        dot.style.top = `${py}px`;
+        tip.innerHTML = `${esc(p.label)} · <strong>${fmt(p.value)}</strong> ${esc(el.dataset.unit)}`;
+        tip.style.left = `${Math.min(Math.max(px, 70), box.width - 70)}px`;
+      };
+      svg.addEventListener('mousemove', (e) => show(e.clientX));
+      svg.addEventListener('mouseleave', () => el.classList.remove('hover'));
+      svg.addEventListener('touchstart', (e) => show(e.touches[0].clientX), { passive: true });
+    });
+  }
+
+  // Podium des 3 premiers (2 - 1 - 3), puis la suite en liste.
+  function podium(items, { unit = '', empty = 'Rien pour cette période.', covers = false } = {}) {
+    if (!items || !items.length) return `<p class="muted small">${empty}</p>`;
+    const top = items.slice(0, 3);
+    const order = [top[1], top[0], top[2]];
+    const medal = ['🥈', '🥇', '🥉'];
+    const place = [2, 1, 3];
+    const visual = (it) => (covers && it.bookId ? miniCover({ ...it, title: it.name }, 'podium-cover') : `<span class="podium-avatar">${initials(it.name)}</span>`);
+    return `<div class="podium">${order.map((it, i) => (it ? `
+        <div class="podium-slot place-${place[i]}">
+          ${visual(it)}
+          <div class="podium-name">${it.bookId ? `<a href="#/book/${it.bookId}">${esc(it.name)}</a>` : esc(it.name)}</div>
+          <div class="podium-count">${fmt(it.count)}${unit}</div>
+          <div class="podium-step"><span>${medal[i]}</span></div>
+        </div>` : '<div class="podium-slot empty"></div>')).join('')}</div>
+      ${items.length > 3 ? rankList(items.slice(3), { unit, start: 4 }) : ''}`;
+  }
+
+  // Classement en barres horizontales (a partir du rang `start`).
+  function rankList(items, { empty = 'Rien pour cette période.', unit = '', start = 1 } = {}) {
     if (!items || !items.length) return `<p class="muted small">${empty}</p>`;
     const max = Math.max(1, ...items.map((i) => i.count));
-    return `<div class="rank">${items.map((i) => `
+    return `<div class="rank">${items.map((i, n) => `
       <div class="rank-row">
-        <div class="rank-name">${i.bookId ? `<a href="#/book/${i.bookId}">${esc(i.name)}</a>` : esc(i.name)}${i.sub ? ` <span class="small muted">${esc(i.sub)}</span>` : ''}</div>
-        <div class="rank-bar"><span style="width:${(i.count / max) * 100}%"></span></div>
+        <span class="rank-pos">${start + n}</span>
+        <div class="rank-main"><div class="rank-name">${i.bookId ? `<a href="#/book/${i.bookId}">${esc(i.name)}</a>` : esc(i.name)}${i.sub ? ` <span class="small muted">${esc(i.sub)}</span>` : ''}</div>
+          <div class="rank-bar"><span style="width:${(i.count / max) * 100}%"></span></div></div>
         <div class="rank-count">${fmt(i.count)}${unit}</div>
       </div>`).join('')}</div>`;
   }
 
-  const section = (title, body) => `<div class="card stat-card"><h3>${esc(title)}</h3>${body}</div>`;
+  const panel = (title, body, cls = '') => `<section class="panel ${cls}"><h3>${title}</h3>${body}</section>`;
+  const coverStrip = (books, empty) => (books.length
+    ? `<div class="cover-strip">${books.map((b) => `<div class="strip-item">${miniCover(b)}<div class="strip-title">${esc(b.title || b.name)}</div></div>`).join('')}</div>`
+    : `<p class="muted small">${empty}</p>`);
 
   async function viewStats() {
     if (!features().stats) {
@@ -2706,16 +2853,23 @@
     const ov = await api('/api/stats/overview');
     if (statsState.who !== 'me' && statsState.who !== 'library' && !ov.shared.some((m) => String(m.id) === statsState.who)) statsState.who = 'me';
     view().innerHTML = `
-      <div class="page-head"><div><h1>Statistiques</h1></div>
-        <select id="st-period" style="width:auto">${PERIODS.map(([k, l]) => `<option value="${k}" ${statsState.period === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <div class="stats-head">
+        <div><h1>Statistiques</h1><p class="muted small" id="st-sub"></p></div>
+        <div class="seg period-seg">${PERIODS.map(([k, l]) => `<button type="button" data-period="${k}" class="${statsState.period === k ? 'active' : ''}">${l}</button>`).join('')}</div>
       </div>
-      <div class="tabs" id="st-tabs">
-        <button data-who="me" class="${statsState.who === 'me' ? 'active' : ''}">Mes statistiques</button>
-        ${ov.shared.map((m) => `<button data-who="${m.id}" class="${statsState.who === String(m.id) ? 'active' : ''}">${esc(m.username)}</button>`).join('')}
-        <button data-who="library" class="${statsState.who === 'library' ? 'active' : ''}">Bibliothèque</button>
+      <div class="stats-tabs" id="st-tabs">
+        <button data-who="me" class="${statsState.who === 'me' ? 'active' : ''}"><span class="tab-avatar">${initials(ov.me.username)}</span>Mes statistiques</button>
+        ${ov.shared.map((m) => `<button data-who="${m.id}" class="${statsState.who === String(m.id) ? 'active' : ''}"><span class="tab-avatar">${initials(m.username)}</span>${esc(m.username)}</button>`).join('')}
+        <button data-who="library" class="${statsState.who === 'library' ? 'active' : ''}"><span class="tab-avatar">🏛</span>Bibliothèque</button>
       </div>
       <div id="st-body"><p class="muted">Calcul…</p></div>`;
-    $('#st-period').onchange = (e) => { statsState.period = e.target.value; renderStatsBody(ov); };
+    $$('[data-period]').forEach((b) => {
+      b.onclick = () => {
+        statsState.period = b.dataset.period;
+        $$('[data-period]').forEach((x) => x.classList.toggle('active', x === b));
+        renderStatsBody(ov);
+      };
+    });
     $$('#st-tabs [data-who]').forEach((b) => {
       b.onclick = () => {
         statsState.who = b.dataset.who;
@@ -2728,22 +2882,27 @@
 
   async function renderStatsBody(ov) {
     const body = $('#st-body');
-    body.innerHTML = '<p class="muted">Calcul…</p>';
+    body.classList.add('loading');
     try {
       if (statsState.who === 'library') {
-        body.innerHTML = libraryStatsHtml(await api(`/api/stats/library?period=${statsState.period}`));
+        const s = await api(`/api/stats/library?period=${statsState.period}`);
+        $('#st-sub').textContent = `Bibliothèque · ${s.period.label} · lecture en totaux anonymes`;
+        body.innerHTML = libraryStatsHtml(s);
       } else {
         const id = statsState.who === 'me' ? ov.me.id : Number(statsState.who);
         const s = await api(`/api/stats/user/${id}?period=${statsState.period}`);
-        body.innerHTML = (statsState.who === 'me' ? prefsHtml(ov) : `<p class="muted">Statistiques partagées par <strong>${esc(s.user.username)}</strong>.</p>`) + userStatsHtml(s, statsState.who === 'me');
+        $('#st-sub').textContent = `${statsState.who === 'me' ? 'Mes lectures' : `Lectures de ${s.user.username} (partagées)`} · ${s.period.label}`;
+        body.innerHTML = (statsState.who === 'me' ? prefsHtml(ov) : '') + userStatsHtml(s, statsState.who === 'me');
         if (statsState.who === 'me') bindPrefs(ov);
       }
+      bindAreaCharts(body);
     } catch (err) { body.innerHTML = `<div class="error-box">${esc(err.message)}</div>`; }
+    body.classList.remove('loading');
   }
 
   function prefsHtml(ov) {
     const p = ov.prefs;
-    return `<details class="card stat-prefs"><summary><strong>Mes réglages</strong> <span class="small muted">partage ${p.shareStats ? 'activé' : 'désactivé'}${p.yearlyGoal ? ` · objectif ${p.yearlyGoal} livres` : ''}</span></summary>
+    return `<details class="stat-prefs"><summary>⚙️ <strong>Mes réglages</strong> <span class="small muted">partage ${p.shareStats ? 'activé' : 'désactivé'}${p.yearlyGoal ? ` · objectif ${p.yearlyGoal} livres` : ''}</span></summary>
       <div class="grid-3" style="margin-top:12px">
         <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="pf-share" ${p.shareStats ? 'checked' : ''} ${ov.member ? '' : 'disabled'}> Partager mes statistiques avec les membres de la bibliothèque</label>
           ${ov.member ? '' : '<p class="small muted">Réservé aux comptes liés à cette bibliothèque.</p>'}</div>
@@ -2768,54 +2927,72 @@
 
   function userStatsHtml(s, mine) {
     const c = s.counts;
-    const warn = features().readingStatus ? '' : '<div class="info-box">Les statuts de lecture sont désactivés : active-les (Réglages > Options) pour alimenter ces statistiques.</div>';
-    const g = s.goal;
-    let goal = '';
-    if (g.target) {
-      const pct = Math.min(100, Math.round((g.done / g.target) * 100));
-      const diff = Math.round((g.done - g.expected) * 10) / 10;
-      goal = section(`Objectif ${g.year}`, `
-        <div class="goal"><div class="goal-bar"><span style="width:${pct}%"></span></div>
-        <p><strong>${g.done} / ${g.target} livres</strong> (${pct} %) · ${diff >= 0 ? `<span style="color:var(--ok)">${fmt(Math.abs(diff))} livre(s) d'avance</span>` : `<span style="color:var(--warn)">${fmt(Math.abs(diff))} livre(s) de retard</span>`} sur le rythme prévu (${fmt(g.expected)} à ce jour).</p></div>`);
-    } else if (mine) {
-      goal = section(`Objectif ${g.year}`, `<p class="muted small">Pas d'objectif. Fixe-en un dans « Mes réglages » ci-dessus. ${g.done} livre(s) lu(s) en ${g.year} pour l'instant.</p>`);
-    }
     const d = s.durations;
-    const bookLink = (b, extra) => (b ? `<a href="#/book/${b.bookId}">${esc(b.title)}</a> <span class="small muted">${extra}</span>` : '—');
+    const g = s.goal;
+    const warn = features().readingStatus ? '' : '<div class="info-box">Les statuts de lecture sont désactivés : active-les (Réglages > Options) pour alimenter ces statistiques.</div>';
+
+    let goalCard;
+    if (g.target) {
+      const pct = Math.round((g.done / g.target) * 100);
+      const diff = Math.round((g.done - g.expected) * 10) / 10;
+      goalCard = `<div class="goal-card">${ring(pct, `${g.done}/${g.target}`, `objectif ${g.year}`)}
+        <div><div class="goal-pct">${Math.min(pct, 999)} %</div>
+        <p class="small">${diff >= 0 ? `<span class="good">▲ ${fmt(Math.abs(diff))} livre(s) d'avance</span>` : `<span class="late">▼ ${fmt(Math.abs(diff))} livre(s) de retard</span>`}</p>
+        <p class="small muted">${fmt(g.expected)} attendu(s) à ce jour</p></div></div>`;
+    } else {
+      goalCard = `<div class="goal-card">${ring(0, String(g.done), `lus en ${g.year}`)}
+        <div><p class="small muted">${mine ? 'Fixe un objectif annuel dans « Mes réglages » pour suivre ta progression.' : 'Pas d\'objectif annuel.'}</p></div></div>`;
+    }
+
+    const records = [
+      ['🚀', 'Lecture la plus rapide', d.fastest, d.fastest && `${d.fastest.days} jour(s)`],
+      ['🐢', 'Lecture la plus longue', d.slowest, d.slowest && `${d.slowest.days} jour(s)`],
+      ['📚', 'Livre le plus épais', d.thickest, d.thickest && `${fmt(d.thickest.pages)} pages`],
+    ];
+
     return `${warn}
-      <p class="muted small">Période : ${esc(s.period.label)}. « Lus » et « abandonnés » : sur la période ; « en cours » et « à lire » : aujourd'hui.</p>
-      <div class="stat-tiles">
-        ${tile(fmt(c.read), 'Livres lus')}
-        ${tile(fmt(s.pages), 'Pages lues')}
-        ${tile(fmt(c.reading), 'En cours')}
-        ${tile(fmt(c.abandoned), 'Abandonnés', s.abandonRate != null ? `${s.abandonRate} % d'abandon` : '')}
-        ${tile(fmt(c.toRead), 'À lire')}
-        ${tile(fmt(c.liked), 'Aimés', c.disliked ? `${c.disliked} pas aimé(s)` : '')}
-      </div>
-      ${goal}
-      <div class="stat-grid">
-        ${section('Livres lus par mois', monthChart(s.monthly.map((m) => ({ month: m.month, value: m.books, prev: m.prevBooks })), { unit: 'livre(s)' }))}
-        ${section('Pages lues par mois', monthChart(s.monthly.map((m) => ({ month: m.month, value: m.pages })), { unit: 'pages' }))}
-      </div>
-      ${section('Durées de lecture', d.count ? `<div class="stat-tiles">
-          ${tile(`${fmt(d.avgDays)} j`, 'Durée moyenne d\'un livre')}
-          ${tile(d.pagesPerDay != null ? fmt(d.pagesPerDay) : '—', 'Pages par jour')}
+      <div class="hero">
+        ${goalCard}
+        <div class="kpis">
+          ${kpi('📚', fmt(c.read), 'Livres lus', '', s.monthly.map((m) => m.books))}
+          ${kpi('📄', fmt(s.pages), 'Pages lues', '', s.monthly.map((m) => m.pages))}
+          ${kpi('⚡', d.pagesPerDay != null ? fmt(d.pagesPerDay) : '—', 'Pages par jour', d.count ? `sur ${d.count} livre(s) daté(s)` : 'dates de lecture requises')}
+          ${kpi('⏱', d.avgDays != null ? `${fmt(d.avgDays)} j` : '—', 'Durée moyenne d\'un livre')}
         </div>
-        <dl class="facts">
-          <dt>Lecture la plus rapide</dt><dd>${bookLink(d.fastest, d.fastest ? `${d.fastest.days} j` : '')}</dd>
-          <dt>Lecture la plus longue</dt><dd>${bookLink(d.slowest, d.slowest ? `${d.slowest.days} j` : '')}</dd>
-          <dt>Livre le plus épais lu</dt><dd>${bookLink(d.thickest, d.thickest ? `${fmt(d.thickest.pages)} pages` : '')}</dd>
-        </dl><p class="small muted">Calculé sur ${d.count} livre(s) avec dates de début et de fin.</p>`
-        : '<p class="muted small">Aucun livre lu avec dates de début et de fin sur cette période. Passe un livre « En cours » quand tu le commences.</p>')}
-      ${section(`Lectures en cours (signalées après ${s.staleDays} jours)`, s.current.length ? `<div class="list">${s.current.map((b) => `
-          <div class="list-item"><div class="grow"><a href="#/book/${b.bookId}">${esc(b.title)}</a>${b.pages ? ` <span class="small muted">${fmt(b.pages)} p.</span>` : ''}</div>
-          ${b.days != null ? `<span class="small ${b.stale ? '' : 'muted'}">${b.days} jour(s)</span>` : '<span class="small muted">début inconnu</span>'}
-          ${b.stale ? '<span class="badge badge-warn">Traîne</span>' : ''}</div>`).join('')}</div>` : '<p class="muted small">Aucune lecture en cours.</p>')}
-      <div class="stat-grid">
-        ${section('Catégories', rankList(s.tastes.categories.map((t) => ({ name: t.name, count: t.read + t.abandoned, sub: `${t.read} lu(s)${t.abandoned ? `, ${t.abandoned} abandonné(s)` : ''}${t.liked ? `, ${t.liked} aimé(s)` : ''}` }))))}
-        ${section('Auteurs les plus lus', rankList(s.tastes.authors))}
-        ${features().tags ? section('Tags', rankList(s.tastes.tags.map((t) => ({ name: '#' + t.name, count: t.read + t.abandoned, sub: `${t.read} lu(s)${t.liked ? `, ${t.liked} aimé(s)` : ''}` })))) : ''}
-        ${section('Collections', rankList(s.tastes.collections))}
+      </div>
+
+      <div class="dash-grid">
+        ${panel('Répartition', donut([
+          { label: 'Lus', value: c.read, color: '--cat-1' },
+          { label: 'En cours', value: c.reading, color: '--cat-2' },
+          { label: 'À lire', value: c.toRead, color: '--cat-3' },
+          { label: 'Abandonnés', value: c.abandoned, color: '--cat-4' },
+        ], c.read + c.reading + c.toRead + c.abandoned, 'livres') + `<p class="small muted" style="margin-top:8px">${s.abandonRate != null ? `Taux d'abandon : <strong>${s.abandonRate} %</strong>` : ''}${c.liked ? ` · ♥ ${fmt(c.liked)} aimé(s)` : ''}${c.disliked ? ` · ✕ ${fmt(c.disliked)} pas aimé(s)` : ''}</p>`)}
+        ${panel('Livres lus par mois', columns(s.monthly.map((m) => ({ month: m.month, value: m.books, prev: m.prevBooks })), { unit: 'livre(s)' }), 'span-2')}
+      </div>
+
+      ${panel('Pages lues par mois', area(s.monthly.map((m) => ({ month: m.month, value: m.pages })), { unit: 'pages' }))}
+
+      <div class="dash-grid">
+        ${panel('🏆 Auteurs favoris', podium(s.tastes.authors, { unit: ' livre(s)', empty: 'Aucun livre lu sur cette période.' }))}
+        ${panel('Catégories', rankList(s.tastes.categories.map((t) => ({ name: t.name, count: t.read + t.abandoned, sub: `${t.read} lu(s)${t.abandoned ? ` · ${t.abandoned} abandonné(s)` : ''}${t.liked ? ` · ♥ ${t.liked}` : ''}` }))))}
+        ${features().tags ? panel('Tags', rankList(s.tastes.tags.map((t) => ({ name: '#' + t.name, count: t.read + t.abandoned, sub: `${t.read} lu(s)${t.liked ? ` · ♥ ${t.liked}` : ''}` })))) : ''}
+        ${panel('Collections', rankList(s.tastes.collections))}
+      </div>
+
+      ${panel('Records', `<div class="records">${records.map(([icon, label, b, val]) => `
+        <div class="record">${b ? miniCover(b, 'record-cover') : '<span class="mini-cover record-cover"><span>?</span></span>'}
+          <div><div class="record-label">${icon} ${label}</div>${b ? `<a href="#/book/${b.bookId}" class="record-title">${esc(b.title)}</a><div class="record-value">${val}</div>` : '<div class="muted small">Pas encore de données</div>'}</div></div>`).join('')}</div>`)}
+
+      <div class="dash-grid">
+        ${panel('📖 En cours', s.current.length ? `<div class="reading-now">${s.current.map((b) => `
+          <div class="now-item">${miniCover(b)}
+            <div class="now-info"><a href="#/book/${b.bookId}">${esc(b.title)}</a>
+              <div class="small muted">${b.days != null ? `${b.days} jour(s)` : 'début inconnu'}${b.pages ? ` · ${fmt(b.pages)} p.` : ''}</div>
+              ${b.days != null ? `<div class="now-bar ${b.stale ? 'stale' : ''}"><span style="width:${Math.min(100, (b.days / s.staleDays) * 100)}%"></span></div>` : ''}
+              ${b.stale ? `<span class="badge badge-warn">Traîne (+ de ${s.staleDays} j)</span>` : ''}</div></div>`).join('')}</div>`
+          : '<p class="muted small">Aucune lecture en cours.</p>', 'span-2')}
+        ${panel('♥ Coups de cœur', coverStrip(s.favorites, 'Aucun livre aimé pour le moment.'))}
       </div>`;
   }
 
@@ -2823,40 +3000,48 @@
     const L = s.loans;
     const F = s.fonds;
     const R = s.reading;
-    return `<p class="muted small">Période : ${esc(s.period.label)}. Lecture : totaux anonymes de tous les comptes, sans détail par personne.</p>
-      ${R ? `<h2>Lecture</h2>
-        <div class="stat-tiles">${tile(fmt(R.booksRead), 'Lectures terminées')}${tile(fmt(R.activeReaders), 'Lecteurs actifs')}</div>
-        <div class="stat-grid">
-          ${section('Les plus lus', rankList(R.mostRead, { unit: ' lecteur(s)' }))}
-          ${section('Les plus aimés', rankList(R.mostLiked, { empty: 'Aucun livre aimé.' }))}
-          ${section('Les plus abandonnés', rankList(R.mostAbandoned))}
-        </div>` : ''}
-      <h2>Prêts</h2>
-      <div class="stat-tiles">
-        ${tile(fmt(L.total), 'Prêts sur la période')}
-        ${tile(fmt(L.open), 'Prêts en cours')}
-        ${tile(L.avgDays != null ? `${fmt(L.avgDays)} j` : '—', 'Durée moyenne d\'un prêt')}
-        ${tile(fmt(L.neverBorrowedCount), 'Livres jamais empruntés')}
+    return `
+      <div class="kpis kpis-wide">
+        ${R ? kpi('📚', fmt(R.booksRead), 'Lectures terminées') : ''}
+        ${R ? kpi('👥', fmt(R.activeReaders), 'Lecteurs actifs') : ''}
+        ${kpi('🔁', fmt(L.total), 'Prêts sur la période', '', L.perMonth.map((m) => m.count))}
+        ${kpi('📤', fmt(L.open), 'Prêts en cours')}
+        ${kpi('⏱', L.avgDays != null ? `${fmt(L.avgDays)} j` : '—', 'Durée moyenne d\'un prêt')}
+        ${kpi('📘', fmt(F.books), 'Livres', features().ebooks ? `${fmt(F.physical)} papier · ${fmt(F.ebooks)} numérique(s)` : '', F.growth.map((m) => m.count))}
+        ${kpi('🏷', fmt(F.copies), 'Exemplaires')}
+        ${kpi('📄', fmt(F.pages), 'Pages au total')}
       </div>
-      <div class="stat-grid">
-        ${section('Prêts par mois', monthChart(L.perMonth.map((m) => ({ month: m.month, value: m.count })), { unit: 'prêt(s)' }))}
-        ${section('Les plus empruntés', rankList(L.mostBorrowed))}
-        ${section('Emprunteurs les plus actifs', rankList(L.topBorrowers))}
-        ${section('Prêts en cours les plus anciens', rankList(L.oldestOpen.map((l) => ({ bookId: l.bookId, name: l.name, count: l.days, sub: l.borrower })), { empty: 'Aucun prêt en cours.', unit: ' j' }))}
-        ${section('Jamais empruntés', L.neverBorrowed.length ? `<div class="list">${L.neverBorrowed.map((b) => `<div class="list-item"><a href="#/book/${b.bookId}">${esc(b.name)}</a></div>`).join('')}</div>
-          ${L.neverBorrowedCount > L.neverBorrowed.length ? `<p class="small muted">… et ${L.neverBorrowedCount - L.neverBorrowed.length} autre(s).</p>` : ''}` : '<p class="muted small">Tous les livres ont déjà été empruntés.</p>')}
+
+      ${R ? `<div class="dash-grid">
+        ${panel('🏆 Les plus lus', podium(R.mostRead, { covers: true, unit: ' lecteur(s)' }))}
+        ${panel('♥ Les plus aimés', podium(R.mostLiked, { covers: true, empty: 'Aucun livre aimé.' }))}
+        ${panel('Les plus abandonnés', rankList(R.mostAbandoned))}
+      </div>` : ''}
+
+      <div class="dash-grid">
+        ${panel('Prêts par mois', columns(L.perMonth.map((m) => ({ month: m.month, value: m.count })), { unit: 'prêt(s)' }), 'span-2')}
+        ${panel('🏆 Les plus empruntés', podium(L.mostBorrowed, { covers: true, unit: ' prêt(s)' }))}
       </div>
-      <h2>Fonds</h2>
-      <div class="stat-tiles">
-        ${tile(fmt(F.books), 'Livres', features().ebooks ? `${fmt(F.physical)} papier · ${fmt(F.ebooks)} numérique(s)` : '')}
-        ${tile(fmt(F.copies), 'Exemplaires')}
-        ${tile(fmt(F.pages), 'Pages au total')}
-        ${tile(fmt(F.added), 'Ajoutés sur la période')}
+
+      <div class="dash-grid">
+        ${panel('Emprunteurs les plus actifs', rankList(L.topBorrowers, { unit: ' prêt(s)' }))}
+        ${panel('Prêts en cours les plus anciens', L.oldestOpen.length ? `<div class="reading-now">${L.oldestOpen.map((l) => `
+          <div class="now-item">${miniCover({ ...l, title: l.name })}<div class="now-info"><a href="#/book/${l.bookId}">${esc(l.name)}</a>
+            <div class="small muted">${esc(l.borrower)} · ${l.days} jour(s)</div></div></div>`).join('')}</div>` : '<p class="muted small">Aucun prêt en cours.</p>')}
+        ${panel(`Jamais empruntés (${fmt(L.neverBorrowedCount)})`, coverStrip(L.neverBorrowed, 'Tous les livres ont déjà été empruntés.')
+          + (L.neverBorrowedCount > L.neverBorrowed.length ? `<p class="small muted">… et ${L.neverBorrowedCount - L.neverBorrowed.length} autre(s).</p>` : ''))}
       </div>
-      <div class="stat-grid">
-        ${section('Livres ajoutés par mois', monthChart(F.growth.map((m) => ({ month: m.month, value: m.count })), { unit: 'livre(s)' }))}
-        ${section('Catégories', rankList(F.byCategory))}
-        ${section('Collections', rankList(F.byCollection))}
+
+      <div class="dash-grid">
+        ${panel('Livres ajoutés par mois', area(F.growth.map((m) => ({ month: m.month, value: m.count })), { unit: 'livre(s)' }), 'span-2')}
+        ${features().ebooks ? panel('Papier / numérique', donut([
+          { label: 'Papier', value: F.physical, color: '--cat-1' },
+          { label: 'Numérique', value: F.ebooks, color: '--cat-2' },
+        ], F.books, 'livres')) : panel('Collections', rankList(F.byCollection))}
+      </div>
+      <div class="dash-grid">
+        ${panel('Catégories du fonds', rankList(F.byCategory))}
+        ${features().ebooks ? panel('Collections', rankList(F.byCollection)) : ''}
       </div>`;
   }
 
