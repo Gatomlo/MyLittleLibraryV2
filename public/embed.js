@@ -222,7 +222,7 @@
         return;
       }
       const html = data.items.map((b) => `<button class="card" data-id="${b.id}">${cover(b)}<div class="meta">
-        <span class="t">${esc(b.title)}</span><span class="a">${esc(b.authors)}${b.year ? ' · ' + b.year : ''}</span>
+        <span class="t">${esc(b.title)}</span><span class="a">${esc(b.authors)}</span>
         ${b.collection ? `<span class="coll">${esc(b.collection)}${b.collectionNumber ? ' · n° ' + esc(b.collectionNumber) : ''}</span>` : ''}${badge(b)}</div></button>`).join('');
       if (append) $('.grid').insertAdjacentHTML('beforeend', html);
       else $('.grid').innerHTML = html || '<div class="empty">Aucun livre ne correspond.</div>';

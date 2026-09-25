@@ -880,7 +880,7 @@
         ${coverHtml(b)}
         <div class="meta">
           <span class="t">${esc(b.title)}</span>
-          <span class="a">${esc(b.authors)}${b.year ? ' · ' + b.year : ''}</span>
+          <span class="a">${esc(b.authors)}</span>
           ${b.collection ? `<span class="coll">${esc(b.collection)}${b.collectionNumber ? ' · n° ' + esc(b.collectionNumber) : ''}</span>` : ''}
           ${withStatus ? statusIcons(b.status) : ''}
           ${availabilityBadge(b)}
