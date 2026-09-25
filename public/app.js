@@ -100,11 +100,13 @@
   }
 
   function availabilityBadge(b) {
-    if (b.format === 'ebook') return '<span class="badge badge-ebook">Livre numérique</span>';
-    if (!b.totalCopies) return '<span class="badge badge-muted">Aucun exemplaire</span>';
-    if (b.availableCopies === 0) return '<span class="badge badge-warn">Emprunté</span>';
-    if (b.totalCopies > 1) return `<span class="badge badge-ok">${b.availableCopies}/${b.totalCopies} disponibles</span>`;
-    return '<span class="badge badge-ok">Disponible</span>';
+    const ebook = b.ebookCopies > 0 ? '<span class="badge badge-ebook">Numérique</span>' : '';
+    if (!b.totalCopies) return ebook || '<span class="badge badge-muted">Aucun exemplaire</span>';
+    let paper;
+    if (b.availableCopies === 0) paper = '<span class="badge badge-warn">Emprunté</span>';
+    else if (b.totalCopies > 1) paper = `<span class="badge badge-ok">${b.availableCopies}/${b.totalCopies} disponibles</span>`;
+    else paper = '<span class="badge badge-ok">Disponible</span>';
+    return ebook ? `<span class="badges">${paper}${ebook}</span>` : paper;
   }
 
   // Redimensionne une image choisie (ou photographiee) avant envoi au serveur.
@@ -1025,10 +1027,8 @@
             </div>` : ''}
         </div>
       </div>
-      ${book.format === 'ebook'
-        ? '<div class="info-box" style="margin-top:20px">Livre numérique : pas d\'exemplaire, pas d\'étiquette ni de prêt.</div>'
-        : `<h2>Exemplaires</h2>
-      <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>`}
+      <h2>Exemplaires</h2>
+      <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
       ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}`;
     if (manage) bindAdminBook(book);
     if (manage && book.myStatus) bindStatusEditor(book);
@@ -1106,15 +1106,26 @@
   }
 
   function publicCopiesHtml(book) {
-    if (!book.copies.length) return '<p class="muted">Aucun exemplaire.</p>';
-    return `<div class="table-wrap"><table><thead><tr><th>Code</th><th>Emplacement</th><th>État</th></tr></thead><tbody>
+    if (!book.copies.length && !book.ebookCopies) return '<p class="muted">Aucun exemplaire.</p>';
+    return `<div class="table-wrap"><table><thead><tr><th>Exemplaire</th><th>Emplacement</th><th>État</th></tr></thead><tbody>
       ${book.copies.map((c) => `<tr><td class="code">${esc(c.code)}</td><td>${esc(c.location) || '<span class="muted">—</span>'}</td>
         <td>${c.available ? '<span class="badge badge-ok">Disponible</span>' : '<span class="badge badge-warn">Emprunté</span>'}</td></tr>`).join('')}
+      ${book.ebookCopies ? '<tr><td><span class="badge badge-ebook">Numérique</span></td><td><span class="muted">—</span></td><td><span class="small muted">Version numérique</span></td></tr>' : ''}
     </tbody></table></div>`;
   }
 
+  // Exemplaires papier (code, etiquette, pret) puis numerique (sans code ni pret).
   function adminCopiesHtml(book) {
-    const rows = book.copies.map((c) => `
+    const physical = book.copies.filter((c) => c.format !== 'ebook');
+    const hasEbook = book.copies.some((c) => c.format === 'ebook');
+    const rows = book.copies.map((c) => (c.format === 'ebook' ? `
+      <tr class="copy-ebook">
+        <td><span class="badge badge-ebook">Numérique</span></td>
+        <td>${esc(c.location) || '<span class="muted">—</span>'}${c.notes ? `<div class="small muted">${esc(c.notes)}</div>` : ''}</td>
+        <td><span class="small muted">Pas de prêt</span></td>
+        <td><span class="small muted">Pas d'étiquette</span></td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn btn-small" data-edit-copy="${c.id}">Modifier</button></td>
+      </tr>` : `
       <tr>
         <td class="code"><a href="#/c/${encodeURIComponent(c.code)}">${esc(c.code)}</a></td>
         <td>${esc(c.location) || '<span class="muted">—</span>'}</td>
@@ -1126,12 +1137,13 @@
           <a class="btn btn-small ${c.loan ? 'btn-ok' : 'btn-primary'}" href="#/c/${encodeURIComponent(c.code)}">${c.loan ? 'Retour' : 'Prêter'}</a>
           <button class="btn btn-small" data-edit-copy="${c.id}">Modifier</button>
         </td>
-      </tr>`).join('');
+      </tr>`)).join('');
     return `
       ${book.copies.length ? `<div class="table-wrap"><table class="stack"><thead><tr><th>Code</th><th>Emplacement</th><th>État</th><th>Étiquette</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted">Aucun exemplaire.</p>'}
       <div class="btn-row" style="margin-top:12px">
-        <button class="btn" id="add-copy">+ Ajouter un exemplaire</button>
-        ${book.copies.length ? '<button class="btn" id="print-labels">Imprimer les étiquettes</button>' : ''}
+        <button class="btn" id="add-copy">+ Exemplaire papier</button>
+        ${features().ebooks && !hasEbook ? '<button class="btn" id="add-ebook">+ Exemplaire numérique</button>' : ''}
+        ${physical.length ? '<button class="btn" id="print-labels">Imprimer les étiquettes</button>' : ''}
       </div>`;
   }
 
@@ -1151,9 +1163,10 @@
         go('#/');
       } catch (err) { toast(err.message, 'error'); }
     };
+    const physical = book.copies.filter((c) => c.format !== 'ebook');
     const addCopy = $('#add-copy');
     if (addCopy) addCopy.onclick = async () => {
-      const location = prompt("Emplacement du nouvel exemplaire (facultatif) :", (book.copies[0] && book.copies[0].location) || '');
+      const location = prompt("Emplacement du nouvel exemplaire papier (facultatif) :", (physical[0] && physical[0].location) || '');
       if (location === null) return;
       try {
         const r = await api(`/api/books/${book.id}/copies`, { method: 'POST', body: { count: 1, location } });
@@ -1161,9 +1174,19 @@
         route();
       } catch (err) { toast(err.message, 'error'); }
     };
+    const addEbook = $('#add-ebook');
+    if (addEbook) addEbook.onclick = async () => {
+      const location = prompt('Emplacement du fichier (facultatif : Calibre, dossier partagé, liseuse…) :', '');
+      if (location === null) return;
+      try {
+        await api(`/api/books/${book.id}/copies`, { method: 'POST', body: { format: 'ebook', location } });
+        toast('Exemplaire numérique ajouté.');
+        route();
+      } catch (err) { toast(err.message, 'error'); }
+    };
     const print = $('#print-labels');
     if (print) print.onclick = () => {
-      state.labels = { mode: 'manual', manual: book.copies.map((c) => ({ code: c.code, title: book.title })) };
+      state.labels = { mode: 'manual', manual: physical.map((c) => ({ code: c.code, title: book.title })) };
       go('#/labels');
     };
     $$('[data-edit-copy]').forEach((btn) => {
@@ -1177,8 +1200,8 @@
     backdrop.className = 'modal-backdrop';
     backdrop.innerHTML = `
       <form class="modal">
-        <h2>Exemplaire <span class="code">${esc(copy.code)}</span></h2>
-        <div class="field"><label>Emplacement</label><input name="location" list="loc-list" value="${esc(copy.location)}">
+        <h2>${copy.format === 'ebook' ? 'Exemplaire numérique' : `Exemplaire <span class="code">${esc(copy.code)}</span>`}</h2>
+        <div class="field"><label>${copy.format === 'ebook' ? 'Emplacement du fichier' : 'Emplacement'}</label><input name="location" list="loc-list" value="${esc(copy.location)}">
           <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist></div>
         <div class="field"><label>Notes (état, provenance…)</label><textarea name="notes" style="min-height:80px">${esc(copy.notes)}</textarea></div>
         <div class="btn-row">
@@ -1191,7 +1214,7 @@
     const close = () => backdrop.remove();
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(); });
     $('[data-delete]', backdrop).onclick = async () => {
-      if (!confirm(`Supprimer l'exemplaire ${copy.code} et son historique de prêts ?`)) return;
+      if (!confirm(copy.format === 'ebook' ? "Supprimer l'exemplaire numérique ?" : `Supprimer l'exemplaire ${copy.code} et son historique de prêts ?`)) return;
       try { await api(`/api/copies/${copy.id}`, { method: 'DELETE' }); close(); toast('Exemplaire supprimé.'); route(); } catch (err) { toast(err.message, 'error'); }
     };
     $('form', backdrop).onsubmit = async (e) => {
@@ -1564,7 +1587,6 @@
     ]);
     const b = book || { isbn: '', title: '', subtitle: '', authors: '', publisher: '', collection: '', collectionNumber: '', year: '', pages: '', summary: '', notes: '', categories: [], coverUrl: null, format: 'physical' };
     const form = { categories: b.categories.map((c) => c.name), tags: (b.tags || []).map((t) => t.name), cover: { url: b.coverUrl ? mediaSrc(b.coverUrl) : '', remoteUrl: '', data: '', removed: false } };
-    const showFormat = features().ebooks || b.format === 'ebook';
 
     view().innerHTML = `
       <p><a href="${editing ? `#/book/${b.id}` : '#/'}">← ${editing ? 'Retour à la fiche' : 'Catalogue'}</a></p>
@@ -1591,11 +1613,6 @@
             <p class="small muted" style="margin-top:8px">La couverture trouvée par la recherche ISBN est enregistrée automatiquement.</p>
           </div>
         </div>
-        ${showFormat ? `<div class="field"><label>Type</label>
-          <div class="btn-row">
-            <label class="check"><input type="radio" name="format" value="physical" ${b.format !== 'ebook' ? 'checked' : ''}> Livre papier</label>
-            <label class="check"><input type="radio" name="format" value="ebook" ${b.format === 'ebook' ? 'checked' : ''}> Livre numérique <span class="small muted">(pas d'exemplaire ni d'étiquette)</span></label>
-          </div></div>` : ''}
         <div class="field"><label for="title">Titre *</label><input id="title" name="title" required value="${esc(b.title)}"></div>
         <div class="field"><label for="subtitle">Sous-titre</label><input id="subtitle" name="subtitle" value="${esc(b.subtitle)}"></div>
         <div class="field"><label for="authors">Auteur(s)</label><input id="authors" name="authors" placeholder="Séparés par des virgules" value="${esc(b.authors)}"></div>
@@ -1633,21 +1650,20 @@
           <datalist id="tag-list">${allTags.map((t) => `<option value="${esc(t.name)}">`).join('')}</datalist>
         </div>` : ''}
         ${editing ? '' : `
-        <div class="grid-2" id="copies-block" ${b.format === 'ebook' ? 'hidden' : ''}>
-          <div class="field"><label for="copies">Nombre d'exemplaires</label><input id="copies" name="copies" type="number" min="1" max="50" value="1"></div>
+        <div class="grid-2" id="copies-block">
+          <div class="field"><label for="copies">Exemplaires papier</label><input id="copies" name="copies" type="number" min="0" max="50" value="1">
+            <p class="small muted" style="margin:4px 0 0">Chacun reçoit un code et une étiquette.</p></div>
           <div class="field"><label for="location">Emplacement</label><input id="location" name="location" list="loc-list" placeholder="Étagère, armoire…">
             <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist></div>
-        </div>`}
+        </div>
+        ${features().ebooks ? `<div class="field"><label class="check"><input type="checkbox" name="ebook" id="ebook">
+          <span>Version numérique (epub, pdf…) <span class="small muted">— exemplaire numérique, sans code, étiquette ni prêt</span></span></label></div>` : ''}`}
         <div class="field"><label for="notes">Notes internes (visibles uniquement par les gestionnaires)</label><textarea id="notes" name="notes" style="min-height:70px">${esc(b.notes)}</textarea></div>
         <div id="form-err"></div>
         <div class="btn-row"><button class="btn btn-primary" type="submit">${editing ? 'Enregistrer' : 'Ajouter au catalogue'}</button></div>
       </form>`;
 
     const f = $('#book-form');
-    const currentFormat = () => { const r = $('input[name=format]:checked', f); return r ? r.value : (b.format || 'physical'); };
-    $$('input[name=format]', f).forEach((r) => {
-      r.onchange = () => { const cb = $('#copies-block'); if (cb) cb.hidden = currentFormat() === 'ebook'; };
-    });
 
     function renderCover() {
       const src = form.cover.data || form.cover.remoteUrl || (form.cover.removed ? '' : form.cover.url);
@@ -1784,12 +1800,18 @@
         coverUrl: !form.cover.data && form.cover.remoteUrl ? form.cover.remoteUrl : undefined,
         removeCover: form.cover.removed || undefined,
       };
-      body.format = currentFormat();
-      if (!editing && body.format !== 'ebook') { body.copies = Number(f.copies.value) || 1; body.location = f.location.value; }
+      if (!editing) {
+        body.copies = Math.max(0, Number(f.copies.value) || 0);
+        body.location = f.location.value;
+        body.ebook = !!(f.ebook && f.ebook.checked);
+      }
       try {
         const saved = await api(editing ? `/api/books/${b.id}` : '/api/books', { method: editing ? 'PUT' : 'POST', body });
         if (editing) toast('Fiche enregistrée.');
-        else toast(`Livre ajouté : ${saved.copies.map((c) => c.code).join(', ')}. Étiquette(s) en attente d'impression.`);
+        else {
+          const codes = saved.copies.filter((c) => c.format !== 'ebook').map((c) => c.code);
+          toast(codes.length ? `Livre ajouté : ${codes.join(', ')}. Étiquette(s) en attente d'impression.` : 'Livre ajouté.');
+        }
         go(`#/book/${saved.id}`);
       } catch (err) {
         $('#form-err').innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -1819,7 +1841,7 @@
     { key: 'collection', label: 'Collection / série', aliases: ['collection', 'serie', 'series', 'saga', 'cycle'] },
     { key: 'collectionNumber', label: 'N° dans la collection', aliases: ['n dans la collection', 'numero dans la collection', 'numero', 'num', 'no', 'tome', 'volume', 'n serie', 'numero de serie'] },
     { key: 'tags', label: 'Tags', aliases: ['tags', 'tag', 'mots cles', 'mots-cles', 'motscles', 'keywords', 'etiquettes libres'] },
-    { key: 'format', label: 'Type (papier / numérique)', aliases: ['type', 'format', 'support', 'type de livre'] },
+    { key: 'format', label: 'Type (Papier, Numérique ou Papier + numérique)', aliases: ['type', 'format', 'support', 'type de livre', 'numerique', 'version'] },
   ];
   const normHeader = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -1922,14 +1944,15 @@
     const body = $('#import-body');
 
     const formatOption = features().ebooks ? `
-      <div class="field"><label>Type</label><select id="opt-format">
-        <option value="physical">Livres papier</option>
-        <option value="ebook">Livres numériques (sans exemplaire)</option>
+      <div class="field"><label>Exemplaires à créer</label><select id="opt-format">
+        <option value="physical">Papier (avec code et étiquette)</option>
+        <option value="both">Papier + numérique</option>
+        <option value="ebook">Numérique seul (epub, pdf… : sans code ni étiquette)</option>
       </select></div>` : '';
     const options = `
       <div class="grid-2">
         ${s.mode !== 'full' ? `
-          ${s.mode === 'isbn' ? `<div class="field"><label>Exemplaires par ISBN</label><input type="number" id="opt-copies" min="1" max="50" value="1">
+          ${s.mode === 'isbn' ? `<div class="field"><label>Exemplaires papier par ISBN</label><input type="number" id="opt-copies" min="1" max="50" value="1">
             <p class="small muted" style="margin-top:4px">Un ISBN présent plusieurs fois dans la liste compte pour plusieurs exemplaires.</p></div>` : ''}
           ${formatOption}
           <div class="field"><label>Emplacement</label><input id="opt-location" list="loc-list" placeholder="facultatif"></div>
@@ -1939,7 +1962,7 @@
             <p class="small muted" style="margin-top:4px">Les valeurs du fichier restent prioritaires.</p></div>
           <div class="field"><label>Emplacement par défaut</label><input id="opt-location" list="loc-list" placeholder="si la colonne est vide"></div>`}
         <div class="field"><label>Si l'ISBN est déjà au catalogue</label><select id="opt-dup">
-          <option value="copy">Ajouter un exemplaire au livre existant</option>
+          <option value="copy">Ajouter les exemplaires au livre existant (le numérique s'il manque)</option>
           <option value="skip">Ignorer la ligne</option>
           <option value="new">Créer quand même une nouvelle fiche</option>
         </select></div>
@@ -2263,8 +2286,8 @@
     const copies = ok.reduce((n, i) => n + (i.data.copies || 1), 0);
     const statusHtml = (r) => {
       if (!r) return '<span class="small muted">en attente</span>';
-      if (r.status === 'created') return `<span class="badge badge-ok">Ajouté</span> <a href="#/book/${r.bookId}">${esc(r.title)}</a> <span class="small muted code">${esc(r.codes.join(', '))}</span>`;
-      if (r.status === 'copies') return `<span class="badge badge-ok">+ ${r.codes.length} ex.</span> <a href="#/book/${r.bookId}">${esc(r.title)}</a> <span class="small muted code">${esc(r.codes.join(', '))}</span>`;
+      if (r.status === 'created') return `<span class="badge badge-ok">Ajouté</span> <a href="#/book/${r.bookId}">${esc(r.title)}</a> <span class="small muted code">${esc(r.codes.join(', '))}</span> ${r.ebook ? '<span class="badge badge-ebook">+ numérique</span>' : ''}`;
+      if (r.status === 'copies') return `${r.codes.length ? `<span class="badge badge-ok">+ ${r.codes.length} ex.</span> ` : ''}<a href="#/book/${r.bookId}">${esc(r.title)}</a> <span class="small muted code">${esc(r.codes.join(', '))}</span> ${r.ebook ? '<span class="badge badge-ebook">+ numérique</span>' : ''}`;
       if (r.status === 'skipped') return `<span class="badge badge-muted">Ignoré</span> déjà au catalogue : <a href="#/book/${r.bookId}">${esc(r.title)}</a>`;
       return `<span class="badge badge-warn">Erreur</span> <span class="small">${esc(r.error)}</span>`;
     };
@@ -3081,7 +3104,7 @@
         ${kpi('📤', fmt(L.open), 'Prêts en cours')}
         ${kpi('⏱', L.avgDays != null ? `${fmt(L.avgDays)} j` : '—', 'Durée moyenne d\'un prêt')}
         ${kpi('📘', fmt(F.books), 'Livres', features().ebooks ? `${fmt(F.physical)} papier · ${fmt(F.ebooks)} numérique(s)` : '', F.growth.map((m) => m.count))}
-        ${kpi('🏷', fmt(F.copies), 'Exemplaires')}
+        ${kpi('🏷', fmt(F.copies), 'Exemplaires papier')}
         ${kpi('📄', fmt(F.pages), 'Pages au total')}
       </div>
 
@@ -3108,8 +3131,9 @@
       <div class="dash-grid">
         ${panel('Livres ajoutés par mois', area(F.growth.map((m) => ({ month: m.month, value: m.count })), { unit: 'livre(s)' }), 'span-2')}
         ${features().ebooks ? panel('Papier / numérique', donut([
-          { label: 'Papier', value: F.physical, color: '--cat-1' },
-          { label: 'Numérique', value: F.ebooks, color: '--cat-2' },
+          { label: 'Papier seul', value: F.paperOnly, color: '--cat-1' },
+          { label: 'Papier + numérique', value: F.both, color: '--cat-3' },
+          { label: 'Numérique seul', value: F.ebookOnly, color: '--cat-2' },
         ], F.books, 'livres')) : panel('Collections', rankList(F.byCollection))}
       </div>
       <div class="dash-grid">
@@ -3183,7 +3207,7 @@
         ${feat ? '' : `<div class="error-box">Le serveur n'est pas à jour (options indisponibles). Vérifie que tous les fichiers de l'app ont été envoyés,
           y compris le dossier <span class="code">lib/</span>, puis redémarre l'application Node.</div>`}
         <label class="check" style="align-items:flex-start"><input type="checkbox" name="ebooks" ${feat && feat.ebooks ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
-          <span><strong>Livres numériques</strong><br><span class="small muted">Permet d'ajouter des livres de type « numérique » : ils apparaissent au catalogue avec leur étiquette « Livre numérique », sans exemplaire, code, étiquette ni prêt.</span></span></label>
+          <span><strong>Livres numériques</strong><br><span class="small muted">Permet d'ajouter à un livre un exemplaire numérique (epub, pdf…), seul ou en plus des exemplaires papier : il apparaît au catalogue avec la mention « Numérique », sans code, étiquette ni prêt.</span></span></label>
         <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="readingStatus" ${feat && feat.readingStatus ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
           <span><strong>Statuts de lecture</strong><br><span class="small muted">Chaque compte peut marquer un livre « À lire » ou « Lu », et « Aimé » ou « Pas aimé ». Visibles dans le catalogue (gestion), avec des filtres par compte. Jamais affichés sur le catalogue public.</span></span></label>
         <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="tags" ${feat && feat.tags ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">

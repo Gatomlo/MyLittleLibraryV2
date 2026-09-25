@@ -52,6 +52,8 @@
     .meta { padding: 9px 11px 11px; display: flex; flex-direction: column; gap: 3px; flex: 1; }
     .t { font-weight: 700; font-size: 14px; line-height: 1.3; }
     .a { font-size: 13px; color: #776c62; }
+    .badges { margin-top: auto; display: flex; flex-wrap: wrap; gap: 4px; }
+    .badges .badge { margin-top: 0; }
     .badge { align-self: flex-start; margin-top: auto; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
     .ok { background: #dcefe3; color: #2e7d4f; }
     .warn { background: #f6e7d4; color: #a4611c; }
@@ -169,8 +171,9 @@
     const get = (path) => fetch(base + path).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
     const media = (u) => (u ? `${base}/${u}` : '');
     const cover = (b) => `<div class="cover">${b.coverUrl ? `<img src="${esc(media(b.coverUrl))}" alt="" loading="lazy">` : `<span>${esc(b.title)}</span>`}</div>`;
-    const badge = (b) => (b.format === 'ebook' ? '<span class="badge ebook">Livre numérique</span>'
-      : b.availableCopies > 0 ? '<span class="badge ok">Disponible</span>' : b.totalCopies ? '<span class="badge warn">Emprunté</span>' : '');
+    // Papier : disponible / emprunte ; numerique en plus si le livre en a un exemplaire.
+    const badge = (b) => '<div class="badges">' + (b.availableCopies > 0 ? '<span class="badge ok">Disponible</span>' : b.totalCopies ? '<span class="badge warn">Emprunté</span>' : '')
+      + (b.ebookCopies > 0 ? '<span class="badge ebook">Numérique</span>' : '') + '</div>';
     const reload = () => { state.page = 1; load(false); };
 
     // Barre de filtres, dans l'ordre demande. Les listes vides (ex. aucune

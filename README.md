@@ -29,8 +29,10 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   chaque code-barres lu s'ajoute à une liste avec miniature et titre ; toutes les
   fiches sont créées en une fois. Dans « Ajouter », un ISBN complet lance la
   recherche tout seul.
-- **Options par bibliothèque** (Réglages) : livres numériques (sans exemplaire,
-  étiquette ni prêt) et statuts de lecture par compte (À lire / Lu, Aimé / Pas aimé),
+- **Options par bibliothèque** (Réglages) : livres numériques (exemplaire « numérique »
+  — epub, pdf… — seul ou en plus des exemplaires papier, sans code, étiquette ni prêt ;
+  à l'import : Type = Papier, Numérique ou Papier + numérique) et statuts de lecture
+  par compte (À lire / En cours / Lu / Abandonné, Aimé / Pas aimé),
   affichés et filtrables dans le catalogue de gestion.
 - **Catégories** et **tags** (option par bibliothèque) : recherche, regroupement
   alphabétique repliable, fusion de plusieurs termes (les livres suivent), filtres
