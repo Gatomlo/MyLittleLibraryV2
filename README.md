@@ -39,6 +39,16 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   collections, tags, disponibilité, papier/numérique, statuts de lecture, tri), en haut
   ou dans une colonne à gauche. Même choix pour le catalogue WordPress (générateur de
   shortcode : `filtres="..."`, `position="gauche"`). Réglages présentés en accordéon.
+- **Statuts de lecture** (option) : À lire, En cours, Lu, Abandonné + Aimé / Pas aimé,
+  avec dates de début, de fin et d'abandon (automatiques, corrigeables).
+- **Statistiques** (option par bibliothèque, page « Statistiques ») :
+  - par compte : livres lus / en cours / abandonnés, pages, rythme mensuel comparé à
+    l'année précédente, objectif annuel, durées et pages par jour, lectures qui
+    traînent, goûts (catégories, tags, auteurs, collections) ;
+  - privées par défaut, partageables avec les membres de la bibliothèque ; les
+    administrateurs n'y ont pas d'accès particulier ;
+  - bibliothèque : lecture en totaux anonymes, prêts (par mois, durée, plus empruntés,
+    jamais empruntés…), fonds (croissance, catégories, collections).
 - **Rapport d'import** filtrable par statut (ajoutés, ignorés, erreurs, non importés),
   avec copie des ISBN en erreur et nouvel essai des erreurs.
 - **ISBN** : ISBN-13 (978/979), ISBN-10, avec ou sans tirets/espaces, reconnus à la

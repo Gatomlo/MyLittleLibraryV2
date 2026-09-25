@@ -444,7 +444,7 @@
     let links = [];
     if (LIBRARY) {
       links = canManage()
-        ? [['#/', 'Catalogue'], ['#/add', 'Ajouter'], ['#/import', 'Importer'], ['#/loans', 'Prêts'], ['#/borrowers', 'Emprunteurs'], ['#/labels', 'Étiquettes'], ['#/settings', 'Réglages']]
+        ? [['#/', 'Catalogue'], ['#/add', 'Ajouter'], ['#/import', 'Importer'], ['#/loans', 'Prêts'], ['#/borrowers', 'Emprunteurs'], ['#/labels', 'Étiquettes'], ...(features().stats ? [['#/stats', 'Statistiques']] : []), ['#/settings', 'Réglages']]
         : [['#/', 'Catalogue']];
     }
     const current = '#/' + (location.hash.replace(/^#\/?/, '').split('/')[0] || '');
@@ -545,6 +545,7 @@
     [/^\/borrowers$/, viewBorrowers, 'manage'],
     [/^\/borrower\/(\d+)$/, viewBorrower, 'manage'],
     [/^\/labels$/, viewLabels, 'manage'],
+    [/^\/stats$/, viewStats, 'manage'],
     [/^\/settings$/, viewSettings, 'manage'],
     [/^\/account$/, viewAccount, 'user'],
     [/^\/admin$/, viewAdmin, 'admin'],
@@ -2647,6 +2648,218 @@
     await refresh();
   }
 
+  // ================= Statistiques =================
+  // Mes statistiques (et celles des membres qui les partagent), et statistiques de la
+  // bibliotheque (totaux anonymes pour la lecture, prets, fonds). Graphiques en barres
+  // d'une seule couleur (accent), valeur au survol ; legende pour la comparaison.
+  const PERIODS = [['year', 'Cette année'], ['last-year', "L'an dernier"], ['12m', '12 derniers mois'], ['all', 'Depuis le début']];
+  const statsState = { period: 'year', who: 'me' };
+
+  const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString('fr-BE'));
+  const monthLabel = (key, withYear) => new Date(`${key}-15T12:00:00Z`).toLocaleDateString('fr-BE', withYear ? { month: 'short', year: '2-digit' } : { month: 'short' });
+
+  function tile(value, label, hint) {
+    return `<div class="stat-tile"><div class="stat-value">${value}</div><div class="stat-label">${esc(label)}</div>${hint ? `<div class="stat-hint">${hint}</div>` : ''}</div>`;
+  }
+
+  // Barres verticales par mois. series : [{ month, value, prev? }] ; prev = meme mois
+  // un an plus tot (seconde barre, grise), avec legende.
+  function monthChart(series, { unit, prevLabel } = {}) {
+    const withPrev = series.some((s) => s.prev != null && s.prev > 0);
+    const max = Math.max(1, ...series.map((s) => Math.max(s.value, withPrev ? s.prev || 0 : 0)));
+    const multiYear = new Set(series.map((s) => s.month.slice(0, 4))).size > 1;
+    const bar = (v, cls, title) => `<div class="bar ${cls}" style="height:${Math.max(v ? 3 : 0, (v / max) * 100)}%" title="${esc(title)}"><span class="bar-tip">${fmt(v)}</span></div>`;
+    return `<div class="chart">
+      ${withPrev ? `<div class="legend"><span><i class="sw sw-cur"></i>Période</span><span><i class="sw sw-prev"></i>${esc(prevLabel || 'Un an plus tôt')}</span></div>` : ''}
+      <div class="bars" role="img" aria-label="Graphique par mois">
+        ${series.map((s) => `<div class="bar-col">
+          <div class="bar-pair">${bar(s.value, 'cur', `${monthLabel(s.month, true)} : ${fmt(s.value)} ${unit}`)}${withPrev ? bar(s.prev || 0, 'prev', `${monthLabel(s.month, true)}, un an plus tôt : ${fmt(s.prev || 0)} ${unit}`) : ''}</div>
+          <div class="bar-label">${monthLabel(s.month, multiYear)}</div>
+        </div>`).join('')}
+      </div>
+      <details class="chart-table"><summary class="small muted">Voir les valeurs</summary>
+        <table><thead><tr><th>Mois</th><th>${esc(unit)}</th>${withPrev ? '<th>Un an plus tôt</th>' : ''}</tr></thead><tbody>
+        ${series.map((s) => `<tr><td>${monthLabel(s.month, true)}</td><td>${fmt(s.value)}</td>${withPrev ? `<td>${fmt(s.prev || 0)}</td>` : ''}</tr>`).join('')}</tbody></table>
+      </details>
+    </div>`;
+  }
+
+  // Classement en barres horizontales. items : [{ name, count, bookId?, sub? }]
+  function rankList(items, { empty = 'Rien pour cette période.', unit = '' } = {}) {
+    if (!items || !items.length) return `<p class="muted small">${empty}</p>`;
+    const max = Math.max(1, ...items.map((i) => i.count));
+    return `<div class="rank">${items.map((i) => `
+      <div class="rank-row">
+        <div class="rank-name">${i.bookId ? `<a href="#/book/${i.bookId}">${esc(i.name)}</a>` : esc(i.name)}${i.sub ? ` <span class="small muted">${esc(i.sub)}</span>` : ''}</div>
+        <div class="rank-bar"><span style="width:${(i.count / max) * 100}%"></span></div>
+        <div class="rank-count">${fmt(i.count)}${unit}</div>
+      </div>`).join('')}</div>`;
+  }
+
+  const section = (title, body) => `<div class="card stat-card"><h3>${esc(title)}</h3>${body}</div>`;
+
+  async function viewStats() {
+    if (!features().stats) {
+      view().innerHTML = '<div class="empty">Les statistiques ne sont pas activées pour cette bibliothèque (Réglages > Options).</div>';
+      return;
+    }
+    const ov = await api('/api/stats/overview');
+    if (statsState.who !== 'me' && statsState.who !== 'library' && !ov.shared.some((m) => String(m.id) === statsState.who)) statsState.who = 'me';
+    view().innerHTML = `
+      <div class="page-head"><div><h1>Statistiques</h1></div>
+        <select id="st-period" style="width:auto">${PERIODS.map(([k, l]) => `<option value="${k}" ${statsState.period === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      </div>
+      <div class="tabs" id="st-tabs">
+        <button data-who="me" class="${statsState.who === 'me' ? 'active' : ''}">Mes statistiques</button>
+        ${ov.shared.map((m) => `<button data-who="${m.id}" class="${statsState.who === String(m.id) ? 'active' : ''}">${esc(m.username)}</button>`).join('')}
+        <button data-who="library" class="${statsState.who === 'library' ? 'active' : ''}">Bibliothèque</button>
+      </div>
+      <div id="st-body"><p class="muted">Calcul…</p></div>`;
+    $('#st-period').onchange = (e) => { statsState.period = e.target.value; renderStatsBody(ov); };
+    $$('#st-tabs [data-who]').forEach((b) => {
+      b.onclick = () => {
+        statsState.who = b.dataset.who;
+        $$('#st-tabs button').forEach((x) => x.classList.toggle('active', x === b));
+        renderStatsBody(ov);
+      };
+    });
+    await renderStatsBody(ov);
+  }
+
+  async function renderStatsBody(ov) {
+    const body = $('#st-body');
+    body.innerHTML = '<p class="muted">Calcul…</p>';
+    try {
+      if (statsState.who === 'library') {
+        body.innerHTML = libraryStatsHtml(await api(`/api/stats/library?period=${statsState.period}`));
+      } else {
+        const id = statsState.who === 'me' ? ov.me.id : Number(statsState.who);
+        const s = await api(`/api/stats/user/${id}?period=${statsState.period}`);
+        body.innerHTML = (statsState.who === 'me' ? prefsHtml(ov) : `<p class="muted">Statistiques partagées par <strong>${esc(s.user.username)}</strong>.</p>`) + userStatsHtml(s, statsState.who === 'me');
+        if (statsState.who === 'me') bindPrefs(ov);
+      }
+    } catch (err) { body.innerHTML = `<div class="error-box">${esc(err.message)}</div>`; }
+  }
+
+  function prefsHtml(ov) {
+    const p = ov.prefs;
+    return `<details class="card stat-prefs"><summary><strong>Mes réglages</strong> <span class="small muted">partage ${p.shareStats ? 'activé' : 'désactivé'}${p.yearlyGoal ? ` · objectif ${p.yearlyGoal} livres` : ''}</span></summary>
+      <div class="grid-3" style="margin-top:12px">
+        <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="pf-share" ${p.shareStats ? 'checked' : ''} ${ov.member ? '' : 'disabled'}> Partager mes statistiques avec les membres de la bibliothèque</label>
+          ${ov.member ? '' : '<p class="small muted">Réservé aux comptes liés à cette bibliothèque.</p>'}</div>
+        <div class="field"><label>Objectif de l'année (livres)</label><input type="number" id="pf-goal" min="1" max="1000" placeholder="aucun" value="${p.yearlyGoal || ''}"></div>
+        <div class="field"><label>Signaler une lecture en cours après (jours)</label><input type="number" id="pf-stale" min="1" max="3650" value="${p.staleDays}"></div>
+      </div>
+    </details>`;
+  }
+
+  function bindPrefs(ov) {
+    const save = async (body) => {
+      try {
+        ov.prefs = await api('/api/stats/prefs', { method: 'PUT', body });
+        toast('Réglages enregistrés.');
+        renderStatsBody(ov);
+      } catch (err) { toast(err.message, 'error'); }
+    };
+    $('#pf-share').onchange = (e) => save({ shareStats: e.target.checked });
+    $('#pf-goal').onchange = (e) => save({ yearlyGoal: e.target.value || null });
+    $('#pf-stale').onchange = (e) => save({ staleDays: e.target.value });
+  }
+
+  function userStatsHtml(s, mine) {
+    const c = s.counts;
+    const warn = features().readingStatus ? '' : '<div class="info-box">Les statuts de lecture sont désactivés : active-les (Réglages > Options) pour alimenter ces statistiques.</div>';
+    const g = s.goal;
+    let goal = '';
+    if (g.target) {
+      const pct = Math.min(100, Math.round((g.done / g.target) * 100));
+      const diff = Math.round((g.done - g.expected) * 10) / 10;
+      goal = section(`Objectif ${g.year}`, `
+        <div class="goal"><div class="goal-bar"><span style="width:${pct}%"></span></div>
+        <p><strong>${g.done} / ${g.target} livres</strong> (${pct} %) · ${diff >= 0 ? `<span style="color:var(--ok)">${fmt(Math.abs(diff))} livre(s) d'avance</span>` : `<span style="color:var(--warn)">${fmt(Math.abs(diff))} livre(s) de retard</span>`} sur le rythme prévu (${fmt(g.expected)} à ce jour).</p></div>`);
+    } else if (mine) {
+      goal = section(`Objectif ${g.year}`, `<p class="muted small">Pas d'objectif. Fixe-en un dans « Mes réglages » ci-dessus. ${g.done} livre(s) lu(s) en ${g.year} pour l'instant.</p>`);
+    }
+    const d = s.durations;
+    const bookLink = (b, extra) => (b ? `<a href="#/book/${b.bookId}">${esc(b.title)}</a> <span class="small muted">${extra}</span>` : '—');
+    return `${warn}
+      <p class="muted small">Période : ${esc(s.period.label)}. « Lus » et « abandonnés » : sur la période ; « en cours » et « à lire » : aujourd'hui.</p>
+      <div class="stat-tiles">
+        ${tile(fmt(c.read), 'Livres lus')}
+        ${tile(fmt(s.pages), 'Pages lues')}
+        ${tile(fmt(c.reading), 'En cours')}
+        ${tile(fmt(c.abandoned), 'Abandonnés', s.abandonRate != null ? `${s.abandonRate} % d'abandon` : '')}
+        ${tile(fmt(c.toRead), 'À lire')}
+        ${tile(fmt(c.liked), 'Aimés', c.disliked ? `${c.disliked} pas aimé(s)` : '')}
+      </div>
+      ${goal}
+      <div class="stat-grid">
+        ${section('Livres lus par mois', monthChart(s.monthly.map((m) => ({ month: m.month, value: m.books, prev: m.prevBooks })), { unit: 'livre(s)' }))}
+        ${section('Pages lues par mois', monthChart(s.monthly.map((m) => ({ month: m.month, value: m.pages })), { unit: 'pages' }))}
+      </div>
+      ${section('Durées de lecture', d.count ? `<div class="stat-tiles">
+          ${tile(`${fmt(d.avgDays)} j`, 'Durée moyenne d\'un livre')}
+          ${tile(d.pagesPerDay != null ? fmt(d.pagesPerDay) : '—', 'Pages par jour')}
+        </div>
+        <dl class="facts">
+          <dt>Lecture la plus rapide</dt><dd>${bookLink(d.fastest, d.fastest ? `${d.fastest.days} j` : '')}</dd>
+          <dt>Lecture la plus longue</dt><dd>${bookLink(d.slowest, d.slowest ? `${d.slowest.days} j` : '')}</dd>
+          <dt>Livre le plus épais lu</dt><dd>${bookLink(d.thickest, d.thickest ? `${fmt(d.thickest.pages)} pages` : '')}</dd>
+        </dl><p class="small muted">Calculé sur ${d.count} livre(s) avec dates de début et de fin.</p>`
+        : '<p class="muted small">Aucun livre lu avec dates de début et de fin sur cette période. Passe un livre « En cours » quand tu le commences.</p>')}
+      ${section(`Lectures en cours (signalées après ${s.staleDays} jours)`, s.current.length ? `<div class="list">${s.current.map((b) => `
+          <div class="list-item"><div class="grow"><a href="#/book/${b.bookId}">${esc(b.title)}</a>${b.pages ? ` <span class="small muted">${fmt(b.pages)} p.</span>` : ''}</div>
+          ${b.days != null ? `<span class="small ${b.stale ? '' : 'muted'}">${b.days} jour(s)</span>` : '<span class="small muted">début inconnu</span>'}
+          ${b.stale ? '<span class="badge badge-warn">Traîne</span>' : ''}</div>`).join('')}</div>` : '<p class="muted small">Aucune lecture en cours.</p>')}
+      <div class="stat-grid">
+        ${section('Catégories', rankList(s.tastes.categories.map((t) => ({ name: t.name, count: t.read + t.abandoned, sub: `${t.read} lu(s)${t.abandoned ? `, ${t.abandoned} abandonné(s)` : ''}${t.liked ? `, ${t.liked} aimé(s)` : ''}` }))))}
+        ${section('Auteurs les plus lus', rankList(s.tastes.authors))}
+        ${features().tags ? section('Tags', rankList(s.tastes.tags.map((t) => ({ name: '#' + t.name, count: t.read + t.abandoned, sub: `${t.read} lu(s)${t.liked ? `, ${t.liked} aimé(s)` : ''}` })))) : ''}
+        ${section('Collections', rankList(s.tastes.collections))}
+      </div>`;
+  }
+
+  function libraryStatsHtml(s) {
+    const L = s.loans;
+    const F = s.fonds;
+    const R = s.reading;
+    return `<p class="muted small">Période : ${esc(s.period.label)}. Lecture : totaux anonymes de tous les comptes, sans détail par personne.</p>
+      ${R ? `<h2>Lecture</h2>
+        <div class="stat-tiles">${tile(fmt(R.booksRead), 'Lectures terminées')}${tile(fmt(R.activeReaders), 'Lecteurs actifs')}</div>
+        <div class="stat-grid">
+          ${section('Les plus lus', rankList(R.mostRead, { unit: ' lecteur(s)' }))}
+          ${section('Les plus aimés', rankList(R.mostLiked, { empty: 'Aucun livre aimé.' }))}
+          ${section('Les plus abandonnés', rankList(R.mostAbandoned))}
+        </div>` : ''}
+      <h2>Prêts</h2>
+      <div class="stat-tiles">
+        ${tile(fmt(L.total), 'Prêts sur la période')}
+        ${tile(fmt(L.open), 'Prêts en cours')}
+        ${tile(L.avgDays != null ? `${fmt(L.avgDays)} j` : '—', 'Durée moyenne d\'un prêt')}
+        ${tile(fmt(L.neverBorrowedCount), 'Livres jamais empruntés')}
+      </div>
+      <div class="stat-grid">
+        ${section('Prêts par mois', monthChart(L.perMonth.map((m) => ({ month: m.month, value: m.count })), { unit: 'prêt(s)' }))}
+        ${section('Les plus empruntés', rankList(L.mostBorrowed))}
+        ${section('Emprunteurs les plus actifs', rankList(L.topBorrowers))}
+        ${section('Prêts en cours les plus anciens', rankList(L.oldestOpen.map((l) => ({ bookId: l.bookId, name: l.name, count: l.days, sub: l.borrower })), { empty: 'Aucun prêt en cours.', unit: ' j' }))}
+        ${section('Jamais empruntés', L.neverBorrowed.length ? `<div class="list">${L.neverBorrowed.map((b) => `<div class="list-item"><a href="#/book/${b.bookId}">${esc(b.name)}</a></div>`).join('')}</div>
+          ${L.neverBorrowedCount > L.neverBorrowed.length ? `<p class="small muted">… et ${L.neverBorrowedCount - L.neverBorrowed.length} autre(s).</p>` : ''}` : '<p class="muted small">Tous les livres ont déjà été empruntés.</p>')}
+      </div>
+      <h2>Fonds</h2>
+      <div class="stat-tiles">
+        ${tile(fmt(F.books), 'Livres', features().ebooks ? `${fmt(F.physical)} papier · ${fmt(F.ebooks)} numérique(s)` : '')}
+        ${tile(fmt(F.copies), 'Exemplaires')}
+        ${tile(fmt(F.pages), 'Pages au total')}
+        ${tile(fmt(F.added), 'Ajoutés sur la période')}
+      </div>
+      <div class="stat-grid">
+        ${section('Livres ajoutés par mois', monthChart(F.growth.map((m) => ({ month: m.month, value: m.count })), { unit: 'livre(s)' }))}
+        ${section('Catégories', rankList(F.byCategory))}
+        ${section('Collections', rankList(F.byCollection))}
+      </div>`;
+  }
+
   // ================= Reglages de la bibliotheque =================
   async function viewSettings() {
     const [s, cats, tags] = await Promise.all([api('/api/settings'), api('/api/categories'), api('/api/tags').catch(() => [])]);
@@ -2717,6 +2930,8 @@
           <span><strong>Statuts de lecture</strong><br><span class="small muted">Chaque compte peut marquer un livre « À lire » ou « Lu », et « Aimé » ou « Pas aimé ». Visibles dans le catalogue (gestion), avec des filtres par compte. Jamais affichés sur le catalogue public.</span></span></label>
         <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="tags" ${feat && feat.tags ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
           <span><strong>Tags</strong><br><span class="small muted">Mots-clés libres en plus des catégories (ex. #incontournable, #formation-2025). Ajoutés sur la fiche d'un livre, visibles et filtrables dans le catalogue.</span></span></label>
+        <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="stats" ${feat && feat.stats ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
+          <span><strong>Statistiques</strong><br><span class="small muted">Page « Statistiques » : statistiques de lecture de chaque compte (privées, partageables avec les autres membres), et de la bibliothèque (lecture en totaux anonymes, prêts, fonds). Les statistiques de lecture demandent les statuts de lecture.</span></span></label>
       </form>
 
       <h2>Catalogue</h2>
@@ -2848,6 +3063,7 @@
           membersCache = null;
           toast(cb.checked ? 'Option activée.' : 'Option désactivée.');
           if (cb.name === 'tags') route(); // affiche / masque la gestion des tags
+          if (cb.name === 'stats') renderNav(); // entree "Statistiques" du menu
         } catch (err) { cb.checked = !cb.checked; toast(err.message, 'error'); }
       };
     });

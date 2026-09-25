@@ -391,3 +391,47 @@ tr:last-child td { border-bottom: 0; }
 /* Nombre de livres : sous les filtres (barre du haut ou colonne de gauche). */
 .catalog-count { color: var(--muted); font-size: 14px; margin: -4px 0 12px; }
 .filters-side .catalog-count { margin: 4px 0 0; padding-top: 10px; border-top: 1px solid var(--border); font-weight: 600; color: var(--text); }
+
+/* ---------- Statistiques ---------- */
+.stat-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 10px 0 14px; }
+.stat-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.stat-card .stat-tile { background: var(--surface-2); border: 0; }
+.stat-value { font-size: 26px; font-weight: 700; line-height: 1.15; }
+.stat-label { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.stat-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; margin-top: 14px; }
+.stat-card { margin-top: 14px; }
+.stat-grid > .stat-card { margin-top: 0; }
+.stat-card h3 { margin-top: 0; }
+.stat-prefs > summary { cursor: pointer; }
+
+/* Barres par mois : une couleur (accent), valeur au survol, legende si comparaison. */
+.chart .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.chart .legend span { display: inline-flex; align-items: center; gap: 5px; }
+.sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.sw-cur { background: var(--accent); }
+.sw-prev { background: var(--border); }
+.bars { display: flex; align-items: stretch; gap: 4px; height: 150px; padding-top: 16px; border-bottom: 1px solid var(--border); }
+.bar-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.bar-pair { flex: 1; display: flex; align-items: flex-end; justify-content: center; gap: 2px; }
+.bar { position: relative; flex: 1; max-width: 22px; border-radius: 4px 4px 0 0; }
+.bar.cur { background: var(--accent); }
+.bar.prev { background: var(--border); }
+.bar-tip { display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 3px; font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.bar-col:hover .bar-tip { display: block; }
+.bar-col:hover .bar { filter: brightness(1.1); }
+.bar-label { font-size: 11px; color: var(--muted); text-align: center; padding-top: 4px; white-space: nowrap; overflow: hidden; }
+.chart-table { margin-top: 8px; }
+.chart-table table { font-size: 13px; }
+
+/* Classements en barres horizontales. */
+.rank { display: flex; flex-direction: column; gap: 6px; }
+.rank-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 14px; }
+.rank-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-bar { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.rank-bar span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.rank-count { font-weight: 700; font-size: 13px; min-width: 28px; text-align: right; }
+
+/* Objectif annuel. */
+.goal-bar { height: 14px; background: var(--surface-2); border-radius: 7px; overflow: hidden; margin-bottom: 8px; }
+.goal-bar span { display: block; height: 100%; background: var(--accent); border-radius: 7px; }
