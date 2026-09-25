@@ -697,7 +697,7 @@
 
   // Filtres du catalogue : choisis dans les Reglages (liste + position en haut ou
   // dans une colonne a gauche). Sans reglage : tous, en haut.
-  const ALL_CATALOG_FILTERS = ['search', 'category', 'collection', 'tag', 'availability', 'format', 'status', 'sort'];
+  const ALL_CATALOG_FILTERS = ['search', 'category', 'collection', 'tag', 'availability', 'format', 'status', 'sort', 'count'];
   const catalogConf = () => {
     const conf = (state.settings && state.settings.catalog) || {};
     return { filters: Array.isArray(conf.filters) ? conf.filters : ALL_CATALOG_FILTERS, position: conf.position === 'left' ? 'left' : 'top' };
@@ -706,7 +706,7 @@
   // [cle, libelle, option de la bibliotheque necessaire]
   const CATALOG_FILTER_LABELS = [
     ['search', 'Recherche'], ['category', 'Catégories'], ['collection', 'Collections'], ['tag', 'Tags', 'tags'],
-    ['availability', 'Disponibilité'], ['format', 'Papier / numérique', 'ebooks'], ['status', 'Statuts de lecture', 'readingStatus'], ['sort', 'Tri'],
+    ['availability', 'Disponibilité'], ['format', 'Papier / numérique', 'ebooks'], ['status', 'Statuts de lecture', 'readingStatus'], ['sort', 'Tri'], ['count', 'Nombre de livres'],
   ];
 
   // Transforme une page "titre h2 + contenu" en sections repliables (accordeon) ;
@@ -796,12 +796,14 @@
       ? controls.map(([, label, html]) => `<div class="fgroup">${label ? `<label>${label}</label>` : ''}${html}</div>`).join('')
       : controls.map(([, , html]) => html).join('');
     const results = '<div class="books" id="books"></div><div class="more" id="more"></div>';
-    let body = results;
-    if (controls.length && left) body = `<div class="catalog-layout"><aside class="filters-side">${filtersHtml}</aside><div>${results}</div></div>`;
-    else if (controls.length) body = `<div class="filters">${filtersHtml}</div>${results}`;
+    // Nombre de livres (au choix) : sous les filtres, en haut comme dans la colonne.
+    const countHtml = show('count') ? '<p class="catalog-count" id="count"></p>' : '';
+    let body = countHtml + results;
+    if (left && (controls.length || countHtml)) body = `<div class="catalog-layout"><aside class="filters-side">${filtersHtml}${countHtml}</aside><div>${results}</div></div>`;
+    else if (controls.length) body = `<div class="filters">${filtersHtml}</div>${countHtml}${results}`;
     view().innerHTML = `
       <div class="page-head">
-        <div><h1>Catalogue</h1><p class="muted" id="count"></p></div>
+        <div><h1>Catalogue</h1></div>
         ${canManage() ? '<div class="btn-row"><a class="btn" href="#/import">Importer une liste</a><a class="btn btn-primary" href="#/add">+ Ajouter un livre</a></div>' : ''}
       </div>
       <div id="active-filters"></div>
@@ -895,7 +897,7 @@
     const filtered = c.q || c.category || c.tag || c.collection || c.status || c.format || c.reading || c.opinion;
     if (append) list.insertAdjacentHTML('beforeend', html);
     else list.innerHTML = html || `<div class="empty" style="grid-column:1/-1">${filtered ? 'Aucun livre ne correspond.' : 'Le catalogue est vide pour le moment.'}</div>`;
-    $('#count').textContent = `${data.total} livre${data.total > 1 ? 's' : ''}`;
+    if ($('#count')) $('#count').textContent = `${data.total} livre${data.total > 1 ? 's' : ''}`;
     const shown = (data.page - 1) * data.limit + data.items.length;
     $('#more').innerHTML = shown < data.total ? '<button class="btn" id="more-btn">Afficher plus</button>' : '';
     const more = $('#more-btn');
@@ -2718,7 +2720,7 @@
         <div class="btn-row" style="margin-bottom:12px">
           ${[['recherche', 'Recherche', true], ['categories', 'Catégories', true], ['collections', 'Collections', false],
             ...(feat && feat.tags ? [['tags', 'Tags', false]] : []), ['disponibilite', 'Disponibilité', false],
-            ...(feat && feat.ebooks ? [['type', 'Papier / numérique', false]] : []), ['tri', 'Tri', false]]
+            ...(feat && feat.ebooks ? [['type', 'Papier / numérique', false]] : []), ['tri', 'Tri', false], ['nombre', 'Nombre de livres', true]]
             .map(([k, l, on]) => `<label class="check"><input type="checkbox" data-filter-opt="${k}" ${on ? 'checked' : ''}> ${l}</label>`).join('')}
         </div>
         <label>Position des filtres</label>

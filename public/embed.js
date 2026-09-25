@@ -41,6 +41,8 @@
     .combo-empty { padding: 8px 10px; color: #776c62; font-size: 13px; }
     .coll { font-size: 12px; color: #2f5d50; font-weight: 600; }
     .count { font-size: 13px; color: #776c62; margin-bottom: 10px; }
+    .count[hidden] { display: none; }
+    .filters.side .count { margin: 4px 0 0; padding-top: 10px; border-top: 1px solid #e6dfd6; font-weight: 600; color: #2a2420; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
     .card { display: flex; flex-direction: column; text-align: left; background: #fff; border: 1px solid #e6dfd6; border-radius: 12px; overflow: hidden; cursor: pointer; padding: 0; font: inherit; color: inherit; }
     .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.08); }
@@ -86,8 +88,9 @@
     disponibilite: 'availability', disponibilité: 'availability', availability: 'availability',
     type: 'format', format: 'format',
     tri: 'sort', sort: 'sort',
+    nombre: 'count', count: 'count',
   };
-  const DEFAULT_FILTERS = 'recherche,categories';
+  const DEFAULT_FILTERS = 'recherche,categories,nombre';
 
   function parseFilters(attr) {
     const raw = String(attr == null ? DEFAULT_FILTERS : attr).toLowerCase();
@@ -216,6 +219,10 @@
             <option value="recent">Tri : ajout récent</option><option value="year">Tri : année</option></select>`);
         }
       });
+      // Nombre de livres : sous les filtres (a la fin de la colonne de gauche), ou masque.
+      const count = $('.count');
+      if (!filters.includes('count')) count.hidden = true;
+      else if (left) bar.appendChild(count);
       bar.querySelectorAll('select[data-key]').forEach((sel) => {
         sel.addEventListener('change', () => { state[sel.dataset.key] = sel.value; reload(); });
       });

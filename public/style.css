@@ -379,3 +379,7 @@ tr:last-child td { border-bottom: 0; }
 .settings-section > summary .sum-hint { font-weight: 400; font-size: 13px; color: var(--muted); }
 .settings-section > .section-body { padding: 0 16px 16px; }
 .settings-section > .section-body > .card { border: 0; box-shadow: none; padding: 0; background: none; }
+
+/* Nombre de livres : sous les filtres (barre du haut ou colonne de gauche). */
+.catalog-count { color: var(--muted); font-size: 14px; margin: -4px 0 12px; }
+.filters-side .catalog-count { margin: 4px 0 0; padding-top: 10px; border-top: 1px solid var(--border); font-weight: 600; color: var(--text); }
