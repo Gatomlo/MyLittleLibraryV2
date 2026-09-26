@@ -24,7 +24,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **Couvertures** : envoi d'une image / photo, ou bouton « Chercher en ligne » (Open Library,
   Google Books, Amazon par ISBN, titre et auteur ; autres éditions proposées ; collage d'une URL).
 - **Ajout par ISBN** : scan du code-barres (webcam ou caméra du téléphone), saisie de
-  l'ISBN ou encodage manuel. Recherche dans la BnF, Open Library et Google Books (résumés des livres francophones aussi via Place des Libraires).
+  l'ISBN ou encodage manuel. Recherche dans la BnF, Open Library et Google Books (résumés des livres francophones aussi via leslibraires.fr).
 - **Scan en série** (page Ajout multiple, depuis « Ajouter ») : caméra ouverte en continu (ou lecteur USB),
   chaque code-barres lu s'ajoute à une liste avec miniature et titre ; toutes les
   fiches sont créées en une fois. Dans « Ajouter », un ISBN complet lance la
