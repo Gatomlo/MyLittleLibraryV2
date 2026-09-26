@@ -2809,7 +2809,6 @@
     const { ids } = await api(`/api/books/missing/${key}/ids?online=1`);
     const withWhat = key === 'isbn' ? '' : ' avec ISBN';
     if (!ids.length) { toast(`Aucun livre concerné${withWhat ? ' n\'a d\'ISBN' : ''}.`); return; }
-    if (!confirm(`Relancer la recherche en ligne pour ${ids.length} livre${ids.length > 1 ? 's' : ''}${withWhat} ?\nSeules les informations vides seront complétées.`)) return;
     let done = 0, filled = 0, stop = false;
     btn.textContent = 'Arrêter';
     btn.onclick = () => { stop = true; btn.disabled = true; };
@@ -2856,8 +2855,8 @@
         <div class="btn-row" style="justify-content:space-between;margin-bottom:6px">
           <strong id="missing-count"></strong>
           <div class="btn-row">
-            ${MISSING_REFILL.includes(key) ? '<button class="btn btn-small" type="button" id="missing-refill" hidden>Rechercher en ligne</button>' : ''}
             <button class="btn btn-small" type="button" id="missing-catalog">Ouvrir dans le catalogue</button>
+            ${MISSING_REFILL.includes(key) ? '<button class="btn btn-small btn-primary" type="button" id="missing-refill" hidden>Compléter tout</button>' : ''}
           </div>
         </div>
         ${REFILL_HINT[key] ? `<p class="small muted" style="margin:0 0 6px">${esc(REFILL_HINT[key])}</p>` : ''}
