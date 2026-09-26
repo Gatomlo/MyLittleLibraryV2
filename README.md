@@ -41,8 +41,10 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   connaissent) et **Série + tome**, indépendants : « 60 jours et après » est dans la
   collection Pocket Science-fiction et tome 3 de la série Capital code. Filtre par série
   trié par tome (catalogue et WordPress : `filtres="...,series,..."`).
-- **Sélection multiple** dans le catalogue (Sélectionner → clic sur les couvertures ou
-  « Tout sélectionner » = le filtre en cours) pour supprimer des livres en masse ;
+- **Sélection multiple** dans le catalogue (bouton Sélectionner, ou appui long sur une
+  couverture ; puis clic sur les couvertures ou « Tout sélectionner » = le filtre en cours)
+  pour **modifier en masse** (série, collection, catégories et tags ajoutés/retirés, version
+  numérique, statut de lecture et avis, avec confirmation) ou supprimer ;
   **Réglages > Vider la bibliothèque** (sauvegarde automatique de la base avant).
 - **Import** : catégories et tags choisis parmi les existants ; les nouveaux livres
   peuvent être marqués « À lire » pour soi (coché par défaut).
@@ -91,10 +93,13 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   emplacement et son étiquette.
 - **Prêts** : scan du QR de l'étiquette → prêter (emprunteur choisi ou créé à la
   volée) ou enregistrer le retour. Historique par livre et par emprunteur.
-- **Étiquettes** (menu du compte, ou bas du menu hamburger sur téléphone) : planches A4 (Avery L7160, L7159, L7163, L7651, 70×37…, ou format
+- **Emprunteurs** : formulaire de création ouvert à la demande, champ libre « Informations ».
+- **Téléphone** : Sélectionner, Ajout multiple et Ajouter un livre masqués dans le catalogue
+  (ajout via le menu, sélection par appui long).
+- **Étiquettes** (menu du compte) : planches A4 (Avery L7160, L7159, L7163, L7651, 70×37…, ou format
   personnalisé), QR code + code + titre + nom et logo de la bibliothèque, case de
   départ pour réutiliser une planche entamée.
-- **Réglages** (menu du compte, ou bas du menu hamburger sur téléphone), en trois groupes :
+- **Réglages** (menu du compte), en trois groupes :
   *Bibliothèque* (nom, logo et en-tête ; fonctionnalités ; codes des exemplaires),
   *Catalogue* (affichage, catégories, tags, fiches incomplètes, intégration site web),
   *Données* (export, vider la bibliothèque).

@@ -571,13 +571,7 @@
       const active = href === current || (href === '#/' && (current === '#/book' || current === '#/'));
       return `<a href="${href}" class="${active ? 'active' : ''}" style="${colorVars(ic)}">${icon(ic)}<span>${label}</span></a>`;
     }).join('');
-    // Etiquettes et reglages : hors de la barre (moins exposes) ; en bas du panneau
-    // hamburger sur petit ecran et dans le menu du compte sur tous les ecrans.
-    if (LIBRARY && canManage()) {
-      const extra = [['#/labels', 'Étiquettes', 'labels'], ['#/settings', 'Réglages de la bibliothèque', 'settings']];
-      $('#nav').insertAdjacentHTML('beforeend', `<div class="nav-extra">${extra.map(([href, label, ic]) =>
-        `<a href="${href}" class="${current === href ? 'active' : ''}" style="${colorVars(ic)}">${icon(ic)}<span>${label}</span></a>`).join('')}</div>`);
-    }
+    // Etiquettes et reglages : seulement dans le menu du compte (tous les ecrans).
     $('#nav').hidden = links.length <= 1;
     // Petit ecran : pages regroupees derriere le bouton menu (hamburger).
     $('#menu-btn').classList.toggle('has-links', links.length > 1);
@@ -631,7 +625,7 @@
       ${LIBRARY && canManage() ? `<div class="menu-sep"></div>
       <div class="menu-title">${esc(state.settings.libraryName)}</div>
       <a class="menu-item" href="#/labels">${icon('labels')}Étiquettes</a>
-      <a class="menu-item" href="#/settings">${icon('settings')}Réglages de la bibliothèque</a>` : ''}
+      <a class="menu-item" href="#/settings">${icon('settings')}Réglages</a>` : ''}
       <div class="menu-sep"></div>
       <a class="menu-item" href="#/account">${icon('user')}Mon compte</a>
       ${canInstall() ? `<button class="menu-item" type="button" id="install-app">${icon('install')}Installer l'application</button>` : ''}
@@ -974,7 +968,7 @@
     view().innerHTML = `
       <div class="page-head">
         <div><h1>Catalogue</h1></div>
-        ${canManage() ? '<div class="btn-row"><a class="btn" href="#/import">Ajout multiple</a><a class="btn btn-primary" href="#/add">+ Ajouter un livre</a></div>' : ''}
+        ${canManage() ? '<div class="btn-row"><a class="btn hide-mobile" href="#/import">Ajout multiple</a><a class="btn btn-primary hide-mobile" href="#/add">+ Ajouter un livre</a></div>' : ''}
       </div>
       <div id="active-filters"></div>
       ${body}`;
@@ -1053,16 +1047,19 @@
     await loadBooks(false);
   }
 
-  // Selection de plusieurs livres (gestion) : clic sur les couvertures, ou "Tout
-  // sélectionner" = tous les livres du filtre en cours ; puis suppression en masse.
+  // Selection de plusieurs livres (gestion) : bouton "Selectionner" (grand ecran) ou
+  // appui long sur une couverture, puis clic sur les couvertures, ou "Tout
+  // sélectionner" = tous les livres du filtre en cours ; puis modification ou
+  // suppression en masse.
   function bindSelection(reload) {
     const head = $('.page-head .btn-row');
     if (!head) return;
-    head.insertAdjacentHTML('afterbegin', '<button class="btn" type="button" id="select-toggle">Sélectionner</button>');
+    head.insertAdjacentHTML('afterbegin', '<button class="btn hide-mobile" type="button" id="select-toggle">Sélectionner</button>');
     document.body.insertAdjacentHTML('beforeend', `<div class="select-bar" id="select-bar" hidden>
       <strong id="select-count"></strong>
       <button class="btn btn-small" type="button" id="select-all">Tout sélectionner</button>
       <button class="btn btn-small" type="button" id="select-none">Aucun</button>
+      <button class="btn btn-small btn-primary" type="button" id="select-edit">Modifier</button>
       <button class="btn btn-small btn-danger" type="button" id="select-delete">Supprimer</button>
       <button class="btn btn-small" type="button" id="select-done" style="margin-left:auto">Terminer</button>
     </div>`);
@@ -1072,10 +1069,12 @@
       const n = state.selected.size;
       $('#select-count').textContent = `${n} livre${n > 1 ? 's' : ''} sélectionné${n > 1 ? 's' : ''}`;
       $('#select-delete').disabled = !n;
+      $('#select-edit').disabled = !n;
     };
-    const setMode = (on) => {
+    const setMode = (on, firstId) => {
       state.selecting = on;
       if (!on) state.selected.clear();
+      if (on && firstId) state.selected.add(firstId);
       bar.hidden = !on;
       document.body.classList.toggle('selecting', on);
       $('#select-toggle').classList.toggle('btn-primary', on);
@@ -1104,8 +1103,36 @@
         reload();
       } catch (err) { toast(err.message, 'error'); }
     };
+    $('#select-edit').onclick = () => bulkEditDialog(Array.from(state.selected), () => { refreshBar(); reload(); });
+    // Appui long sur une couverture : active la selection avec ce livre (le clic
+    // qui suit est ignore). Menu contextuel du navigateur neutralise sur les couvertures.
+    let pressTimer = null;
+    let pressed = false;
+    const books = $('#books');
+    const cancelPress = () => { clearTimeout(pressTimer); pressTimer = null; };
+    books.addEventListener('pointerdown', (e) => {
+      const card = e.target.closest('.book-card');
+      if (!card || state.selecting || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      pressed = false;
+      cancelPress();
+      const x = e.clientX;
+      const y = e.clientY;
+      pressTimer = setTimeout(() => {
+        pressTimer = null;
+        pressed = true;
+        if (navigator.vibrate) navigator.vibrate(30);
+        setMode(true, Number(card.dataset.id));
+      }, 550);
+      card.addEventListener('pointermove', function move(ev) {
+        if (Math.abs(ev.clientX - x) > 10 || Math.abs(ev.clientY - y) > 10) { cancelPress(); card.removeEventListener('pointermove', move); }
+      });
+    });
+    // Le clic qui suit l'appui long arrive juste apres le relachement : au-dela, il n'est plus ignore.
+    ['pointerup', 'pointercancel'].forEach((t) => books.addEventListener(t, () => { cancelPress(); if (pressed) setTimeout(() => { pressed = false; }, 400); }));
+    books.addEventListener('contextmenu', (e) => { if (e.target.closest('.book-card')) e.preventDefault(); });
     // En mode selection, un clic sur une couverture la (de)selectionne au lieu d'ouvrir la fiche.
     $('#books').addEventListener('click', (e) => {
+      if (pressed) { pressed = false; e.preventDefault(); return; }
       if (!state.selecting) return;
       const card = e.target.closest('.book-card');
       if (!card) return;
@@ -1115,6 +1142,85 @@
       card.classList.toggle('selected', state.selected.has(id));
       refreshBar();
     });
+  }
+
+  // Modification en masse des livres selectionnes : seuls les champs coches ou
+  // choisis sont appliques, apres confirmation recapitulative.
+  async function bulkEditDialog(ids, done) {
+    if (!ids.length) return;
+    const f = features();
+    const [cats, tags, seriesList, collections] = await Promise.all([
+      loadCategories().catch(() => []),
+      f.tags ? api('/api/public/tags').catch(() => []) : [],
+      api('/api/public/series').catch(() => []),
+      api('/api/public/collections').catch(() => []),
+    ]);
+    const dl = (id, list) => `<datalist id="${id}">${list.map((x) => `<option value="${esc(x.name)}">`).join('')}</datalist>`;
+    const text = (key, label, list, hint) => `<div class="bulk-row">
+        <label class="bulk-check"><input type="checkbox" data-on="${key}"> <strong>${label}</strong></label>
+        <input name="${key}" list="bl-${key}" disabled placeholder="${hint}">${dl('bl-' + key, list)}</div>`;
+    const choice = (key, label, options) => `<div class="bulk-row">
+        <label for="bk-${key}"><strong>${label}</strong></label>
+        <select name="${key}" id="bk-${key}"><option value="">Ne pas modifier</option>${options.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>`;
+    const n = ids.length;
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <form class="modal bulk-edit">
+        <h2>Modifier ${n} livre${n > 1 ? 's' : ''}</h2>
+        <p class="small muted">Coche ou choisis seulement ce qui doit changer. Série ou collection cochée et laissée vide : retirée.</p>
+        ${text('series', 'Série', seriesList, 'Nom de la série (vide = retirer)')}
+        ${text('collection', 'Collection', collections, 'Nom de la collection (vide = retirer)')}
+        ${text('categoriesAdd', 'Ajouter des catégories', cats, 'Séparées par des virgules')}
+        ${text('categoriesRemove', 'Retirer des catégories', cats, 'Séparées par des virgules')}
+        ${f.tags ? text('tagsAdd', 'Ajouter des tags', tags, 'Séparés par des virgules') + text('tagsRemove', 'Retirer des tags', tags, 'Séparés par des virgules') : ''}
+        ${f.ebooks ? choice('ebook', 'Type', [['add', 'Ajouter la version numérique'], ['remove', 'Retirer la version numérique']]) : ''}
+        ${statusesOn() ? choice('reading', 'Mon statut de lecture', [['none', 'Aucun'], ...Object.entries(READING_LABELS)])
+          + choice('opinion', 'Mon avis', [['none', 'Aucun'], ...Object.entries(OPINION_LABELS)]) : ''}
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn btn-primary" type="submit">Appliquer…</button>
+          <button class="btn" type="button" data-close>Annuler</button>
+        </div>
+      </form>`;
+    document.body.appendChild(backdrop);
+    const form = $('form', backdrop);
+    const close = () => backdrop.remove();
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(); });
+    $$('[data-on]', form).forEach((cb) => {
+      cb.onchange = () => { const input = form[cb.dataset.on]; input.disabled = !cb.checked; if (cb.checked) input.focus(); };
+    });
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const changes = {};
+      const lines = [];
+      const list = (v) => v.split(/[,;|]/).map((x) => x.trim().replace(/^#/, '')).filter(Boolean);
+      $$('[data-on]', form).forEach((cb) => {
+        if (!cb.checked) return;
+        const key = cb.dataset.on;
+        const v = form[key].value.trim();
+        const label = cb.parentNode.textContent.trim();
+        if (key === 'series' || key === 'collection') {
+          changes[key] = v;
+          lines.push(`• ${label} : ${v ? `« ${v} »` : 'retirée'}`);
+        } else if (list(v).length) {
+          changes[key] = list(v);
+          lines.push(`• ${label} : ${list(v).join(', ')}`);
+        }
+      });
+      $$('select', form).forEach((sel) => {
+        if (!sel.value) return;
+        changes[sel.name] = sel.value === 'none' ? '' : sel.value;
+        lines.push(`• ${sel.previousElementSibling.textContent.trim()} : ${sel.options[sel.selectedIndex].text}`);
+      });
+      if (!lines.length) { toast('Aucune modification choisie.', 'error'); return; }
+      if (!confirm(`Appliquer ces modifications à ${n} livre${n > 1 ? 's' : ''} ?\n\n${lines.join('\n')}`)) return;
+      try {
+        const r = await api('/api/books/bulk-edit', { method: 'POST', body: { ids, changes } });
+        close();
+        toast(`${r.updated} livre${r.updated > 1 ? 's' : ''} modifié${r.updated > 1 ? 's' : ''}.`);
+        done();
+      } catch (err) { toast(err.message, 'error'); }
+    };
   }
 
   function statusIcons(s) {
@@ -1842,7 +1948,7 @@
     view().innerHTML = `
       <p><a href="${fromIncomplete || (editing ? `#/book/${b.id}` : '#/')}">← ${fromIncomplete ? 'Fiches incomplètes' : editing ? 'Retour à la fiche' : 'Catalogue'}</a></p>
       ${editing ? '<h1>Modifier le livre</h1>' : `<div class="page-head"><div><h1>Ajouter un livre</h1></div>
-        <div class="btn-row"><a class="btn" href="#/import">Ajout multiple</a></div></div>`}
+        <div class="btn-row"><a class="btn hide-mobile" href="#/import">Ajout multiple</a></div></div>`}
       <div class="card" style="margin:14px 0">
         <label for="isbn-search">Rechercher par ISBN</label>
         <div class="isbn-row">
@@ -2793,32 +2899,42 @@
   // ================= Emprunteurs =================
   async function viewBorrowers() {
     view().innerHTML = `
-      <div class="page-head"><h1>Emprunteurs</h1></div>
-      <div class="card" style="margin-bottom:18px">
-        <form id="new-borrower" class="grid-3">
+      <div class="page-head"><div><h1>Emprunteurs</h1></div>
+        <div class="btn-row"><button class="btn btn-primary" type="button" id="show-new-borrower">+ Nouvel emprunteur</button></div></div>
+      <form class="card" id="new-borrower" style="margin-bottom:18px" hidden>
+        <div class="grid-3">
           <div class="field"><label>Nom *</label><input name="name" required></div>
           <div class="field"><label>E-mail</label><input name="email" type="email"></div>
           <div class="field"><label>Téléphone</label><input name="phone" type="tel"></div>
-          <div><button class="btn btn-primary" type="submit">Ajouter</button></div>
-        </form>
-      </div>
+        </div>
+        <div class="field"><label>Informations</label><textarea name="notes" style="min-height:60px" placeholder="Adresse, classe, remarques…"></textarea></div>
+        <div class="btn-row"><button class="btn btn-primary" type="submit">Ajouter</button><button class="btn" type="button" id="cancel-new-borrower">Annuler</button></div>
+      </form>
       <input type="search" id="bq" placeholder="Rechercher…" style="margin-bottom:12px">
       <div class="card" id="borrower-list"></div>`;
     async function load() {
       const list = await api(`/api/borrowers?q=${encodeURIComponent($('#bq').value)}`);
       $('#borrower-list').innerHTML = list.length ? `<div class="list">${list.map((b) => `
         <a class="list-item" href="#/borrower/${b.id}" style="text-decoration:none;color:inherit">
-          <div class="grow"><strong>${esc(b.name)}</strong><div class="small muted">${esc([b.email, b.phone].filter(Boolean).join(' · '))}</div></div>
+          <div class="grow"><strong>${esc(b.name)}</strong><div class="small muted">${esc([b.email, b.phone].filter(Boolean).join(' · '))}</div>${b.notes ? `<div class="small muted borrower-notes">${esc(b.notes)}</div>` : ''}</div>
           ${b.openLoans ? `<span class="badge badge-warn">${b.openLoans} en cours</span>` : ''}
           <span class="small muted">${b.totalLoans} prêt${b.totalLoans > 1 ? 's' : ''}</span>
         </a>`).join('')}</div>` : '<div class="empty">Aucun emprunteur.</div>';
     }
     $('#bq').addEventListener('input', debounce(load, 200));
+    // Formulaire de creation : affiche a la demande seulement.
+    const showForm = (on) => {
+      $('#new-borrower').hidden = !on;
+      $('#show-new-borrower').hidden = on;
+      if (on) $('#new-borrower').name.focus(); else $('#new-borrower').reset();
+    };
+    $('#show-new-borrower').onclick = () => showForm(true);
+    $('#cancel-new-borrower').onclick = () => showForm(false);
     $('#new-borrower').onsubmit = async (e) => {
       e.preventDefault();
       try {
-        await api('/api/borrowers', { method: 'POST', body: { name: e.target.name.value, email: e.target.email.value, phone: e.target.phone.value } });
-        e.target.reset();
+        await api('/api/borrowers', { method: 'POST', body: { name: e.target.name.value, email: e.target.email.value, phone: e.target.phone.value, notes: e.target.notes.value } });
+        showForm(false);
         toast('Emprunteur ajouté.');
         load();
       } catch (err) { toast(err.message, 'error'); }
@@ -2839,7 +2955,7 @@
           <div class="field"><label>E-mail</label><input name="email" type="email" value="${esc(b.email)}"></div>
           <div class="field"><label>Téléphone</label><input name="phone" type="tel" value="${esc(b.phone)}"></div>
         </div>
-        <div class="field"><label>Notes</label><textarea name="notes" style="min-height:60px">${esc(b.notes)}</textarea></div>
+        <div class="field"><label>Informations</label><textarea name="notes" style="min-height:60px" placeholder="Adresse, classe, remarques…">${esc(b.notes)}</textarea></div>
         <div class="btn-row">
           <button class="btn btn-primary" type="submit">Enregistrer</button>
           ${b.loans.length ? '' : '<button class="btn btn-danger" type="button" id="del">Supprimer</button>'}
