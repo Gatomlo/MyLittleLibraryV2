@@ -131,7 +131,7 @@ de session est limité à ce chemin.
 | --- | --- |
 | `PORT` | Port en mode autonome (3000 par défaut). |
 | `MLL_DATA_DIR` | Dossier des données (`data/` par défaut) : `library.db` + `media/` (couvertures, logo). |
-| `GOOGLE_BOOKS_API_KEY` | Clé Google Books (gratuite) : sans elle, le quota anonyme est souvent épuisé et seules BnF/Open Library répondent. |
+| `GOOGLE_BOOKS_API_KEY` | Clé Google Books (gratuite) : sans elle, le quota anonyme est souvent épuisé et seules BnF/Open Library répondent. Peut aussi être saisie dans **Administration › Google Books** (prioritaire, avec guide pas à pas). |
 
 ## Scan et https
 

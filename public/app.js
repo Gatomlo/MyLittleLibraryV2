@@ -1570,17 +1570,69 @@
       <div class="tabs">
         <button data-tab="libraries" class="${adminTab === 'libraries' ? 'active' : ''}">Bibliothèques</button>
         <button data-tab="users" class="${adminTab === 'users' ? 'active' : ''}">Comptes</button>
+        <button data-tab="google" class="${adminTab === 'google' ? 'active' : ''}">Google Books</button>
         <button data-tab="data" class="${adminTab === 'data' ? 'active' : ''}">Sauvegarde</button>
       </div>
       <div id="admin-body"></div>`;
     $$('.tabs button').forEach((btn) => { btn.onclick = () => { adminTab = btn.dataset.tab; viewAdmin(); }; });
     if (adminTab === 'libraries') await adminLibraries();
     else if (adminTab === 'users') await adminUsers();
+    else if (adminTab === 'google') await adminGoogleKey();
     else {
       $('#admin-body').innerHTML = `<div class="card">
         <p>Copie complète de la base (toutes les bibliothèques, comptes, prêts). Les images (couvertures, logos) sont dans le dossier <span class="code">data/media</span> du serveur.</p>
         <a class="btn" href="${ROOT}/api/admin/backup">Télécharger une sauvegarde de la base</a></div>`;
     }
+  }
+
+  // Cle Google Books (gratuite) : fiabilise la recherche par ISBN et la recherche de couvertures.
+  async function adminGoogleKey() {
+    const info = await gapi('/api/admin/google-key');
+    const stateHtml = info.saved
+      ? `<span class="badge badge-ok">Clé enregistrée (${esc(info.masked)})</span>`
+      : info.env ? '<span class="badge badge-ok">Clé définie sur le serveur (variable d\'environnement)</span>'
+        : '<span class="badge badge-muted">Aucune clé</span>';
+    $('#admin-body').innerHTML = `
+      <form class="card" id="gkey-form" style="margin-bottom:18px">
+        <h3 style="margin-top:0">Clé Google Books</h3>
+        <p class="muted">Sans clé, Google limite fortement les recherches : beaucoup de livres restent alors sans résumé ni couverture.
+          Avec une clé (gratuite, environ 1 000 recherches par jour), les recherches par ISBN et « Chercher une couverture » sont bien plus fiables.</p>
+        <p>${stateHtml}</p>
+        <div class="field"><label>${info.saved ? 'Remplacer la clé' : 'Coller la clé'}</label>
+          <input name="key" placeholder="AIza…" autocomplete="off" spellcheck="false"></div>
+        <button class="btn btn-primary" type="submit">Vérifier et enregistrer</button>
+        ${info.saved ? '<button class="btn btn-danger" type="button" id="gkey-del">Retirer la clé</button>' : ''}
+      </form>
+      <div class="card">
+        <h3 style="margin-top:0">Comment obtenir une clé gratuite (5 minutes)</h3>
+        <ol>
+          <li>Ouvre la <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console Google Cloud</a> et connecte-toi avec un compte Google (Gmail). Accepte les conditions si c'est la première fois. <strong>Aucune carte bancaire n'est nécessaire.</strong></li>
+          <li>En haut, clique sur le sélecteur de projet, puis <em>Nouveau projet</em>. Nomme-le par exemple « Bibliothèque » et clique sur <em>Créer</em>. Vérifie ensuite qu'il est bien sélectionné.</li>
+          <li>Active l'API : ouvre la page <a href="https://console.cloud.google.com/apis/library/books.googleapis.com" target="_blank" rel="noopener">Books API</a> et clique sur <em>Activer</em>.</li>
+          <li>Va dans <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">API et services › Identifiants</a>, clique sur <em>Créer des identifiants</em> › <em>Clé API</em>.</li>
+          <li>Copie la clé affichée (elle commence par <span class="code">AIza</span>) et colle-la ci-dessus.</li>
+          <li>Conseillé : clique sur <em>Modifier la clé</em> › <em>Restrictions relatives aux API</em> › <em>Restreindre la clé</em>, coche uniquement <em>Books API</em> et enregistre.</li>
+        </ol>
+        <p class="small muted">La clé est gardée sur le serveur et n'est jamais affichée en entier. Si la vérification indique que l'API n'est pas activée, refais l'étape 3 puis patiente une minute.</p>
+      </div>`;
+    const form = $('#gkey-form');
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const key = form.key.value.trim();
+      if (!key) { toast('Colle d\'abord une clé.', 'error'); return; }
+      const btn = form.querySelector('[type=submit]');
+      btn.disabled = true;
+      try {
+        await gapi('/api/admin/google-key', { method: 'PUT', body: { key } });
+        toast('Clé vérifiée et enregistrée.');
+        adminGoogleKey();
+      } catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+    };
+    const del = $('#gkey-del');
+    if (del) del.onclick = async () => {
+      if (!confirm('Retirer la clé Google Books ?')) return;
+      try { await gapi('/api/admin/google-key', { method: 'PUT', body: { key: '' } }); toast('Clé retirée.'); adminGoogleKey(); } catch (err) { toast(err.message, 'error'); }
+    };
   }
 
   async function refreshMyLibraries() {

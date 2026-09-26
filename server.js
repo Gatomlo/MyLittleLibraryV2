@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { db, tx, isValidSlug, uniqueSlug, MEDIA_DIR } = require('./lib/db');
+const { db, tx, getSetting, setSetting, isValidSlug, uniqueSlug, MEDIA_DIR } = require('./lib/db');
 const auth = require('./lib/auth');
 const media = require('./lib/media');
 const { createLibraryRouter, findLibrary, mediaUrl, str, intOrNull } = require('./lib/library-api');
@@ -303,6 +303,36 @@ api.delete('/admin/libraries/:id', h((req, res) => {
 }));
 
 // Copie coherente de toute la base (toutes les bibliotheques) a telecharger.
+// Cle Google Books (gratuite) : jamais renvoyee en entier, verifiee aupres de Google avant enregistrement.
+function googleKeyInfo() {
+  const saved = getSetting('googleBooksApiKey') || '';
+  return { saved: !!saved, masked: saved ? '••••' + saved.slice(-4) : '', env: !!process.env.GOOGLE_BOOKS_API_KEY };
+}
+
+api.get('/admin/google-key', (req, res) => res.json(googleKeyInfo()));
+
+api.put('/admin/google-key', h(async (req, res) => {
+  const key = String((req.body && req.body.key) || '').trim();
+  if (key) {
+    if (!/^[\w-]{20,60}$/.test(key)) throw httpError(400, 'Cette clé ne ressemble pas à une clé Google (elle commence souvent par « AIza »).');
+    let r;
+    try {
+      r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:9782070612758&key=${encodeURIComponent(key)}`, { signal: AbortSignal.timeout(8000) });
+    } catch (e) { throw httpError(502, 'Google Books ne répond pas, réessaie plus tard.'); }
+    if (!r.ok) {
+      const msg = await r.json().then((d) => (d.error && d.error.message) || '').catch(() => '');
+      if (r.status === 400 || r.status === 403) {
+        throw httpError(400, /not been used|disabled/i.test(msg)
+          ? "La clé est valide mais l'API « Books » n'est pas activée sur ce projet Google (étape 3 du guide)."
+          : 'Google refuse cette clé : ' + (msg || 'clé invalide.'));
+      }
+      if (r.status !== 429) throw httpError(502, 'Vérification impossible (Google a répondu ' + r.status + ').');
+    }
+  }
+  setSetting('googleBooksApiKey', key);
+  res.json(googleKeyInfo());
+}));
+
 api.get('/admin/backup', h((req, res) => {
   const file = path.join(os.tmpdir(), `mll-backup-${Date.now()}.db`);
   db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
