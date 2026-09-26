@@ -81,6 +81,11 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   couverture, auteur, éditeur, année, pages, résumé, tag ou emplacement d'exemplaire,
   avec leur nombre ; bouton « Compléter » (retour à la liste après enregistrement) ou
   ouverture dans le catalogue pour une sélection en masse.
+  « Rechercher en ligne » relance la recherche pour tous les livres de l'onglet (seules
+  les informations vides sont complétées) : ISBN retrouvé par titre + auteur seulement
+  si une seule édition correspond, catégorie attribuée seulement si une catégorie
+  existante correspond aux sujets en ligne. Emplacement et tags : cases à cocher et
+  attribution en masse.
 - **Téléphone** : interface adaptée (menu, filtres du catalogue repliables, zones
   tactiles), installable sur l'écran d'accueil en application plein écran
   (bouton « Installer » de l'en-tête quand le navigateur le propose, ou menu du compte >

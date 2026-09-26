@@ -2792,6 +2792,48 @@
     ['location', 'Exemplaire sans emplacement'], ['tags', 'Sans tag'],
   ];
   const missingLabel = (k) => (MISSING_FIELDS.find(([key]) => key === k) || [k, 'Information manquante'])[1];
+  // Informations que la recherche ISBN peut retrouver (relance en masse).
+  const MISSING_REFILL = ['isbn', 'category', 'cover', 'authors', 'publisher', 'year', 'pages', 'summary'];
+  // Informations absentes des catalogues en ligne : attribution en masse aux livres coches.
+  const MISSING_ASSIGN = { location: 'Emplacement (ex. Étagère A)', tags: 'Tag(s), séparés par des virgules' };
+  const REFILL_HINT = {
+    isbn: 'Recherche par titre + auteur (BnF). L\'ISBN n\'est retenu que si une seule édition correspond (année, éditeur et pages de la fiche).',
+    category: 'Seules tes catégories existantes sont attribuées, quand elles correspondent aux sujets trouvés en ligne.',
+  };
+
+  // Relance la recherche en ligne pour chaque livre sans cette information.
+  // Deux livres a la fois ; le champ n'est rempli que s'il est toujours vide.
+  async function refillMissing(key) {
+    const btn = $('#missing-refill');
+    const out = $('#refill-progress');
+    const { ids } = await api(`/api/books/missing/${key}/ids?online=1`);
+    const withWhat = key === 'isbn' ? '' : ' avec ISBN';
+    if (!ids.length) { toast(`Aucun livre concerné${withWhat ? ' n\'a d\'ISBN' : ''}.`); return; }
+    if (!confirm(`Relancer la recherche en ligne pour ${ids.length} livre${ids.length > 1 ? 's' : ''}${withWhat} ?\nSeules les informations vides seront complétées.`)) return;
+    let done = 0, filled = 0, stop = false;
+    btn.textContent = 'Arrêter';
+    btn.onclick = () => { stop = true; btn.disabled = true; };
+    out.hidden = false;
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    const show = () => { out.textContent = `Recherche en cours : ${done} / ${ids.length} · ${filled} complété${filled > 1 ? 's' : ''}`; };
+    show();
+    const queue = ids.slice();
+    const worker = async () => {
+      while (queue.length && !stop) {
+        const id = queue.shift();
+        try {
+          const r = await api(`/api/books/${id}/refill`, { method: 'POST', body: { field: key } });
+          if (r.status === 'filled') filled++;
+        } catch (e) { /* livre suivant */ }
+        done++;
+        show();
+      }
+    };
+    await Promise.all([worker(), worker()]);
+    window.removeEventListener('beforeunload', warnBeforeLeaving);
+    toast(`${filled} livre${filled > 1 ? 's' : ''} complété${filled > 1 ? 's' : ''} sur ${done} recherché${done > 1 ? 's' : ''}.`);
+    if (location.hash.startsWith('#/incomplete')) viewIncomplete(key);
+  }
 
   function missingPills(m, current) {
     return MISSING_FIELDS.filter(([k]) => k in m.counts).map(([k, label]) => {
@@ -2813,8 +2855,18 @@
       <div class="card">
         <div class="btn-row" style="justify-content:space-between;margin-bottom:6px">
           <strong id="missing-count"></strong>
-          <button class="btn btn-small" type="button" id="missing-catalog">Ouvrir dans le catalogue</button>
+          <div class="btn-row">
+            ${MISSING_REFILL.includes(key) ? '<button class="btn btn-small" type="button" id="missing-refill" hidden>Rechercher en ligne</button>' : ''}
+            <button class="btn btn-small" type="button" id="missing-catalog">Ouvrir dans le catalogue</button>
+          </div>
         </div>
+        ${REFILL_HINT[key] ? `<p class="small muted" style="margin:0 0 6px">${esc(REFILL_HINT[key])}</p>` : ''}
+        <div id="refill-progress" class="small muted" hidden></div>
+        ${MISSING_ASSIGN[key] ? `<form class="btn-row" id="assign-form" hidden style="margin-bottom:8px">
+          <label class="small"><input type="checkbox" id="assign-all"> Tout cocher</label>
+          <input name="value" placeholder="${esc(MISSING_ASSIGN[key])}" required style="flex:1;min-width:160px">
+          <button class="btn btn-small btn-primary" type="submit">Appliquer aux livres cochés</button>
+        </form>` : ''}
         <div class="list" id="missing-list"></div>
         <div class="more" id="missing-more"></div>
       </div>`;
@@ -2832,8 +2884,15 @@
         ? `${data.total} livre${data.total > 1 ? 's' : ''} · ${missingLabel(key).toLowerCase()}`
         : 'Aucun livre concerné.';
       $('#missing-catalog').hidden = !data.total;
+      if ($('#missing-refill') && page === 1) {
+        $('#missing-refill').hidden = !data.total;
+        $('#missing-refill').onclick = () => refillMissing(key);
+      }
+      if ($('#assign-form')) $('#assign-form').hidden = !data.total;
+      const check = MISSING_ASSIGN[key];
       $('#missing-list').insertAdjacentHTML('beforeend', data.items.map((b) => `
         <div class="list-item">
+          ${check ? `<input type="checkbox" class="assign-check" value="${b.id}"${checkAll ? ' checked' : ''} aria-label="Sélectionner">` : ''}
           ${b.coverUrl ? `<img class="thumb" src="${esc(mediaSrc(b.coverUrl))}" alt="" loading="lazy">` : '<span class="thumb"></span>'}
           <div class="grow"><a href="#/book/${b.id}"><strong>${esc(b.title)}</strong></a>
             <div class="small muted">${esc([b.authors, b.publisher, b.year].filter(Boolean).join(' · ')) || '—'}</div></div>
@@ -2843,6 +2902,30 @@
       $('#missing-more').innerHTML = shown < data.total ? '<button class="btn" type="button">Afficher plus</button>' : '';
       const more = $('#missing-more button');
       if (more) more.onclick = () => { page++; load(); };
+    }
+    // Attribution en masse (emplacement, tags). "Tout cocher" vaut aussi pour les
+    // livres pas encore affiches (sauf ceux decoches a la main).
+    let checkAll = false;
+    if ($('#assign-form')) {
+      $('#assign-all').onchange = (e) => {
+        checkAll = e.target.checked;
+        $$('.assign-check').forEach((c) => { c.checked = checkAll; });
+      };
+      $('#assign-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const value = e.target.value.value.trim();
+        const boxes = $$('.assign-check');
+        let ids = boxes.filter((c) => c.checked).map((c) => Number(c.value));
+        if (checkAll) {
+          const unchecked = new Set(boxes.filter((c) => !c.checked).map((c) => Number(c.value)));
+          ids = (await api(`/api/books/missing/${key}/ids`)).ids.filter((id) => !unchecked.has(id));
+        }
+        if (!ids.length) { toast('Coche au moins un livre.'); return; }
+        const changes = key === 'location' ? { fillLocation: value } : { tagsAdd: value };
+        const r = await api('/api/books/bulk-edit', { method: 'POST', body: { ids, changes } });
+        toast(`${r.updated} livre${r.updated > 1 ? 's' : ''} mis à jour.`);
+        viewIncomplete(key);
+      };
     }
     await load();
   }
