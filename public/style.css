@@ -106,6 +106,8 @@ p { margin: 0 0 10px; }
 .nav a:hover, .nav button:hover { background: var(--cs); color: var(--text); }
 .nav a:hover svg { transform: scale(1.12) rotate(-6deg); }
 .nav a.active { background: var(--cs); color: var(--text); font-weight: 800; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c) 35%, transparent); }
+/* Reglages : absents de la barre sur grand ecran (menu du compte), en bas du panneau hamburger sur petit ecran. */
+.nav-extra { display: none; }
 .scan-btn { order: 1; }
 .install-btn { order: 1; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 /* Ecran moyen/petit : marque, Scanner et compte sur la 1re ligne, navigation dessous. */
@@ -133,6 +135,7 @@ p { margin: 0 0 10px; }
     padding: 8px 12px 12px; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-lg);
     max-height: calc(100vh - 70px); overflow-y: auto;
   }
+  .nav.open .nav-extra { display: flex; flex-direction: column; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
   .nav.open a { padding: 11px 14px; font-size: 16px; border-radius: 14px; gap: 12px; }
   body.nav-open { overflow: hidden; }
 }
@@ -480,6 +483,8 @@ tr:last-child td { border-bottom: 0; }
 }
 
 /* ---------- Reglages : sections en accordeon ---------- */
+.settings-group { margin: 26px 0 0; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.settings-group + .settings-section { margin-top: 8px; }
 .settings-section { margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .settings-section > summary { cursor: pointer; padding: 14px 16px; font-weight: 700; font-size: 16px; list-style: none; display: flex; align-items: center; gap: 10px; }
 .settings-section > summary::-webkit-details-marker { display: none; }

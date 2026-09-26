@@ -29,7 +29,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   chaque code-barres lu s'ajoute à une liste avec miniature et titre ; toutes les
   fiches sont créées en une fois. Dans « Ajouter », un ISBN complet lance la
   recherche tout seul.
-- **Options par bibliothèque** (Réglages) : livres numériques (exemplaire « numérique »
+- **Options par bibliothèque** (Réglages > Fonctionnalités) : livres numériques (exemplaire « numérique »
   — epub, pdf… — seul ou en plus des exemplaires papier, sans code, étiquette ni prêt ;
   à l'import : Type = Papier, Numérique ou Papier + numérique) et statuts de lecture
   par compte (À lire / En cours / Lu / Abandonné, Aimé / Pas aimé),
@@ -46,11 +46,11 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   **Réglages > Vider la bibliothèque** (sauvegarde automatique de la base avant).
 - **Import** : catégories et tags choisis parmi les existants ; les nouveaux livres
   peuvent être marqués « À lire » pour soi (coché par défaut).
-- **Filtres du catalogue** au choix (Réglages > Catalogue : recherche, catégories,
+- **Filtres du catalogue** au choix (Réglages > Affichage du catalogue : recherche, catégories,
   collections, tags, disponibilité, papier/numérique, statuts de lecture, tri), en haut
   ou dans une colonne à gauche. Même choix pour le catalogue WordPress (générateur de
   shortcode : `filtres="..."`, `position="gauche"`). Réglages présentés en accordéon.
-- **Miniatures du catalogue** paramétrables (Réglages > Catalogue) : couverture, titre,
+- **Miniatures du catalogue** paramétrables (Réglages > Affichage du catalogue) : couverture, titre,
   auteurs, série et tome, collection, catégories, tags, statut de lecture, disponibilité, bandeau « Numérique »
   en travers de la couverture.
 - **Statuts de lecture** (option) : À lire, En cours, Lu, Abandonné + Aimé / Pas aimé,
@@ -72,7 +72,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   (correspondance des colonnes détectée et modifiable, aperçu, progression).
   Modèles à télécharger ; en `.xlsx`, la colonne ISBN est au format Texte pour
   qu'Excel ne la transforme pas en notation scientifique.
-- **Export** (Réglages > Données) : inventaire `.xlsx` / `.csv`, une ligne par livre
+- **Export** (Réglages > Exporter) : inventaire `.xlsx` / `.csv`, une ligne par livre
   avec tous les champs, le nombre d'exemplaires et leurs codes — mêmes colonnes que
   l'import, donc réimportable (y compris dans une autre bibliothèque).
 - **Fiches incomplètes** (Importer ou Réglages) : livres sans catégorie, ISBN,
@@ -94,8 +94,10 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **Étiquettes** : planches A4 (Avery L7160, L7159, L7163, L7651, 70×37…, ou format
   personnalisé), QR code + code + titre + nom et logo de la bibliothèque, case de
   départ pour réutiliser une planche entamée.
-- **Réglages** : nom et logo de la bibliothèque, préfixe des codes, catégories,
-  mot de passe, export CSV, sauvegarde de la base.
+- **Réglages** (menu du compte, ou bas du menu hamburger sur téléphone), en trois groupes :
+  *Bibliothèque* (nom, logo et en-tête ; fonctionnalités ; codes des exemplaires),
+  *Catalogue* (affichage, catégories, tags, fiches incomplètes, intégration site web),
+  *Données* (export, vider la bibliothèque).
 - **Intégration WordPress / Divi** : shortcode `[bibliotheque]` (extension dans
   `wordpress/`) ou snippet HTML.
 

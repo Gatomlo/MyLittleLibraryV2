@@ -562,7 +562,7 @@
     let links = [];
     if (LIBRARY) {
       links = canManage()
-        ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/import', 'Importer', 'import'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ['#/labels', 'Étiquettes', 'labels'], ...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : []), ['#/settings', 'Réglages', 'settings']]
+        ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/import', 'Importer', 'import'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ['#/labels', 'Étiquettes', 'labels'], ...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : [])]
         : [['#/', 'Catalogue', 'catalog']];
     }
     const current = '#/' + (location.hash.replace(/^#\/?/, '').split('/')[0] || '');
@@ -570,6 +570,11 @@
       const active = href === current || (href === '#/' && (current === '#/book' || current === '#/'));
       return `<a href="${href}" class="${active ? 'active' : ''}" style="${colorVars(ic)}">${icon(ic)}<span>${label}</span></a>`;
     }).join('');
+    // Reglages : hors de la barre (moins exposes) ; en bas du panneau hamburger sur
+    // petit ecran et dans le menu du compte sur tous les ecrans.
+    if (LIBRARY && canManage()) {
+      $('#nav').insertAdjacentHTML('beforeend', `<div class="nav-extra"><a href="#/settings" class="${current === '#/settings' ? 'active' : ''}" style="${colorVars('settings')}">${icon('settings')}<span>Réglages de la bibliothèque</span></a></div>`);
+    }
     $('#nav').hidden = links.length <= 1;
     // Petit ecran : pages regroupees derriere le bouton menu (hamburger).
     $('#menu-btn').classList.toggle('has-links', links.length > 1);
@@ -620,6 +625,9 @@
       <div class="menu-sep"></div>
       <div class="menu-title">Mes bibliothèques</div>
       ${libs || '<p class="small muted" style="padding:4px 10px">Aucune bibliothèque liée à ce compte.</p>'}
+      ${LIBRARY && canManage() ? `<div class="menu-sep"></div>
+      <div class="menu-title">${esc(state.settings.libraryName)}</div>
+      <a class="menu-item" href="#/settings">${icon('settings')}Réglages de la bibliothèque</a>` : ''}
       <div class="menu-sep"></div>
       <a class="menu-item" href="#/account">${icon('user')}Mon compte</a>
       ${canInstall() ? `<button class="menu-item" type="button" id="install-app">${icon('install')}Installer l'application</button>` : ''}
@@ -882,7 +890,7 @@
       body.className = 'section-body';
       details.append(summary, body);
       h2.replaceWith(details);
-      while (details.nextElementSibling && details.nextElementSibling.tagName !== 'H2') body.appendChild(details.nextElementSibling);
+      while (details.nextElementSibling && details.nextElementSibling.tagName !== 'H2' && !details.nextElementSibling.classList.contains('settings-group')) body.appendChild(details.nextElementSibling);
       details.addEventListener('toggle', save);
     });
   }
@@ -3281,7 +3289,7 @@
 
   async function viewStats() {
     if (!features().stats) {
-      view().innerHTML = '<div class="empty">Les statistiques ne sont pas activées pour cette bibliothèque (Réglages > Options).</div>';
+      view().innerHTML = '<div class="empty">Les statistiques ne sont pas activées pour cette bibliothèque (Réglages > Fonctionnalités).</div>';
       return;
     }
     const ov = await api('/api/stats/overview');
@@ -3363,7 +3371,7 @@
     const c = s.counts;
     const d = s.durations;
     const g = s.goal;
-    const warn = features().readingStatus ? '' : '<div class="info-box">Les statuts de lecture sont désactivés : active-les (Réglages > Options) pour alimenter ces statistiques.</div>';
+    const warn = features().readingStatus ? '' : '<div class="info-box">Les statuts de lecture sont désactivés : active-les (Réglages > Fonctionnalités) pour alimenter ces statistiques.</div>';
 
     let goalCard;
     if (g.target) {
@@ -3494,7 +3502,8 @@
     view().innerHTML = `
       <h1>Réglages</h1>
       <p class="muted">Bibliothèque « ${esc(s.libraryName)} » · <a href="${esc(libraryUrl)}/">${esc(libraryUrl)}/</a></p>
-      <h2>Bibliothèque</h2>
+      <p class="settings-group">Bibliothèque</p>
+      <h2>Nom, logo et en-tête</h2>
       <form class="card" id="lib-form">
         <div class="field"><label for="lib-name">Nom de la bibliothèque</label><input id="lib-name" name="libraryName" required value="${esc(s.libraryName)}">
           <p class="small muted" style="margin-top:4px">Changer le nom ne change pas l'adresse de la bibliothèque (les QR codes imprimés restent valables).</p></div>
@@ -3517,6 +3526,20 @@
           ${s.logoUrl ? '' : '<p class="small muted" style="margin-top:4px">Sans logo, le nom est toujours affiché.</p>'}
         </div>
         <button class="btn btn-primary" type="submit">Enregistrer</button>
+      </form>
+
+      <h2>Fonctionnalités</h2>
+      <form class="card" id="features-form">
+        ${feat ? '' : `<div class="error-box">Le serveur n'est pas à jour (options indisponibles). Vérifie que tous les fichiers de l'app ont été envoyés,
+          y compris le dossier <span class="code">lib/</span>, puis redémarre l'application Node.</div>`}
+        <label class="check" style="align-items:flex-start"><input type="checkbox" name="ebooks" ${feat && feat.ebooks ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
+          <span><strong>Livres numériques</strong><br><span class="small muted">Permet d'ajouter à un livre un exemplaire numérique (epub, pdf…), seul ou en plus des exemplaires papier : il apparaît au catalogue avec la mention « Numérique », sans code, étiquette ni prêt.</span></span></label>
+        <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="readingStatus" ${feat && feat.readingStatus ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
+          <span><strong>Statuts de lecture</strong><br><span class="small muted">Chaque compte peut marquer un livre « À lire » ou « Lu », et « Aimé » ou « Pas aimé ». Visibles dans le catalogue (gestion), avec des filtres par compte. Jamais affichés sur le catalogue public.</span></span></label>
+        <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="tags" ${feat && feat.tags ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
+          <span><strong>Tags</strong><br><span class="small muted">Mots-clés libres en plus des catégories (ex. #incontournable, #formation-2025). Ajoutés sur la fiche d'un livre, visibles et filtrables dans le catalogue.</span></span></label>
+        <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="stats" ${feat && feat.stats ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
+          <span><strong>Statistiques</strong><br><span class="small muted">Page « Statistiques » : statistiques de lecture de chaque compte (privées, partageables avec les autres membres), et de la bibliothèque (lecture en totaux anonymes, prêts, fonds). Les statistiques de lecture demandent les statuts de lecture.</span></span></label>
       </form>
 
       <h2>Codes des exemplaires</h2>
@@ -3544,21 +3567,8 @@
         </div>
       </form>
 
-      <h2>Options</h2>
-      <form class="card" id="features-form">
-        ${feat ? '' : `<div class="error-box">Le serveur n'est pas à jour (options indisponibles). Vérifie que tous les fichiers de l'app ont été envoyés,
-          y compris le dossier <span class="code">lib/</span>, puis redémarre l'application Node.</div>`}
-        <label class="check" style="align-items:flex-start"><input type="checkbox" name="ebooks" ${feat && feat.ebooks ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
-          <span><strong>Livres numériques</strong><br><span class="small muted">Permet d'ajouter à un livre un exemplaire numérique (epub, pdf…), seul ou en plus des exemplaires papier : il apparaît au catalogue avec la mention « Numérique », sans code, étiquette ni prêt.</span></span></label>
-        <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="readingStatus" ${feat && feat.readingStatus ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
-          <span><strong>Statuts de lecture</strong><br><span class="small muted">Chaque compte peut marquer un livre « À lire » ou « Lu », et « Aimé » ou « Pas aimé ». Visibles dans le catalogue (gestion), avec des filtres par compte. Jamais affichés sur le catalogue public.</span></span></label>
-        <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="tags" ${feat && feat.tags ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
-          <span><strong>Tags</strong><br><span class="small muted">Mots-clés libres en plus des catégories (ex. #incontournable, #formation-2025). Ajoutés sur la fiche d'un livre, visibles et filtrables dans le catalogue.</span></span></label>
-        <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="stats" ${feat && feat.stats ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
-          <span><strong>Statistiques</strong><br><span class="small muted">Page « Statistiques » : statistiques de lecture de chaque compte (privées, partageables avec les autres membres), et de la bibliothèque (lecture en totaux anonymes, prêts, fonds). Les statistiques de lecture demandent les statuts de lecture.</span></span></label>
-      </form>
-
-      <h2>Catalogue</h2>
+      <p class="settings-group">Catalogue</p>
+      <h2>Affichage du catalogue</h2>
       <form class="card" id="catalog-form">
         <label>Filtres affichés dans le catalogue</label>
         <div class="btn-row" style="margin-bottom:14px">
@@ -3585,7 +3595,13 @@
       <div class="card" id="cat-manager"></div>
       ${feat && feat.tags ? '<h2>Tags</h2><div class="card" id="tag-manager"></div>' : ''}
 
-      <h2>Intégration WordPress / Divi</h2>
+      <h2>Fiches incomplètes</h2>
+      <div class="card">
+        <p class="muted small">Livres auxquels il manque une information. Touche un critère pour voir la liste et compléter les fiches.</p>
+        <div class="chips-filter" id="missing-summary"><span class="muted small">Chargement…</span></div>
+      </div>
+
+      <h2>Catalogue sur un site web (WordPress / Divi)</h2>
       <div class="card" id="embed-builder">
         <p>Choisis ce que le catalogue affiché sur ton site propose, puis copie le code.</p>
         <label>Filtres proposés aux visiteurs</label>
@@ -3617,13 +3633,8 @@
         <button class="btn btn-small" type="button" data-copy="emb-html" style="margin-top:6px">Copier le code HTML</button>
       </div>
 
-      <h2>Fiches incomplètes</h2>
-      <div class="card">
-        <p class="muted small">Livres auxquels il manque une information. Touche un critère pour voir la liste et compléter les fiches.</p>
-        <div class="chips-filter" id="missing-summary"><span class="muted small">Chargement…</span></div>
-      </div>
-
-      <h2>Données</h2>
+      <p class="settings-group">Données</p>
+      <h2>Exporter</h2>
       <div class="card">
         <p><strong>Inventaire des livres</strong> — une ligne par livre avec tous les champs, le nombre d'exemplaires et leurs codes.
           Mêmes colonnes que le modèle d'import : il peut être modifié puis réimporté (<a href="#/import">Importer</a>).</p>
