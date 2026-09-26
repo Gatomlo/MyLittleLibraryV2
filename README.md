@@ -50,6 +50,9 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   collections, tags, disponibilité, papier/numérique, statuts de lecture, tri), en haut
   ou dans une colonne à gauche. Même choix pour le catalogue WordPress (générateur de
   shortcode : `filtres="..."`, `position="gauche"`). Réglages présentés en accordéon.
+- **Miniatures du catalogue** paramétrables (Réglages > Catalogue) : couverture, titre,
+  auteurs, série et tome, collection, statut de lecture, disponibilité, bandeau « Numérique »
+  en travers de la couverture.
 - **Statuts de lecture** (option) : À lire, En cours, Lu, Abandonné + Aimé / Pas aimé,
   avec dates de début, de fin et d'abandon (automatiques, corrigeables).
 - **Statistiques** (option par bibliothèque, page « Statistiques ») :

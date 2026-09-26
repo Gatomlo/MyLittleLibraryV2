@@ -93,14 +93,17 @@
     return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
   }
 
-  function coverHtml(book) {
-    return `<div class="cover">${book.coverUrl
+  // ribbon : bandeau pose en travers du coin de la couverture (ex. "Numerique").
+  function coverHtml(book, ribbon) {
+    return `<div class="cover">${ribbon ? `<span class="cover-ribbon">${esc(ribbon)}</span>` : ''}${book.coverUrl
       ? `<img src="${esc(mediaSrc(book.coverUrl))}" alt="" loading="lazy">`
       : `<span class="cover-fallback">${esc(book.title)}</span>`}</div>`;
   }
 
-  function availabilityBadge(b) {
-    const ebook = b.ebookCopies > 0 ? '<span class="badge badge-ebook">Numérique</span>' : '';
+  // withEbook = false : pas de pastille "Numerique" (affichee en bandeau sur la couverture).
+  function availabilityBadge(b, withEbook = true) {
+    const ebook = withEbook && b.ebookCopies > 0 ? '<span class="badge badge-ebook">Numérique</span>' : '';
+    if (!withEbook && !b.totalCopies && b.ebookCopies > 0) return '';
     if (!b.totalCopies) return ebook || '<span class="badge badge-muted">Aucun exemplaire</span>';
     let paper;
     if (b.availableCopies === 0) paper = '<span class="badge badge-warn">Emprunté</span>';
@@ -786,10 +789,19 @@
 
   // Filtres du catalogue : choisis dans les Reglages (liste + position en haut ou
   // dans une colonne a gauche). Sans reglage : tous, en haut.
+  const ALL_CATALOG_CARD = ['cover', 'title', 'authors', 'series', 'collection', 'status', 'availability', 'ebook'];
+  // Elements de la miniature d'un livre : [cle, libelle, option de la bibliotheque necessaire]
+  const CATALOG_CARD_LABELS = [
+    ['cover', 'Couverture'], ['title', 'Titre'], ['authors', 'Auteurs'], ['series', 'Série et tome'], ['collection', 'Collection'],
+    ['status', 'Statut de lecture et avis', 'readingStatus'], ['availability', 'Disponibilité'], ['ebook', 'Bandeau « Numérique »', 'ebooks'],
+  ];
   const ALL_CATALOG_FILTERS = ['search', 'category', 'collection', 'series', 'tag', 'availability', 'format', 'status', 'sort', 'count'];
   const catalogConf = () => {
     const conf = (state.settings && state.settings.catalog) || {};
-    return { filters: Array.isArray(conf.filters) ? conf.filters : ALL_CATALOG_FILTERS, position: conf.position === 'left' ? 'left' : 'top' };
+    return {
+      filters: Array.isArray(conf.filters) ? conf.filters : ALL_CATALOG_FILTERS, position: conf.position === 'left' ? 'left' : 'top',
+      card: Array.isArray(conf.card) ? conf.card : ALL_CATALOG_CARD,
+    };
   };
 
   // [cle, libelle, option de la bibliotheque necessaire]
@@ -1061,19 +1073,28 @@
     const data = await api(`/api/${canManage() ? 'books' : 'public/books'}?${catalogParams()}`);
     const list = $('#books');
     if (!list) return;
-    const html = data.items.map((b) => `
+    // Elements de la miniature choisis dans les Reglages.
+    const card = new Set(catalogConf().card);
+    const has = (k) => card.has(k);
+    const ribbon = (b) => has('ebook') && features().ebooks && b.ebookCopies > 0 ? 'Numérique' : '';
+    const html = data.items.map((b) => {
+      const meta = [
+        has('title') ? `<span class="t">${esc(b.title)}</span>` : '',
+        has('authors') ? `<span class="a">${esc(b.authors)}</span>` : '',
+        has('series') && b.series ? `<span class="coll">${esc(b.series)}${b.seriesNumber ? ' · tome ' + esc(b.seriesNumber) : ''}</span>` : '',
+        has('collection') && b.collection ? `<span class="coll coll-muted">${esc(b.collection)}</span>` : '',
+        withStatus && has('status') ? statusIcons(b.status) : '',
+        has('availability') ? availabilityBadge(b, false) : '',
+      ].join('');
+      // Sans couverture, le bandeau "Numerique" passe en pastille.
+      const ebookBadge = !has('cover') && ribbon(b) ? '<span class="badge badge-ebook">Numérique</span>' : '';
+      return `
       <a class="book-card${state.selecting ? ' selectable' : ''}${state.selecting && state.selected.has(b.id) ? ' selected' : ''}" href="#/book/${b.id}" data-id="${b.id}">
         ${state.selecting ? '<span class="select-check" aria-hidden="true"></span>' : ''}
-        ${coverHtml(b)}
-        <div class="meta">
-          <span class="t">${esc(b.title)}</span>
-          <span class="a">${esc(b.authors)}</span>
-          ${b.series ? `<span class="coll">${esc(b.series)}${b.seriesNumber ? ' · tome ' + esc(b.seriesNumber) : ''}</span>` : ''}
-          ${b.collection ? `<span class="coll coll-muted">${esc(b.collection)}</span>` : ''}
-          ${withStatus ? statusIcons(b.status) : ''}
-          ${availabilityBadge(b)}
-        </div>
-      </a>`).join('');
+        ${has('cover') ? coverHtml(b, ribbon(b)) : ''}
+        ${meta || ebookBadge ? `<div class="meta">${meta}${ebookBadge}</div>` : ''}
+      </a>`;
+    }).join('');
     const filtered = c.q || c.category || c.tag || c.collection || c.series || c.status || c.format || c.reading || c.opinion;
     if (append) list.insertAdjacentHTML('beforeend', html);
     else list.innerHTML = html || `<div class="empty" style="grid-column:1/-1">${filtered ? 'Aucun livre ne correspond.' : 'Le catalogue est vide pour le moment.'}</div>`;
@@ -3273,7 +3294,10 @@
     const [s, cats, tags] = await Promise.all([api('/api/settings'), api('/api/categories'), api('/api/tags').catch(() => [])]);
     // Options absentes : le serveur tourne encore une version precedente de l'app.
     const feat = s.features || null;
-    const catalog = { filters: (s.catalog && s.catalog.filters) || ALL_CATALOG_FILTERS, position: (s.catalog && s.catalog.position) || 'top' };
+    const catalog = {
+      filters: (s.catalog && s.catalog.filters) || ALL_CATALOG_FILTERS, position: (s.catalog && s.catalog.position) || 'top',
+      card: (s.catalog && s.catalog.card) || ALL_CATALOG_CARD,
+    };
     const libraryUrl = location.origin + LIB;
     view().innerHTML = `
       <h1>Réglages</h1>
@@ -3355,6 +3379,13 @@
         <div class="btn-row">
           <label class="check"><input type="radio" name="position" value="top" ${catalog.position !== 'left' ? 'checked' : ''}> En haut du catalogue</label>
           <label class="check"><input type="radio" name="position" value="left" ${catalog.position === 'left' ? 'checked' : ''}> Dans une colonne à gauche</label>
+        </div>
+        <label style="margin-top:14px">Éléments affichés sur la miniature d'un livre</label>
+        <div class="btn-row">
+          ${CATALOG_CARD_LABELS.map(([k, l, needs]) => {
+            const off = needs && !(feat && feat[needs]);
+            return `<label class="check" ${off ? 'title="Active d\'abord l\'option correspondante"' : ''}><input type="checkbox" name="card" value="${k}" ${catalog.card.includes(k) ? 'checked' : ''}> ${l}${off ? ' <span class="small muted">(option désactivée)</span>' : ''}</label>`;
+          }).join('')}
         </div>
       </form>
 
@@ -3538,8 +3569,9 @@
     $('#catalog-form').addEventListener('change', async () => {
       const filters = $$('#catalog-form [name=f]:checked').map((cb) => cb.value);
       const position = ($('#catalog-form [name=position]:checked') || {}).value || 'top';
+      const card = $$('#catalog-form [name=card]:checked').map((cb) => cb.value);
       try {
-        await api('/api/settings', { method: 'PUT', body: { catalog: { filters, position } } });
+        await api('/api/settings', { method: 'PUT', body: { catalog: { filters, position, card } } });
         await loadSettings();
         toast('Catalogue mis à jour.');
       } catch (err) { toast(err.message, 'error'); }
