@@ -511,17 +511,64 @@
     renderAccount();
   }
 
+  // ================= Icones =================
+  // Traces au style Lucide (licence ISC), 24x24, trait de 2.
+  const ICON_PATHS = {
+    catalog: '<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/>',
+    add: '<circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/>',
+    import: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
+    loans: '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
+    borrowers: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    labels: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM21 14v.01M14 21h.01M17 21h4v-3"/>',
+    stats: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+    settings: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
+    install: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+    admin: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+    logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+    login: '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/>',
+    library: '<path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/>',
+    edit: '<path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+    incomplete: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+  };
+  function icon(name, size = 18) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ''}</svg>`;
+  }
+  // Couleur de chaque page (teinte, fond pastel) : navigation et pastille du titre.
+  const PAGE_COLORS = {
+    catalog: 'accent', add: 'coral', import: 'sky', loans: 'sun', borrowers: 'grape', labels: 'rose', stats: 'sky', settings: 'accent',
+    user: 'grape', admin: 'coral', login: 'accent', library: 'accent', edit: 'coral', incomplete: 'sun',
+  };
+  const colorVars = (name) => { const c = PAGE_COLORS[name] || 'accent'; return `--c:var(--${c});--cs:var(--${c}-soft)`; };
+
+  // Pastille d'icone devant le titre (h1) de chaque page, selon l'adresse.
+  const TITLE_ICONS = [
+    [/^\/book\/\d+\/edit$/, 'edit'], [/^\/add$/, 'add'], [/^\/import$/, 'import'], [/^\/incomplete/, 'incomplete'],
+    [/^\/loans$/, 'loans'], [/^\/borrowers?(\/|$)/, 'borrowers'], [/^\/labels$/, 'labels'], [/^\/stats$/, 'stats'],
+    [/^\/settings$/, 'settings'], [/^\/account$/, 'user'], [/^\/admin$/, 'admin'], [/^\/login$/, 'login'],
+  ];
+  function decorateTitle() {
+    const h1 = view().querySelector('h1');
+    if (!h1 || h1.querySelector('.h-icon')) return;
+    const path = decodeURIComponent(location.hash.replace(/^#/, '')) || '/';
+    let name = /^\/?$/.test(path) ? (LIBRARY ? 'catalog' : 'library') : null;
+    for (const [re, n] of TITLE_ICONS) if (re.test(path)) { name = n; break; }
+    if (!name) return;
+    h1.insertAdjacentHTML('afterbegin', `<span class="h-icon" style="${colorVars(name)}">${icon(name, 22)}</span>`);
+  }
+  new MutationObserver(decorateTitle).observe(document.getElementById('view'), { childList: true });
+
   function renderNav() {
     let links = [];
     if (LIBRARY) {
       links = canManage()
-        ? [['#/', 'Catalogue'], ['#/add', 'Ajouter'], ['#/import', 'Importer'], ['#/loans', 'Prêts'], ['#/borrowers', 'Emprunteurs'], ['#/labels', 'Étiquettes'], ...(features().stats ? [['#/stats', 'Statistiques']] : []), ['#/settings', 'Réglages']]
-        : [['#/', 'Catalogue']];
+        ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/import', 'Importer', 'import'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ['#/labels', 'Étiquettes', 'labels'], ...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : []), ['#/settings', 'Réglages', 'settings']]
+        : [['#/', 'Catalogue', 'catalog']];
     }
     const current = '#/' + (location.hash.replace(/^#\/?/, '').split('/')[0] || '');
-    $('#nav').innerHTML = links.map(([href, label]) => {
+    $('#nav').innerHTML = links.map(([href, label, ic]) => {
       const active = href === current || (href === '#/' && (current === '#/book' || current === '#/'));
-      return `<a href="${href}" class="${active ? 'active' : ''}">${label}</a>`;
+      return `<a href="${href}" class="${active ? 'active' : ''}" style="${colorVars(ic)}">${icon(ic)}<span>${label}</span></a>`;
     }).join('');
     $('#nav').hidden = links.length <= 1;
     // Petit ecran : pages regroupees derriere le bouton menu (hamburger).
@@ -574,10 +621,10 @@
       <div class="menu-title">Mes bibliothèques</div>
       ${libs || '<p class="small muted" style="padding:4px 10px">Aucune bibliothèque liée à ce compte.</p>'}
       <div class="menu-sep"></div>
-      <a class="menu-item" href="#/account">Mon compte</a>
-      ${canInstall() ? '<button class="menu-item" type="button" id="install-app">Installer l\'application</button>' : ''}
-      ${u.role === 'admin' ? '<a class="menu-item" href="#/admin">Administration</a>' : ''}
-      <button class="menu-item" type="button" id="logout">Déconnexion</button>`;
+      <a class="menu-item" href="#/account">${icon('user')}Mon compte</a>
+      ${canInstall() ? `<button class="menu-item" type="button" id="install-app">${icon('install')}Installer l'application</button>` : ''}
+      ${u.role === 'admin' ? `<a class="menu-item" href="#/admin">${icon('admin')}Administration</a>` : ''}
+      <button class="menu-item" type="button" id="logout">${icon('logout')}Déconnexion</button>`;
     $('#account').appendChild(menu);
     $('#account-btn').setAttribute('aria-expanded', 'true');
     menu.addEventListener('click', (e) => e.stopPropagation());
@@ -792,11 +839,11 @@
 
   // Filtres du catalogue : choisis dans les Reglages (liste + position en haut ou
   // dans une colonne a gauche). Sans reglage : tous, en haut.
-  const ALL_CATALOG_CARD = ['cover', 'title', 'authors', 'series', 'collection', 'status', 'availability', 'ebook'];
+  const ALL_CATALOG_CARD = ['cover', 'title', 'authors', 'series', 'collection', 'categories', 'tags', 'status', 'availability', 'ebook'];
   // Elements de la miniature d'un livre : [cle, libelle, option de la bibliotheque necessaire]
   const CATALOG_CARD_LABELS = [
     ['cover', 'Couverture'], ['title', 'Titre'], ['authors', 'Auteurs'], ['series', 'Série et tome'], ['collection', 'Collection'],
-    ['status', 'Statut de lecture et avis', 'readingStatus'], ['availability', 'Disponibilité'], ['ebook', 'Bandeau « Numérique »', 'ebooks'],
+    ['categories', 'Catégories'], ['tags', 'Tags', 'tags'], ['status', 'Statut de lecture et avis', 'readingStatus'], ['availability', 'Disponibilité'], ['ebook', 'Bandeau « Numérique »', 'ebooks'],
   ];
   const ALL_CATALOG_FILTERS = ['search', 'category', 'collection', 'series', 'tag', 'availability', 'format', 'status', 'sort', 'count'];
   const catalogConf = () => {
@@ -1105,6 +1152,8 @@
         has('authors') ? `<span class="a">${esc(b.authors)}</span>` : '',
         has('series') && b.series ? `<span class="coll">${esc(b.series)}${b.seriesNumber ? ' · tome ' + esc(b.seriesNumber) : ''}</span>` : '',
         has('collection') && b.collection ? `<span class="coll coll-muted">${esc(b.collection)}</span>` : '',
+        has('categories') && b.categories && b.categories.length ? `<span class="card-terms">${b.categories.map((t) => `<span class="term">${esc(t.name)}</span>`).join('')}</span>` : '',
+        has('tags') && features().tags && b.tags && b.tags.length ? `<span class="card-terms">${b.tags.map((t) => `<span class="term term-tag">#${esc(t.name)}</span>`).join('')}</span>` : '',
         withStatus && has('status') ? statusIcons(b.status) : '',
         has('availability') ? availabilityBadge(b, false) : '',
       ].join('');
@@ -3815,13 +3864,15 @@
   const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
   const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const canInstall = () => !isStandalone() && (!!installPrompt || isIos());
-  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
-  window.addEventListener('appinstalled', () => { installPrompt = null; toast('Application installée.'); });
+  // Bouton "Installer" de l'en-tete : seulement quand le navigateur propose l'installation.
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; $('#install-btn').hidden = false; });
+  window.addEventListener('appinstalled', () => { installPrompt = null; $('#install-btn').hidden = true; toast('Application installée.'); });
   async function installApp() {
     if (installPrompt) {
       installPrompt.prompt();
       await installPrompt.userChoice.catch(() => null);
       installPrompt = null;
+      $('#install-btn').hidden = true;
       return;
     }
     alert('Pour installer l\'application sur cet appareil :\n\n1. Ouvre cette page dans Safari.\n2. Touche le bouton Partager (carré avec une flèche).\n3. Choisis « Sur l\'écran d\'accueil ».');
@@ -3846,6 +3897,7 @@
     } catch (e) { /* hors ligne */ }
   }
 
+  $('#install-btn').onclick = () => installApp();
   $('#scan-btn').onclick = async () => {
     const code = await scanCopy();
     if (code) go(`#/c/${encodeURIComponent(code)}`);

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#2f5d50">
+<meta name="theme-color" content="#0f8b6d">
 <title>{{TITLE}}</title>
 <!-- Page servie par server.js (renderIndex) : {{ROOT}} = chemin de montage de l'app
      (ex. /mylittlelibrary dans la passerelle), CONFIG = bibliotheque courante. La
@@ -15,6 +15,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="{{TITLE}}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap">
 <link rel="stylesheet" href="{{ROOT}}/style.css?v={{VERSION}}">
 <script>window.MLL = {{CONFIG}};</script>
 </head>
@@ -30,6 +33,10 @@
   <button class="btn btn-icon scan-btn" id="scan-btn" type="button" title="Scanner une étiquette" hidden>
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></svg>
     <span>Scanner</span>
+  </button>
+  <button class="btn btn-small install-btn" id="install-btn" type="button" title="Installer l'application sur cet appareil" hidden>
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+    <span>Installer</span>
   </button>
   <div class="account" id="account"></div>
   <nav class="nav" id="nav"></nav>

@@ -15,6 +15,7 @@ Utilisateur francophone : interface, commentaires et réponses **en français**.
 - `lib/library-api.js` : API d'une bibliothèque (`/:slug/api/...`) : public (catalogue, fiche), puis garde « gestion » ; livres, exemplaires, prêts, emprunteurs, étiquettes, import, export, suppression en masse, vidage.
 - PWA : `public/sw.js` (service worker sans cache, page hors connexion), manifeste dynamique par bibliothèque (`/:slug/manifest.webmanifest`, `sendManifest` dans server.js), icônes PNG dans `public/` (régénérer depuis `icon.svg` / `icon-maskable.svg` si le logo change).
 - `lib/stats.js` (stats, confidentialité), `lib/auth.js` (scrypt, sessions, rôles admin/gestionnaire), `lib/isbn.js` (Google Books / BnF SRU / Open Library), `lib/covers.js` (recherche de couvertures), `lib/media.js`.
+- Interface : palette et composants dans `style.css` (variables `:root`, teintes `--sun/--coral/--sky/--grape/--rose` + `-soft`), police Nunito (Google Fonts). Icones SVG inline : section `Icones` de app.js (`icon(nom)`, `PAGE_COLORS`, `decorateTitle` ajoute la pastille des h1 selon l'adresse).
 - `public/app.js` : SPA (routes en hash), sections repérables par `// ================= <Section> =================`. `public/embed.js` : widget catalogue WordPress (Shadow DOM). `wordpress/…/mylittlelibrary-catalogue.php` : plugin shortcode `[bibliotheque …]`.
 - `data/` (non versionné) : `library.db`, `media/`, `backups/`.
 

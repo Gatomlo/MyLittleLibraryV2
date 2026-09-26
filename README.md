@@ -51,7 +51,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   ou dans une colonne à gauche. Même choix pour le catalogue WordPress (générateur de
   shortcode : `filtres="..."`, `position="gauche"`). Réglages présentés en accordéon.
 - **Miniatures du catalogue** paramétrables (Réglages > Catalogue) : couverture, titre,
-  auteurs, série et tome, collection, statut de lecture, disponibilité, bandeau « Numérique »
+  auteurs, série et tome, collection, catégories, tags, statut de lecture, disponibilité, bandeau « Numérique »
   en travers de la couverture.
 - **Statuts de lecture** (option) : À lire, En cours, Lu, Abandonné + Aimé / Pas aimé,
   avec dates de début, de fin et d'abandon (automatiques, corrigeables).
@@ -81,8 +81,12 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   ouverture dans le catalogue pour une sélection en masse.
 - **Téléphone** : interface adaptée (menu, filtres du catalogue repliables, zones
   tactiles), installable sur l'écran d'accueil en application plein écran
-  (menu du compte > « Installer l'application » ; sur iPhone : Safari > Partager >
-  « Sur l'écran d'accueil »). Un manifeste par bibliothèque (nom et page de départ).
+  (bouton « Installer » de l'en-tête quand le navigateur le propose, ou menu du compte >
+  « Installer l'application » ; sur iPhone : Safari > Partager > « Sur l'écran d'accueil »).
+  Nécessite **https** : depuis un téléphone sur le réseau local en http, le navigateur
+  ne fait qu'un raccourci qui s'ouvre dans un onglet.
+- **Interface** : thème coloré (police Nunito, couleur par page, icônes dans le menu et
+  devant les titres), clair ou sombre selon l'appareil. Un manifeste par bibliothèque (nom et page de départ).
 - **Exemplaires** : chaque exemplaire a un code unique (`BIB-00001`…), un
   emplacement et son étiquette.
 - **Prêts** : scan du QR de l'étiquette → prêter (emprunteur choisi ou créé à la

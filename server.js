@@ -344,7 +344,7 @@ function sendManifest(req, res, library) {
   res.set('Cache-Control', 'no-cache').type('application/manifest+json').send(JSON.stringify({
     id: start, name, short_name: name,
     start_url: start, scope: `${root}/`, display: 'standalone', orientation: 'any',
-    background_color: '#f5f3ef', theme_color: '#2f5d50', lang: 'fr',
+    background_color: '#fbf8f3', theme_color: '#0f8b6d', lang: 'fr',
     icons: [
       { src: `${root}/icon-192.png`, sizes: '192x192', type: 'image/png' },
       { src: `${root}/icon-512.png`, sizes: '512x512', type: 'image/png' },
