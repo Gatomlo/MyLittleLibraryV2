@@ -375,7 +375,7 @@
             <button type="button" class="cover-choice" data-i="${i}" title="${esc([c.title, c.detail].filter(Boolean).join(' — '))}">
               <span class="cover-choice-img"><img src="${esc(c.thumb || c.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"
                 onerror="this.closest('.cover-choice').remove()"></span>
-              <span class="cover-choice-src">${esc(c.source)}</span>
+              <span class="cover-choice-src">${esc(c.source)}${c.loose ? ' · à vérifier' : ''}</span>
               <span class="cover-choice-title">${esc(c.title)}</span>
             </button>`).join('');
           $$('.cover-choice', results).forEach((btn) => { btn.onclick = () => finish(covers[Number(btn.dataset.i)].url); });
