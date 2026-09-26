@@ -323,15 +323,37 @@ function renderIndex(req, library) {
   const root = auth.rootPath(req);
   const config = JSON.stringify({ root, library: library ? { slug: library.slug, name: library.name, logoUrl: mediaUrl(library.logo) } : null })
     .replace(/</g, '\\u003c');
-  const title = library ? library.name.replace(/[<&]/g, '') : 'Bibliothèques';
+  const title = library ? library.name.replace(/[<&"]/g, '') : 'Bibliothèques';
   return INDEX_TEMPLATE
+    .replace('{{MANIFEST}}', library ? `${root}/${library.slug}/manifest.webmanifest` : `${root}/manifest.webmanifest`)
     .replace(/\{\{ROOT\}\}/g, root)
     .replace(/\{\{VERSION\}\}/g, ASSET_VERSION)
-    .replace('{{TITLE}}', title)
+    .replace(/\{\{TITLE\}\}/g, title)
     .replace('{{CONFIG}}', config);
 }
 
 app.get('/', (req, res) => res.set('Cache-Control', 'no-cache').type('html').send(renderIndex(req, null)));
+
+// Manifeste d'application (installation sur l'ecran d'accueil du telephone) : un par
+// bibliotheque (nom, page de depart), et un pour l'accueil. Portee = toute l'app,
+// pour pouvoir passer d'une bibliotheque a l'autre sans quitter l'appli installee.
+function sendManifest(req, res, library) {
+  const root = auth.rootPath(req);
+  const start = library ? `${root}/${library.slug}/` : `${root}/`;
+  const name = library ? library.name : 'Bibliothèques';
+  res.set('Cache-Control', 'no-cache').type('application/manifest+json').send(JSON.stringify({
+    id: start, name, short_name: name,
+    start_url: start, scope: `${root}/`, display: 'standalone', orientation: 'any',
+    background_color: '#f5f3ef', theme_color: '#2f5d50', lang: 'fr',
+    icons: [
+      { src: `${root}/icon-192.png`, sizes: '192x192', type: 'image/png' },
+      { src: `${root}/icon-512.png`, sizes: '512x512', type: 'image/png' },
+      { src: `${root}/icon-maskable-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: `${root}/icon.svg`, sizes: 'any', type: 'image/svg+xml' },
+    ],
+  }));
+}
+app.get('/manifest.webmanifest', (req, res) => sendManifest(req, res, null));
 
 // ---------- Une bibliotheque ----------
 app.use('/:slug/api', auth.loadUser, jsonOnly, createLibraryRouter(), apiErrors);
@@ -341,6 +363,12 @@ app.use('/:slug/media', express.static(MEDIA_DIR, { maxAge: '30d', immutable: tr
 app.get('/:slug/embed.js', (req, res) => {
   res.set('Cache-Control', 'no-cache');
   res.sendFile(path.join(PUBLIC_DIR, 'embed.js'));
+});
+
+app.get('/:slug/manifest.webmanifest', (req, res, next) => {
+  const found = findLibrary(req.params.slug);
+  if (!found) return next();
+  sendManifest(req, res, found.library);
 });
 
 function libraryPage(req, res, next) {

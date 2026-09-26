@@ -75,6 +75,14 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **Export** (Réglages > Données) : inventaire `.xlsx` / `.csv`, une ligne par livre
   avec tous les champs, le nombre d'exemplaires et leurs codes — mêmes colonnes que
   l'import, donc réimportable (y compris dans une autre bibliothèque).
+- **Fiches incomplètes** (Importer ou Réglages) : livres sans catégorie, ISBN,
+  couverture, auteur, éditeur, année, pages, résumé, tag ou emplacement d'exemplaire,
+  avec leur nombre ; bouton « Compléter » (retour à la liste après enregistrement) ou
+  ouverture dans le catalogue pour une sélection en masse.
+- **Téléphone** : interface adaptée (menu, filtres du catalogue repliables, zones
+  tactiles), installable sur l'écran d'accueil en application plein écran
+  (menu du compte > « Installer l'application » ; sur iPhone : Safari > Partager >
+  « Sur l'écran d'accueil »). Un manifeste par bibliothèque (nom et page de départ).
 - **Exemplaires** : chaque exemplaire a un code unique (`BIB-00001`…), un
   emplacement et son étiquette.
 - **Prêts** : scan du QR de l'étiquette → prêter (emprunteur choisi ou créé à la

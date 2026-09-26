@@ -575,6 +575,7 @@
       ${libs || '<p class="small muted" style="padding:4px 10px">Aucune bibliothèque liée à ce compte.</p>'}
       <div class="menu-sep"></div>
       <a class="menu-item" href="#/account">Mon compte</a>
+      ${canInstall() ? '<button class="menu-item" type="button" id="install-app">Installer l\'application</button>' : ''}
       ${u.role === 'admin' ? '<a class="menu-item" href="#/admin">Administration</a>' : ''}
       <button class="menu-item" type="button" id="logout">Déconnexion</button>`;
     $('#account').appendChild(menu);
@@ -593,6 +594,7 @@
         } catch (err) { toast(err.message, 'error'); }
       };
     });
+    if ($('#install-app')) $('#install-app').onclick = () => { closeMenu(); installApp(); };
     $('#logout').onclick = async () => {
       closeMenu();
       await gapi('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
@@ -632,6 +634,7 @@
     [/^\/login$/, viewLogin],
     [/^\/add$/, viewBookForm, 'manage'],
     [/^\/import$/, viewImport, 'manage'],
+    [/^\/incomplete(?:\/(\w+))?$/, viewIncomplete, 'manage'],
     [/^\/loans$/, viewLoans, 'manage'],
     [/^\/borrowers$/, viewBorrowers, 'manage'],
     [/^\/borrower\/(\d+)$/, viewBorrower, 'manage'],
@@ -899,9 +902,10 @@
         <option value="year" ${sel(c.sort, 'year')}>Tri : année</option></select>`]);
     }
 
-    const filtersHtml = left
-      ? controls.map(([, label, html]) => `<div class="fgroup">${label ? `<label>${label}</label>` : ''}${html}</div>`).join('')
-      : controls.map(([, , html]) => html).join('');
+    const toggle = controls.some(([k]) => k !== 'search') ? '<button class="btn filters-toggle" type="button" id="filters-toggle" aria-expanded="false">Filtres</button>' : '';
+    const filtersHtml = (left
+      ? controls.map(([k, label, html]) => `<div class="fgroup${k === 'search' ? ' fgroup-search' : ''}">${label ? `<label>${label}</label>` : ''}${html}</div>`)
+      : controls.map(([, , html]) => html)).join('').replace(/^(<div class="fgroup fgroup-search">.*?<\/div>|<input class="search"[^>]*>)?/, (m) => m + toggle);
     const results = '<div class="books" id="books"></div><div class="more" id="more"></div>';
     // Nombre de livres (au choix) : sous les filtres, en haut comme dans la colonne.
     const countHtml = show('count') ? '<p class="catalog-count" id="count"></p>' : '';
@@ -916,7 +920,23 @@
       <div id="active-filters"></div>
       ${body}`;
 
-    const reload = () => { c.page = 1; renderActive(); loadBooks(false); };
+    const reload = () => { c.page = 1; renderActive(); renderToggle(); loadBooks(false); };
+    // Bouton "Filtres" (telephone) : nombre de filtres actifs.
+    function renderToggle() {
+      const btn = $('#filters-toggle');
+      if (!btn) return;
+      const n = ['category', 'collection', 'series', 'tag', 'status', 'format', 'reading', 'opinion'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0);
+      btn.textContent = n ? `Filtres · ${n}` : 'Filtres';
+      btn.classList.toggle('btn-primary', n > 0);
+    }
+    if ($('#filters-toggle')) {
+      renderToggle();
+      $('#filters-toggle').onclick = () => {
+        const box = $('#filters-toggle').parentNode;
+        const open = box.classList.toggle('open');
+        $('#filters-toggle').setAttribute('aria-expanded', String(open));
+      };
+    }
     // Filtre actif sans champ visible (ex. collection choisie depuis une fiche alors
     // que ce filtre est masque) : affiche en pastille pour pouvoir le retirer.
     function renderActive() {
@@ -925,6 +945,7 @@
       if (c.series && !$('#seriesf')) chips.push(['series', 'Série : ' + c.series]);
       if (c.tag && !$('#tagf')) chips.push(['tag', 'Filtré par tag']);
       if (c.category && !$('#cat')) chips.push(['category', 'Filtré par catégorie']);
+      if (c.missing && canManage()) chips.push(['missing', missingLabel(c.missing)]);
       $('#active-filters').innerHTML = chips.length
         ? `<div class="btn-row" style="margin-bottom:12px">${chips.map(([k, l]) => `<span class="chip">${esc(l)}<button type="button" data-clear="${k}" aria-label="Retirer">×</button></span>`).join('')}</div>`
         : '';
@@ -1055,6 +1076,7 @@
     });
     if (c.collection) params.set('collection', c.collection);
     if (c.series) params.set('series', c.series);
+    if (c.missing && canManage()) params.set('missing', c.missing);
     if (features().tags && c.tag) params.set('tag', c.tag);
     if (features().ebooks && c.format && show('format')) params.set('format', c.format);
     if (withStatus) {
@@ -1095,7 +1117,7 @@
         ${meta || ebookBadge ? `<div class="meta">${meta}${ebookBadge}</div>` : ''}
       </a>`;
     }).join('');
-    const filtered = c.q || c.category || c.tag || c.collection || c.series || c.status || c.format || c.reading || c.opinion;
+    const filtered = c.missing || c.q || c.category || c.tag || c.collection || c.series || c.status || c.format || c.reading || c.opinion;
     if (append) list.insertAdjacentHTML('beforeend', html);
     else list.innerHTML = html || `<div class="empty" style="grid-column:1/-1">${filtered ? 'Aucun livre ne correspond.' : 'Le catalogue est vide pour le moment.'}</div>`;
     if ($('#count')) $('#count').textContent = `${data.total} livre${data.total > 1 ? 's' : ''}`;
@@ -1260,10 +1282,10 @@
   }
 
   function historyHtml(history) {
-    return `<table><thead><tr><th>Exemplaire</th><th>Emprunteur</th><th>Prêté le</th><th>Rendu le</th></tr></thead><tbody>
+    return `<div class="table-wrap"><table class="stack"><thead><tr><th>Exemplaire</th><th>Emprunteur</th><th>Prêté le</th><th>Rendu le</th></tr></thead><tbody>
       ${history.map((l) => `<tr><td class="code">${esc(l.code)}</td><td><a href="#/borrower/${l.borrower.id}">${esc(l.borrower.name)}</a></td>
         <td>${fmtDate(l.loanedAt)}</td><td>${l.returnedAt ? fmtDate(l.returnedAt) : '<span class="badge badge-warn">en cours</span>'}</td></tr>`).join('')}
-    </tbody></table>`;
+    </tbody></table></div>`;
   }
 
   function bindAdminBook(book) {
@@ -1701,8 +1723,11 @@
     const b = book || { isbn: '', title: '', subtitle: '', authors: '', publisher: '', collection: '', series: '', seriesNumber: '', year: '', pages: '', summary: '', notes: '', categories: [], coverUrl: null, format: 'physical' };
     const form = { categories: b.categories.map((c) => c.name), tags: (b.tags || []).map((t) => t.name), cover: { url: b.coverUrl ? mediaSrc(b.coverUrl) : '', remoteUrl: '', data: '', removed: false } };
 
+    // Ouvert depuis "Fiches incompletes" : retour a cette liste.
+    let fromIncomplete = null;
+    try { const r = JSON.parse(sessionStorage.getItem('mll-after-edit') || 'null'); if (editing && r && r.id === b.id) fromIncomplete = r.hash; } catch (e) { /* rien */ }
     view().innerHTML = `
-      <p><a href="${editing ? `#/book/${b.id}` : '#/'}">← ${editing ? 'Retour à la fiche' : 'Catalogue'}</a></p>
+      <p><a href="${fromIncomplete || (editing ? `#/book/${b.id}` : '#/')}">← ${fromIncomplete ? 'Fiches incomplètes' : editing ? 'Retour à la fiche' : 'Catalogue'}</a></p>
       <h1>${editing ? 'Modifier le livre' : 'Ajouter un livre'}</h1>
       <div class="card" style="margin:14px 0">
         <label for="isbn-search">Rechercher par ISBN</label>
@@ -1900,7 +1925,8 @@
           const codes = saved.copies.filter((c) => c.format !== 'ebook').map((c) => c.code);
           toast(codes.length ? `Livre ajouté : ${codes.join(', ')}. Étiquette(s) en attente d'impression.` : 'Livre ajouté.');
         }
-        go(`#/book/${saved.id}`);
+        if (fromIncomplete) sessionStorageTake('mll-after-edit');
+        go(fromIncomplete || `#/book/${saved.id}`);
       } catch (err) {
         $('#form-err').innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
         btn.disabled = false;
@@ -2061,7 +2087,8 @@
     const tpl = (type, ext) => `${LIB}/api/import/template.${ext}${type === 'isbn' ? '?type=isbn' : ''}`;
     view().innerHTML = `
       <div class="page-head"><div><h1>Importer des livres</h1>
-        <p class="muted">Ajoute d'un coup plusieurs livres à « ${esc(state.settings.libraryName)} ». Les exemplaires et leurs codes sont créés automatiquement ; leurs étiquettes passent « en attente ».</p></div></div>
+        <p class="muted">Ajoute d'un coup plusieurs livres à « ${esc(state.settings.libraryName)} ». Les exemplaires et leurs codes sont créés automatiquement ; leurs étiquettes passent « en attente ».</p></div>
+        <a class="btn" href="#/incomplete">Fiches incomplètes</a></div>
       <div class="seg seg-3" style="max-width:640px">
         <button type="button" data-mode="scan" class="${s.mode === 'scan' ? 'active' : ''}">Scanner en série</button>
         <button type="button" data-mode="isbn" class="${s.mode === 'isbn' ? 'active' : ''}">Liste d'ISBN</button>
@@ -2533,6 +2560,70 @@
     window.removeEventListener('beforeunload', warnBeforeLeaving);
     if ($('#preview')) renderPreview();
     toast('Import terminé.');
+  }
+
+  // ================= Fiches incompletes =================
+  // Livres sans une information donnee (categorie, ISBN, couverture...) : liste a
+  // completer une a une, ou ouverte dans le catalogue pour la selection en masse.
+  const MISSING_FIELDS = [
+    ['category', 'Sans catégorie'], ['isbn', 'Sans ISBN'], ['cover', 'Sans couverture'], ['authors', 'Sans auteur'],
+    ['publisher', 'Sans éditeur'], ['year', 'Sans année'], ['pages', 'Sans nombre de pages'], ['summary', 'Sans résumé'],
+    ['location', 'Exemplaire sans emplacement'], ['tags', 'Sans tag'],
+  ];
+  const missingLabel = (k) => (MISSING_FIELDS.find(([key]) => key === k) || [k, 'Information manquante'])[1];
+
+  function missingPills(m, current) {
+    return MISSING_FIELDS.filter(([k]) => k in m.counts).map(([k, label]) => {
+      const n = m.counts[k];
+      return `<a class="pill${k === current ? ' pill-current' : ''}${n ? '' : ' pill-zero'}" href="#/incomplete/${k}">${esc(label)} <strong>${n}</strong></a>`;
+    }).join('');
+  }
+
+  async function viewIncomplete(key) {
+    const m = await api('/api/books/missing');
+    const keys = MISSING_FIELDS.map(([k]) => k).filter((k) => k in m.counts);
+    if (!key || !keys.includes(key)) key = keys.find((k) => m.counts[k] > 0) || keys[0];
+    let page = 1;
+    view().innerHTML = `
+      <div class="page-head"><div><h1>Fiches incomplètes</h1>
+        <p class="muted">${m.total} livre${m.total > 1 ? 's' : ''} au catalogue. Choisis l'information manquante à rechercher.</p></div>
+        <div class="btn-row"><a class="btn" href="#/import">Importer</a><a class="btn" href="#/settings">Réglages</a></div></div>
+      <div class="chips-filter">${missingPills(m, key)}</div>
+      <div class="card">
+        <div class="btn-row" style="justify-content:space-between;margin-bottom:6px">
+          <strong id="missing-count"></strong>
+          <button class="btn btn-small" type="button" id="missing-catalog">Ouvrir dans le catalogue</button>
+        </div>
+        <div class="list" id="missing-list"></div>
+        <div class="more" id="missing-more"></div>
+      </div>`;
+    $('#missing-catalog').onclick = () => {
+      state.catalog = { q: '', category: '', status: '', sort: 'title', page: 1, missing: key };
+      go('#/');
+    };
+    $('#missing-list').addEventListener('click', (e) => {
+      const a = e.target.closest('[data-edit]');
+      if (a) sessionStorageSet('mll-after-edit', JSON.stringify({ id: Number(a.dataset.edit), hash: `#/incomplete/${key}` }));
+    });
+    async function load() {
+      const data = await api(`/api/books?${new URLSearchParams({ missing: key, sort: 'title', limit: 100, page })}`);
+      $('#missing-count').textContent = data.total
+        ? `${data.total} livre${data.total > 1 ? 's' : ''} · ${missingLabel(key).toLowerCase()}`
+        : 'Aucun livre concerné.';
+      $('#missing-catalog').hidden = !data.total;
+      $('#missing-list').insertAdjacentHTML('beforeend', data.items.map((b) => `
+        <div class="list-item">
+          ${b.coverUrl ? `<img class="thumb" src="${esc(mediaSrc(b.coverUrl))}" alt="" loading="lazy">` : '<span class="thumb"></span>'}
+          <div class="grow"><a href="#/book/${b.id}"><strong>${esc(b.title)}</strong></a>
+            <div class="small muted">${esc([b.authors, b.publisher, b.year].filter(Boolean).join(' · ')) || '—'}</div></div>
+          <a class="btn btn-small" href="#/book/${b.id}/edit" data-edit="${b.id}">Compléter</a>
+        </div>`).join(''));
+      const shown = (data.page - 1) * data.limit + data.items.length;
+      $('#missing-more').innerHTML = shown < data.total ? '<button class="btn" type="button">Afficher plus</button>' : '';
+      const more = $('#missing-more button');
+      if (more) more.onclick = () => { page++; load(); };
+    }
+    await load();
   }
 
   // ================= Prets =================
@@ -3425,6 +3516,12 @@
         <button class="btn btn-small" type="button" data-copy="emb-html" style="margin-top:6px">Copier le code HTML</button>
       </div>
 
+      <h2>Fiches incomplètes</h2>
+      <div class="card">
+        <p class="muted small">Livres auxquels il manque une information. Touche un critère pour voir la liste et compléter les fiches.</p>
+        <div class="chips-filter" id="missing-summary"><span class="muted small">Chargement…</span></div>
+      </div>
+
       <h2>Données</h2>
       <div class="card">
         <p><strong>Inventaire des livres</strong> — une ligne par livre avec tous les champs, le nombre d'exemplaires et leurs codes.
@@ -3578,6 +3675,13 @@
     });
 
     accordionize(view(), `mll-settings-${LIBRARY.slug}`);
+    api('/api/books/missing').then((m) => {
+      const box = $('#missing-summary');
+      if (box) box.innerHTML = missingPills(m, null);
+    }).catch(() => {
+      const box = $('#missing-summary');
+      if (box) box.innerHTML = '<a class="btn btn-small" href="#/incomplete">Voir les fiches incomplètes</a>';
+    });
     categoryManager($('#cat-manager'), cats, 'categories');
     if ($('#tag-manager')) categoryManager($('#tag-manager'), tags, 'tags');
   }
@@ -3703,6 +3807,29 @@
     };
     render();
   }
+
+  // ================= Installation (ecran d'accueil) =================
+  // Android / Chrome / Edge : invite native (beforeinstallprompt). iPhone / iPad :
+  // pas d'invite, on explique la marche a suivre dans Safari.
+  let installPrompt = null;
+  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
+  const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const canInstall = () => !isStandalone() && (!!installPrompt || isIos());
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
+  window.addEventListener('appinstalled', () => { installPrompt = null; toast('Application installée.'); });
+  async function installApp() {
+    if (installPrompt) {
+      installPrompt.prompt();
+      await installPrompt.userChoice.catch(() => null);
+      installPrompt = null;
+      return;
+    }
+    alert('Pour installer l\'application sur cet appareil :\n\n1. Ouvre cette page dans Safari.\n2. Touche le bouton Partager (carré avec une flèche).\n3. Choisis « Sur l\'écran d\'accueil ».');
+  }
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register(`${ROOT}/sw.js`, { scope: `${ROOT}/` }).catch(() => {}));
+  }
+  if (isStandalone()) document.documentElement.classList.add('standalone');
 
   // ================= Demarrage =================
   async function loadSettings() {

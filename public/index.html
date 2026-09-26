@@ -8,8 +8,13 @@
 <!-- Page servie par server.js (renderIndex) : {{ROOT}} = chemin de montage de l'app
      (ex. /mylittlelibrary dans la passerelle), CONFIG = bibliotheque courante. La
      meme page sert l'accueil (/) et chaque bibliotheque (/<adresse>/). -->
-<link rel="manifest" href="{{ROOT}}/manifest.json">
+<link rel="manifest" href="{{MANIFEST}}">
 <link rel="icon" href="{{ROOT}}/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{ROOT}}/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="{{TITLE}}">
 <link rel="stylesheet" href="{{ROOT}}/style.css?v={{VERSION}}">
 <script>window.MLL = {{CONFIG}};</script>
 </head>

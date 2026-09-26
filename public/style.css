@@ -589,3 +589,57 @@ tr:last-child td { border-bottom: 0; }
   background: var(--surface); border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0, 0, 0, .3); }
 body.selecting .shell { padding-bottom: 110px; }
 .danger-zone { border-color: var(--danger); }
+
+/* ---------- Fiches incompletes ---------- */
+.pill-current { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.pill-current:hover { background: var(--accent); }
+.pill-zero { opacity: .55; }
+a.pill { text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+span.thumb { display: block; }
+
+/* ---------- Telephone : application installee, zones tactiles, filtres ---------- */
+/* Encoches et barre gestuelle (application installee en plein ecran). */
+.topbar { padding-top: max(10px, env(safe-area-inset-top)); padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+.shell { padding-bottom: calc(64px + env(safe-area-inset-bottom)); padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+.toasts { bottom: calc(20px + env(safe-area-inset-bottom)); }
+.select-bar { bottom: calc(16px + env(safe-area-inset-bottom)); }
+/* Appli installee : pas de rebond ni de selection de texte accidentelle sur les boutons. */
+html.standalone body { overscroll-behavior-y: none; }
+.btn, .pill, .menu-item, .nav a { -webkit-tap-highlight-color: transparent; }
+.btn, .pill, .menu-item, .nav a, .seg button, .tabs button { touch-action: manipulation; }
+
+/* Ecran tactile : cibles d'au moins ~40 px. */
+@media (pointer: coarse) {
+  .btn-small { min-height: 38px; padding: 7px 12px; }
+  .pill { padding: 8px 14px; }
+  .menu-item { padding: 12px 10px; font-size: 15px; }
+  .chip button { padding: 2px 2px 2px 6px; font-size: 18px; }
+  .qty button, .batch-item .rm { width: 36px; height: 36px; }
+  .sel-row { padding: 9px 10px; }
+  .sel-row button { font-size: 22px; padding: 2px 8px; }
+  .star { font-size: 20px; padding: 8px; }
+  input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
+  .check { min-height: 36px; }
+}
+
+/* Bouton "Filtres" du catalogue : seulement sur telephone. */
+.filters-toggle { display: none; }
+@media (max-width: 640px) {
+  h1 { font-size: 20px; }
+  .page-head { margin-bottom: 12px; }
+  .page-head .btn-row { width: 100%; }
+  .page-head .btn-row > .btn { flex: 1 1 auto; justify-content: center; }
+  .filters { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .filters > * { grid-column: 1 / -1; }
+  .filters > .search { grid-column: 1; }
+  .filters > .filters-toggle { grid-column: 2; display: inline-flex; }
+  .filters > .filters-toggle:first-child { grid-column: 1 / -1; }
+  .filters:not(.open) > :not(.search):not(.filters-toggle) { display: none; }
+  .filters-side > .filters-toggle { display: inline-flex; justify-content: center; }
+  .filters-side:not(.open) > .fgroup:not(.fgroup-search) { display: none; }
+  .card { padding: 14px; }
+  .nav.open { max-height: calc(100dvh - 70px); }
+  .toasts { width: calc(100% - 24px); }
+  .select-bar { width: calc(100% - 16px); padding: 8px 10px; gap: 6px; }
+  .select-bar strong { width: 100%; }
+}
