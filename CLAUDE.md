@@ -22,7 +22,7 @@ Utilisateur francophone : interface, commentaires et réponses **en français**.
 - `copies.format` = `physical` | `ebook` : l'exemplaire numérique n'a **pas de code, d'étiquette ni de prêt** (un seul par livre). `books.format` n'est plus utilisé.
 - Livre : `collection` (éditeur) distincte de `series` + `series_number` (tome). `collection_number` n'est plus utilisé.
 - Statuts de lecture par compte (`book_user_status`) : to_read / reading / read / abandoned + liked / disliked, avec dates.
-- Options par bibliothèque : `enable_ebooks`, `enable_reading_status`, `enable_tags`, `enable_stats`, filtres et éléments des miniatures du catalogue (, , JSON, NULL = tous).
+- Options par bibliothèque : `enable_ebooks`, `enable_reading_status`, `enable_tags`, `enable_stats`, filtres et éléments des miniatures du catalogue (`catalog_filters`, `catalog_card` : JSON, NULL = tous).
 
 ## Méthode de travail
 - **Avant toute migration** : tester sur une copie (`VACUUM INTO` de `data/library.db` vers un dossier temporaire, instance de test `MLL_DATA_DIR=<dossier> PORT=3100 node server.js`, compte jetable via `node scripts/set-password.js`), puis sauvegarder la vraie base dans `data/backups/library-avant-vNN.db`.
