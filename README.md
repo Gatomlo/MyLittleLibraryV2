@@ -25,7 +25,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   Google Books, Amazon par ISBN, titre et auteur ; autres éditions proposées ; collage d'une URL).
 - **Ajout par ISBN** : scan du code-barres (webcam ou caméra du téléphone), saisie de
   l'ISBN ou encodage manuel. Recherche dans la BnF, Open Library et Google Books.
-- **Scan en série** (page Importer) : caméra ouverte en continu (ou lecteur USB),
+- **Scan en série** (page Ajout multiple, depuis « Ajouter ») : caméra ouverte en continu (ou lecteur USB),
   chaque code-barres lu s'ajoute à une liste avec miniature et titre ; toutes les
   fiches sont créées en une fois. Dans « Ajouter », un ISBN complet lance la
   recherche tout seul.
@@ -67,7 +67,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   avec copie des ISBN en erreur et nouvel essai des erreurs.
 - **ISBN** : ISBN-13 (978/979), ISBN-10, avec ou sans tirets/espaces, reconnus à la
   saisie, au scan (EAN-13), à l'import et dans la recherche du catalogue.
-- **Import** (page Importer) : liste d'ISBN (fiches complétées automatiquement,
+- **Import** (page Ajout multiple, depuis « Ajouter ») : liste d'ISBN (fiches complétées automatiquement,
   exemplaires créés) ou fichier `.xlsx` / `.csv` avec une colonne par champ
   (correspondance des colonnes détectée et modifiable, aperçu, progression).
   Modèles à télécharger ; en `.xlsx`, la colonne ISBN est au format Texte pour
@@ -75,7 +75,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **Export** (Réglages > Exporter) : inventaire `.xlsx` / `.csv`, une ligne par livre
   avec tous les champs, le nombre d'exemplaires et leurs codes — mêmes colonnes que
   l'import, donc réimportable (y compris dans une autre bibliothèque).
-- **Fiches incomplètes** (Importer ou Réglages) : livres sans catégorie, ISBN,
+- **Fiches incomplètes** (Ajout multiple ou Réglages) : livres sans catégorie, ISBN,
   couverture, auteur, éditeur, année, pages, résumé, tag ou emplacement d'exemplaire,
   avec leur nombre ; bouton « Compléter » (retour à la liste après enregistrement) ou
   ouverture dans le catalogue pour une sélection en masse.
@@ -91,7 +91,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   emplacement et son étiquette.
 - **Prêts** : scan du QR de l'étiquette → prêter (emprunteur choisi ou créé à la
   volée) ou enregistrer le retour. Historique par livre et par emprunteur.
-- **Étiquettes** : planches A4 (Avery L7160, L7159, L7163, L7651, 70×37…, ou format
+- **Étiquettes** (menu du compte, ou bas du menu hamburger sur téléphone) : planches A4 (Avery L7160, L7159, L7163, L7651, 70×37…, ou format
   personnalisé), QR code + code + titre + nom et logo de la bibliothèque, case de
   départ pour réutiliser une planche entamée.
 - **Réglages** (menu du compte, ou bas du menu hamburger sur téléphone), en trois groupes :

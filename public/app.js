@@ -562,18 +562,21 @@
     let links = [];
     if (LIBRARY) {
       links = canManage()
-        ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/import', 'Importer', 'import'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ['#/labels', 'Étiquettes', 'labels'], ...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : [])]
+        ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : [])]
         : [['#/', 'Catalogue', 'catalog']];
     }
-    const current = '#/' + (location.hash.replace(/^#\/?/, '').split('/')[0] || '');
+    let current = '#/' + (location.hash.replace(/^#\/?/, '').split('/')[0] || '');
+    if (current === '#/import') current = '#/add'; // ajout multiple : sous-page de Ajouter
     $('#nav').innerHTML = links.map(([href, label, ic]) => {
       const active = href === current || (href === '#/' && (current === '#/book' || current === '#/'));
       return `<a href="${href}" class="${active ? 'active' : ''}" style="${colorVars(ic)}">${icon(ic)}<span>${label}</span></a>`;
     }).join('');
-    // Reglages : hors de la barre (moins exposes) ; en bas du panneau hamburger sur
-    // petit ecran et dans le menu du compte sur tous les ecrans.
+    // Etiquettes et reglages : hors de la barre (moins exposes) ; en bas du panneau
+    // hamburger sur petit ecran et dans le menu du compte sur tous les ecrans.
     if (LIBRARY && canManage()) {
-      $('#nav').insertAdjacentHTML('beforeend', `<div class="nav-extra"><a href="#/settings" class="${current === '#/settings' ? 'active' : ''}" style="${colorVars('settings')}">${icon('settings')}<span>Réglages de la bibliothèque</span></a></div>`);
+      const extra = [['#/labels', 'Étiquettes', 'labels'], ['#/settings', 'Réglages de la bibliothèque', 'settings']];
+      $('#nav').insertAdjacentHTML('beforeend', `<div class="nav-extra">${extra.map(([href, label, ic]) =>
+        `<a href="${href}" class="${current === href ? 'active' : ''}" style="${colorVars(ic)}">${icon(ic)}<span>${label}</span></a>`).join('')}</div>`);
     }
     $('#nav').hidden = links.length <= 1;
     // Petit ecran : pages regroupees derriere le bouton menu (hamburger).
@@ -627,6 +630,7 @@
       ${libs || '<p class="small muted" style="padding:4px 10px">Aucune bibliothèque liée à ce compte.</p>'}
       ${LIBRARY && canManage() ? `<div class="menu-sep"></div>
       <div class="menu-title">${esc(state.settings.libraryName)}</div>
+      <a class="menu-item" href="#/labels">${icon('labels')}Étiquettes</a>
       <a class="menu-item" href="#/settings">${icon('settings')}Réglages de la bibliothèque</a>` : ''}
       <div class="menu-sep"></div>
       <a class="menu-item" href="#/account">${icon('user')}Mon compte</a>
@@ -970,7 +974,7 @@
     view().innerHTML = `
       <div class="page-head">
         <div><h1>Catalogue</h1></div>
-        ${canManage() ? '<div class="btn-row"><a class="btn" href="#/import">Importer une liste</a><a class="btn btn-primary" href="#/add">+ Ajouter un livre</a></div>' : ''}
+        ${canManage() ? '<div class="btn-row"><a class="btn" href="#/import">Ajout multiple</a><a class="btn btn-primary" href="#/add">+ Ajouter un livre</a></div>' : ''}
       </div>
       <div id="active-filters"></div>
       ${body}`;
@@ -1837,7 +1841,8 @@
     try { const r = JSON.parse(sessionStorage.getItem('mll-after-edit') || 'null'); if (editing && r && r.id === b.id) fromIncomplete = r.hash; } catch (e) { /* rien */ }
     view().innerHTML = `
       <p><a href="${fromIncomplete || (editing ? `#/book/${b.id}` : '#/')}">← ${fromIncomplete ? 'Fiches incomplètes' : editing ? 'Retour à la fiche' : 'Catalogue'}</a></p>
-      <h1>${editing ? 'Modifier le livre' : 'Ajouter un livre'}</h1>
+      ${editing ? '<h1>Modifier le livre</h1>' : `<div class="page-head"><div><h1>Ajouter un livre</h1></div>
+        <div class="btn-row"><a class="btn" href="#/import">Ajout multiple</a></div></div>`}
       <div class="card" style="margin:14px 0">
         <label for="isbn-search">Rechercher par ISBN</label>
         <div class="isbn-row">
@@ -2195,7 +2200,8 @@
     ]);
     const tpl = (type, ext) => `${LIB}/api/import/template.${ext}${type === 'isbn' ? '?type=isbn' : ''}`;
     view().innerHTML = `
-      <div class="page-head"><div><h1>Importer des livres</h1>
+      <p><a href="#/add">← Ajouter un livre</a></p>
+      <div class="page-head"><div><h1>Ajout multiple</h1>
         <p class="muted">Ajoute d'un coup plusieurs livres à « ${esc(state.settings.libraryName)} ». Les exemplaires et leurs codes sont créés automatiquement ; leurs étiquettes passent « en attente ».</p></div>
         <a class="btn" href="#/incomplete">Fiches incomplètes</a></div>
       <div class="seg seg-3" style="max-width:640px">
@@ -2696,7 +2702,7 @@
     view().innerHTML = `
       <div class="page-head"><div><h1>Fiches incomplètes</h1>
         <p class="muted">${m.total} livre${m.total > 1 ? 's' : ''} au catalogue. Choisis l'information manquante à rechercher.</p></div>
-        <div class="btn-row"><a class="btn" href="#/import">Importer</a><a class="btn" href="#/settings">Réglages</a></div></div>
+        <div class="btn-row"><a class="btn" href="#/import">Ajout multiple</a><a class="btn" href="#/settings">Réglages</a></div></div>
       <div class="chips-filter">${missingPills(m, key)}</div>
       <div class="card">
         <div class="btn-row" style="justify-content:space-between;margin-bottom:6px">
@@ -3637,7 +3643,7 @@
       <h2>Exporter</h2>
       <div class="card">
         <p><strong>Inventaire des livres</strong> — une ligne par livre avec tous les champs, le nombre d'exemplaires et leurs codes.
-          Mêmes colonnes que le modèle d'import : il peut être modifié puis réimporté (<a href="#/import">Importer</a>).</p>
+          Mêmes colonnes que le modèle d'import : il peut être modifié puis réimporté (<a href="#/import">Ajout multiple</a>).</p>
         <div class="btn-row">
           <a class="btn btn-primary" href="${LIB}/api/export/inventory.xlsx">Inventaire Excel (.xlsx)</a>
           <a class="btn" href="${LIB}/api/export/inventory.csv">Inventaire CSV</a>
