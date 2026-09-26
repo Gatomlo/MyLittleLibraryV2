@@ -2848,8 +2848,7 @@
     let page = 1;
     view().innerHTML = `
       <div class="page-head"><div><h1>Fiches incomplètes</h1>
-        <p class="muted">${m.total} livre${m.total > 1 ? 's' : ''} au catalogue. Choisis l'information manquante à rechercher.</p></div>
-        <div class="btn-row"><a class="btn" href="#/import">Ajout multiple</a><a class="btn" href="#/settings">Réglages</a></div></div>
+        <p class="muted">${m.total} livre${m.total > 1 ? 's' : ''} au catalogue. Choisis l'information manquante à rechercher.</p></div></div>
       <div class="chips-filter">${missingPills(m, key)}</div>
       <div class="card">
         <div class="btn-row" style="justify-content:space-between;margin-bottom:6px">
