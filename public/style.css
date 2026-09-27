@@ -374,6 +374,8 @@ tr:last-child td { border-bottom: 0; }
 .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; }
 .tabs button { border-bottom-width: 3px; }
 .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+.term-tabs { overflow-x: auto; scrollbar-width: none; }
+.term-tabs button { flex-shrink: 0; }
 
 /* ---------- Formulaire livre ---------- */
 .cover-edit { display: flex; gap: 14px; align-items: flex-start; }

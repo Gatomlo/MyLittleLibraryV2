@@ -3738,7 +3738,7 @@
 
   // ================= Reglages de la bibliotheque =================
   async function viewSettings() {
-    const [s, cats, tags] = await Promise.all([api('/api/settings'), api('/api/categories'), api('/api/tags').catch(() => [])]);
+    const s = await api('/api/settings');
     // Options absentes : le serveur tourne encore une version precedente de l'app.
     const feat = s.features || null;
     const catalog = {
@@ -3835,9 +3835,14 @@
         </div>
       </form>
 
-      <h2>Catégories</h2>
-      <div class="card" id="cat-manager"></div>
-      ${feat && feat.tags ? '<h2>Tags</h2><div class="card" id="tag-manager"></div>' : ''}
+      <h2>Classement ${hint('Rechercher, renommer, fusionner ou supprimer les catégories, tags, auteurs, séries, éditeurs et collections.')}</h2>
+      <div class="card">
+        <div class="tabs term-tabs">
+          ${[['categories', 'Catégories'], ...(feat && feat.tags ? [['tags', 'Tags']] : []), ['authors', 'Auteurs'], ['series', 'Séries'],
+            ['publishers', 'Éditeurs'], ['collections', 'Collections']].map(([k, l]) => `<button type="button" data-term-tab="${k}">${l}</button>`).join('')}
+        </div>
+        <div id="term-panel"></div>
+      </div>
 
       <h2>Fiches incomplètes ${hint('Livres auxquels il manque une information. Touche un critère pour voir la liste et compléter les fiches.')}</h2>
       <div class="card">
@@ -4034,29 +4039,52 @@
       const box = $('#missing-summary');
       if (box) box.innerHTML = '<a class="btn btn-small" href="#/incomplete">Voir les fiches incomplètes</a>';
     });
-    categoryManager($('#cat-manager'), cats, 'categories');
-    if ($('#tag-manager')) categoryManager($('#tag-manager'), tags, 'tags');
+    // Classement : un onglet par liste, charge a la demande (dernier onglet memorise).
+    const termKey = `mll-terms-${LIBRARY.slug}`;
+    const showTerms = async (k) => {
+      $$('[data-term-tab]').forEach((b) => b.classList.toggle('active', b.dataset.termTab === k));
+      try { localStorage.setItem(termKey, k); } catch (e) { /* stockage indisponible */ }
+      const panel = $('#term-panel');
+      panel.innerHTML = '<p class="muted small">Chargement…</p>';
+      try {
+        const list = await api(`/api/${TERM_KINDS[k].path}`);
+        if (!$(`[data-term-tab="${k}"].active`)) return; // autre onglet choisi entre-temps
+        panel.innerHTML = '';
+        categoryManager(panel, list, k);
+      } catch (err) { panel.innerHTML = '<p class="muted small">Indisponible : le serveur n\'est pas à jour.</p>'; }
+    };
+    $$('[data-term-tab]').forEach((b) => { b.onclick = () => showTerms(b.dataset.termTab); });
+    let lastTerms = null;
+    try { lastTerms = localStorage.getItem(termKey); } catch (e) { /* stockage indisponible */ }
+    showTerms($(`[data-term-tab="${lastTerms}"]`) ? lastTerms : 'categories');
   }
 
-  // Gestion des categories (ou des tags) : recherche, regroupement alphabetique
-  // repliable, renommage, suppression et fusion de plusieurs termes en un seul.
+  // Gestion des categories, tags, auteurs, series, editeurs et collections : recherche,
+  // regroupement alphabetique repliable, renommage, suppression et fusion.
+  // free : valeurs libres des fiches (pas de table, l'identifiant est le nom).
   const TERM_KINDS = {
-    categories: { path: 'categories', one: 'catégorie', many: 'catégories', the: 'la catégorie', prefix: '' },
-    tags: { path: 'tags', one: 'tag', many: 'tags', the: 'le tag', prefix: '#' },
+    categories: { path: 'categories', one: 'catégorie', many: 'catégories', the: 'la catégorie', a: 'une catégorie', prefix: '', added: 'Nouvelle catégorie' },
+    tags: { path: 'tags', one: 'tag', many: 'tags', the: 'le tag', a: 'un tag', prefix: '#', added: 'Nouveau tag' },
+    authors: { path: 'values/authors', one: 'auteur', many: 'auteurs', the: "l'auteur", a: 'un auteur', none: 'Aucun auteur', prefix: '', free: true },
+    series: { path: 'values/series', one: 'série', many: 'séries', the: 'la série', a: 'une série', none: 'Aucune série', prefix: '', free: true },
+    publishers: { path: 'values/publishers', one: 'éditeur', many: 'éditeurs', the: "l'éditeur", a: 'un éditeur', none: 'Aucun éditeur', prefix: '', free: true },
+    collections: { path: 'values/collections', one: 'collection', many: 'collections', the: 'la collection', a: 'une collection', none: 'Aucune collection', prefix: '', free: true },
   };
   function categoryManager(root, initial, kindName = 'categories') {
     const K = TERM_KINDS[kindName];
-    const id = (x) => `${K.path}-${x}`;
+    const id = (x) => `${kindName}-${x}`;
     const label = (n) => K.prefix + n;
+    const key = (v) => (K.free ? String(v) : Number(v));
+    const find = (v) => cats.find((x) => x.id === key(v));
     let cats = initial;
     let q = '';
     const selected = new Set();
     const open = new Set();
     root.innerHTML = `
       <div class="isbn-row">
-        <input type="search" id="${id('q')}" placeholder="Rechercher ${K.one === 'tag' ? 'un tag' : 'une catégorie'}…" autocomplete="off">
+        <input type="search" id="${id('q')}" placeholder="Rechercher ${K.a}…" autocomplete="off">
       </div>
-      <form class="isbn-row" id="${id('new')}" style="margin-top:8px"><input name="name" placeholder="${K.one === 'tag' ? 'Nouveau tag' : 'Nouvelle catégorie'}"><button class="btn" type="submit">Ajouter</button></form>
+      ${K.free ? '' : `<form class="isbn-row" id="${id('new')}" style="margin-top:8px"><input name="name" placeholder="${K.added}"><button class="btn" type="submit">Ajouter</button></form>`}
       <div class="merge-bar"></div>
       <div class="term-body" style="margin-top:10px"></div>`;
 
@@ -4067,10 +4095,10 @@
     };
     const rowHtml = (c) => `
       <div class="list-item cat-row">
-        <input type="checkbox" data-sel="${c.id}" ${selected.has(c.id) ? 'checked' : ''} aria-label="Sélectionner ${esc(c.name)}">
+        <input type="checkbox" data-sel="${esc(c.id)}" ${selected.has(c.id) ? 'checked' : ''} aria-label="Sélectionner ${esc(c.name)}">
         <div class="grow">${esc(label(c.name))} <span class="small muted">(${c.count} livre${c.count > 1 ? 's' : ''})</span></div>
-        <button class="btn btn-small" data-rename="${c.id}">Renommer</button>
-        <button class="btn btn-small btn-danger" data-delcat="${c.id}">Supprimer</button>
+        <button class="btn btn-small" data-rename="${esc(c.id)}">Renommer</button>
+        <button class="btn btn-small btn-danger" data-delcat="${esc(c.id)}">Supprimer</button>
       </div>`;
 
     function renderMergeBar() {
@@ -4078,8 +4106,8 @@
       const chosen = cats.filter((c) => selected.has(c.id));
       if (!chosen.length) { bar.innerHTML = ''; return; }
       bar.innerHTML = `<div class="info-box" style="margin:10px 0 0">
-        <strong>${chosen.length} sélectionnée(s)</strong> : ${chosen.map((c) => esc(label(c.name))).join(', ')}
-        ${chosen.length >= 2 ? `<form class="isbn-row" class="merge-form" style="margin-top:8px">
+        <strong>Sélection (${chosen.length})</strong> : ${chosen.map((c) => esc(label(c.name))).join(', ')}
+        ${chosen.length >= 2 ? `<form class="isbn-row merge-form" style="margin-top:8px">
           <input name="name" list="${id('merge-names')}" required placeholder="Nom final" value="${esc(chosen[0].name)}">
           <datalist id="${id('merge-names')}">${chosen.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist>
           <button class="btn btn-primary" type="submit">Fusionner</button>
@@ -4106,7 +4134,8 @@
       const body = $('.term-body', root);
       const nq = normHeader(q);
       if (!cats.length) {
-        body.innerHTML = `<p class="muted">Rien pour le moment : ${K.many === 'tags' ? 'les tags' : 'les catégories'} se créent depuis la fiche d'un livre ou ici.</p>`;
+        body.innerHTML = K.free ? `<p class="muted">${K.none} pour le moment : à renseigner sur la fiche des livres.</p>`
+          : `<p class="muted">Rien pour le moment : ${K.many === 'tags' ? 'les tags' : 'les catégories'} se créent depuis la fiche d'un livre ou ici.</p>`;
       } else if (nq) {
         const found = cats.filter((c) => normHeader(c.name).includes(nq));
         body.innerHTML = found.length ? `<div class="list">${found.map(rowHtml).join('')}</div>` : '<p class="muted small">Aucun résultat.</p>';
@@ -4122,13 +4151,25 @@
         $$('.cat-group', body).forEach((d) => d.addEventListener('toggle', () => { if (d.open) open.add(d.dataset.letter); else open.delete(d.dataset.letter); }));
       }
       $$('[data-sel]', body).forEach((cb) => {
-        cb.onchange = () => { const id = Number(cb.dataset.sel); if (cb.checked) selected.add(id); else selected.delete(id); renderMergeBar(); };
+        cb.onchange = () => { const id = key(cb.dataset.sel); if (cb.checked) selected.add(id); else selected.delete(id); renderMergeBar(); };
       });
       $$('[data-rename]', body).forEach((btn) => {
         btn.onclick = async () => {
-          const c = cats.find((x) => x.id === Number(btn.dataset.rename));
-          const name = prompt('Nouveau nom :', c.name);
+          const c = find(btn.dataset.rename);
+          const name = (prompt('Nouveau nom :', c.name) || '').trim();
           if (!name || name === c.name) return;
+          if (K.free) {
+            // Nom deja present : le renommage fusionne les deux.
+            const other = cats.find((x) => x !== c && x.name.toLowerCase() === name.toLowerCase());
+            if (other && !confirm(`${K.the.charAt(0).toUpperCase() + K.the.slice(1)} « ${other.name} » existe déjà. Fusionner « ${c.name} » dedans ?`)) return;
+            try {
+              const r = await api(`/api/${K.path}`, { method: 'PUT', body: { from: c.name, name } });
+              selected.delete(c.id);
+              toast(`${r.books} livre(s) mis à jour.`);
+              reload();
+            } catch (err) { toast(err.message, 'error'); }
+            return;
+          }
           try { await api(`/api/${K.path}/${c.id}`, { method: 'PUT', body: { name } }); reload(); } catch (err) {
             // Nom deja pris : proposer la fusion avec la categorie existante.
             const other = cats.find((x) => x.name.toLowerCase() === name.toLowerCase());
@@ -4141,9 +4182,12 @@
       });
       $$('[data-delcat]', body).forEach((btn) => {
         btn.onclick = async () => {
-          const c = cats.find((x) => x.id === Number(btn.dataset.delcat));
-          if (!confirm(`Supprimer ${K.the} « ${c.name} » ? Les ${c.count} livre(s) concernés restent au catalogue.`)) return;
-          await api(`/api/${K.path}/${c.id}`, { method: 'DELETE' });
+          const c = find(btn.dataset.delcat);
+          if (!confirm(`Supprimer ${K.the} « ${c.name} » ? ${K.free ? 'Retiré(e) des fiches, les' : 'Les'} ${c.count} livre(s) concernés restent au catalogue.`)) return;
+          try {
+            if (K.free) await api(`/api/${K.path}/delete`, { method: 'POST', body: { name: c.name } });
+            else await api(`/api/${K.path}/${c.id}`, { method: 'DELETE' });
+          } catch (err) { toast(err.message, 'error'); return; }
           selected.delete(c.id);
           reload();
         };
@@ -4152,7 +4196,7 @@
     }
 
     $(`#${id('q')}`, root).addEventListener('input', debounce((e) => { q = e.target.value; render(); }, 150));
-    $(`#${id('new')}`, root).onsubmit = async (e) => {
+    if (!K.free) $(`#${id('new')}`, root).onsubmit = async (e) => {
       e.preventDefault();
       if (!e.target.name.value.trim()) return;
       try { await api(`/api/${K.path}`, { method: 'POST', body: { name: e.target.name.value } }); e.target.reset(); reload(); } catch (err) { toast(err.message, 'error'); }

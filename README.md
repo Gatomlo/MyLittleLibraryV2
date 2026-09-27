@@ -37,6 +37,8 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **Catégories** et **tags** (option par bibliothèque) : recherche, regroupement
   alphabétique repliable, fusion de plusieurs termes (les livres suivent), filtres
   avec recherche dans le catalogue.
+- **Classement** (Réglages, une page à onglets) : catégories, tags, auteurs, séries, éditeurs
+  et collections — rechercher, renommer, fusionner, supprimer (les fiches sont mises à jour).
 - **Collection** (de l'éditeur, récupérée via l'ISBN quand la BnF / Open Library la
   connaissent) et **Série + tome**, indépendants : « 60 jours et après » est dans la
   collection Pocket Science-fiction et tome 3 de la série Capital code. Filtre par série

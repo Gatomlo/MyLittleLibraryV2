@@ -27,6 +27,7 @@ Utilisateur francophone : interface, commentaires et réponses **en français**.
 - Statuts de lecture par compte (`book_user_status`) : to_read / reading / read / abandoned + liked / disliked, avec dates.
 - Fiches incomplètes : `MISSING` (library-api.js, conditions SQL par champ) → `GET /books/missing` (comptes), filtre `missing=` de `/books` et de `/export/inventory.*`.
 - Import `onDuplicate` : `copy` | `skip` | `new` | `update` (`updateFromImport` : colonnes non vides écrasent la fiche, repérée par `bookId` = colonne « ID fiche » de l'export, sinon ISBN).
+- Auteurs, séries, éditeurs, collections : pas de table, valeurs libres des fiches (auteurs séparés par des virgules). Gestion via `/values/:kind` (`VALUE_FIELDS`, `rewriteValues`, casse ignorée) ; front : `categoryManager` (`TERM_KINDS`, `free`), onglets « Classement » des réglages.
 - Options par bibliothèque : `enable_ebooks`, `enable_reading_status`, `enable_tags`, `enable_stats`, filtres et éléments des miniatures du catalogue (`catalog_filters`, `catalog_card` : JSON, NULL = tous).
 
 ## Méthode de travail
