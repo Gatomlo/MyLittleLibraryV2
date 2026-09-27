@@ -74,18 +74,25 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   (correspondance des colonnes détectée et modifiable, aperçu, progression).
   Modèles à télécharger ; en `.xlsx`, la colonne ISBN est au format Texte pour
   qu'Excel ne la transforme pas en notation scientifique.
+  Option « ISBN déjà au catalogue › Mettre à jour la fiche » (fichier complet) : les
+  colonnes remplies du fichier écrasent celles de la fiche existante (repérée par la
+  colonne « ID fiche » des exports, sinon par l'ISBN) ; aucun exemplaire créé.
 - **Export** (Réglages > Exporter) : inventaire `.xlsx` / `.csv`, une ligne par livre
   avec tous les champs, le nombre d'exemplaires et leurs codes — mêmes colonnes que
-  l'import, donc réimportable (y compris dans une autre bibliothèque).
+  l'import (+ « ID fiche »), donc réimportable (y compris dans une autre bibliothèque).
 - **Fiches incomplètes** (Ajout multiple ou Réglages) : livres sans catégorie, ISBN,
   couverture, auteur, éditeur, année, pages, résumé, tag ou emplacement d'exemplaire,
   avec leur nombre ; bouton « Compléter » (retour à la liste après enregistrement) ou
-  ouverture dans le catalogue pour une sélection en masse.
+  ouverture dans le catalogue pour une sélection en masse. Export Excel / CSV des
+  fiches de l'onglet, à corriger puis réimporter en « Mettre à jour la fiche ».
   « Compléter tout » relance la recherche pour tous les livres de l'onglet (seules
   les informations vides sont complétées) : ISBN retrouvé par titre + auteur seulement
   si une seule édition correspond, catégorie attribuée seulement si une catégorie
   existante correspond aux sujets en ligne. Emplacement et tags : cases à cocher et
   attribution en masse.
+- **Fiche livre** : après changement d'ISBN, bouton « Écraser la fiche » pour remplacer
+  toutes les informations par celles du nouvel ISBN.
+- **Aides** : les explications de l'interface sont dans des info-bulles (icône « ? »).
 - **Téléphone** : interface adaptée (menu, filtres du catalogue repliables, zones
   tactiles), installable sur l'écran d'accueil en application plein écran
   (bouton « Installer » de l'en-tête quand le navigateur le propose, ou menu du compte >

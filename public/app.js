@@ -41,6 +41,38 @@
     return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // Aide contextuelle : icone "?" dont le texte s'affiche en info-bulle (survol,
+  // focus clavier ou toucher). Une seule bulle flottante, placee dans l'ecran.
+  const hint = (text) => `<span class="hint" tabindex="0" role="button" aria-label="${esc(text)}" data-tip="${esc(text)}">?</span>`;
+  (() => {
+    let tip = null;
+    let pinned = null;
+    const hide = () => { if (tip) tip.hidden = true; pinned = null; };
+    const show = (el) => {
+      if (!tip) { tip = document.createElement('div'); tip.className = 'hint-tip'; tip.setAttribute('role', 'tooltip'); document.body.appendChild(tip); }
+      tip.textContent = el.dataset.tip;
+      tip.hidden = false;
+      const r = el.getBoundingClientRect();
+      const w = tip.offsetWidth;
+      const h = tip.offsetHeight;
+      const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+      const top = r.top - h - 8 >= 8 ? r.top - h - 8 : r.bottom + 8;
+      tip.style.left = left + window.scrollX + 'px';
+      tip.style.top = top + window.scrollY + 'px';
+    };
+    document.addEventListener('mouseover', (e) => { const el = e.target.closest && e.target.closest('.hint'); if (el) show(el); });
+    document.addEventListener('mouseout', (e) => { const el = e.target.closest && e.target.closest('.hint'); if (el && el !== pinned) { if (tip) tip.hidden = true; } });
+    document.addEventListener('focusin', (e) => { if (e.target.classList && e.target.classList.contains('hint')) show(e.target); });
+    document.addEventListener('focusout', (e) => { if (e.target.classList && e.target.classList.contains('hint')) hide(); });
+    document.addEventListener('click', (e) => {
+      const el = e.target.closest && e.target.closest('.hint');
+      if (el) { e.preventDefault(); e.stopPropagation(); if (pinned === el) hide(); else { show(el); pinned = el; } return; }
+      if (pinned) hide();
+    }, true);
+    window.addEventListener('scroll', () => { if (tip && !tip.hidden) hide(); }, { passive: true });
+    window.addEventListener('hashchange', hide);
+  })();
+
   // Les chemins d'images renvoyes par l'API sont relatifs a la bibliotheque (ou a la racine).
   function mediaSrc(url) {
     return url ? `${LIB || ROOT}/${url}` : '';
@@ -1167,8 +1199,7 @@
     backdrop.className = 'modal-backdrop';
     backdrop.innerHTML = `
       <form class="modal bulk-edit">
-        <h2>Modifier ${n} livre${n > 1 ? 's' : ''}</h2>
-        <p class="small muted">Coche ou choisis seulement ce qui doit changer. Série ou collection cochée et laissée vide : retirée.</p>
+        <h2>Modifier ${n} livre${n > 1 ? 's' : ''} ${hint('Coche ou choisis seulement ce qui doit changer. Série ou collection cochée et laissée vide : retirée.')}</h2>
         ${text('series', 'Série', seriesList, 'Nom de la série (vide = retirer)')}
         ${text('collection', 'Collection', collections, 'Nom de la collection (vide = retirer)')}
         ${text('categoriesAdd', 'Ajouter des catégories', cats, 'Séparées par des virgules')}
@@ -1642,9 +1673,9 @@
     view().innerHTML = `
       <h1>Mon compte</h1>
       <p class="muted">${esc(u.username)} · ${u.role === 'admin' ? 'Administrateur (gère toutes les bibliothèques)' : 'Gestionnaire'}</p>
-      <h2>Bibliothèque par défaut</h2>
+      <h2>Bibliothèque par défaut ${hint('Ouverte automatiquement après la connexion. Le menu du compte permet de basculer à tout moment.')}</h2>
       <div class="card">
-        ${state.libraries.length ? `<p class="small muted">Ouverte automatiquement après la connexion. Le menu du compte permet de basculer à tout moment.</p>
+        ${state.libraries.length ? `
         <div class="list">${state.libraries.map((l) => `
           <label class="list-item check" style="cursor:pointer">
             <input type="radio" name="def" value="${l.id}" ${l.id === u.defaultLibraryId ? 'checked' : ''}>
@@ -1712,9 +1743,7 @@
         : '<span class="badge badge-muted">Aucune clé</span>';
     $('#admin-body').innerHTML = `
       <form class="card" id="gkey-form" style="margin-bottom:18px">
-        <h3 style="margin-top:0">Clé Google Books</h3>
-        <p class="muted">Sans clé, Google limite fortement les recherches : beaucoup de livres restent alors sans résumé ni couverture.
-          Avec une clé (gratuite, environ 1 000 recherches par jour), les recherches par ISBN et « Chercher une couverture » sont bien plus fiables.</p>
+        <h3 style="margin-top:0">Clé Google Books ${hint('Sans clé, Google limite fortement les recherches : beaucoup de livres restent sans résumé ni couverture. Avec une clé (gratuite, environ 1 000 recherches par jour), les recherches par ISBN et de couverture sont bien plus fiables. La clé est gardée sur le serveur et jamais affichée en entier.')}</h3>
         <p>${stateHtml}</p>
         <div class="field"><label>${info.saved ? 'Remplacer la clé' : 'Coller la clé'}</label>
           <input name="key" placeholder="AIza…" autocomplete="off" spellcheck="false"></div>
@@ -1722,7 +1751,7 @@
         ${info.saved ? '<button class="btn btn-danger" type="button" id="gkey-del">Retirer la clé</button>' : ''}
       </form>
       <div class="card">
-        <h3 style="margin-top:0">Comment obtenir une clé gratuite (5 minutes)</h3>
+        <h3 style="margin-top:0">Obtenir une clé gratuite (5 min)</h3>
         <ol>
           <li>Ouvre la <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console Google Cloud</a> et connecte-toi avec un compte Google (Gmail). Accepte les conditions si c'est la première fois. <strong>Aucune carte bancaire n'est nécessaire.</strong></li>
           <li>En haut, clique sur le sélecteur de projet, puis <em>Nouveau projet</em>. Nomme-le par exemple « Bibliothèque » et clique sur <em>Créer</em>. Vérifie ensuite qu'il est bien sélectionné.</li>
@@ -1731,7 +1760,7 @@
           <li>Copie la clé affichée (elle commence par <span class="code">AIza</span>) et colle-la ci-dessus.</li>
           <li>Conseillé : clique sur <em>Modifier la clé</em> › <em>Restrictions relatives aux API</em> › <em>Restreindre la clé</em>, coche uniquement <em>Books API</em> et enregistre.</li>
         </ol>
-        <p class="small muted">La clé est gardée sur le serveur et n'est jamais affichée en entier. Si la vérification indique que l'API n'est pas activée, refais l'étape 3 puis patiente une minute.</p>
+        <p class="small muted">API non activée à la vérification ? Refais l'étape 3 puis patiente une minute.</p>
       </div>`;
     const form = $('#gkey-form');
     form.onsubmit = async (e) => {
@@ -1884,11 +1913,11 @@
       <form class="modal">
         <h2>${user ? `Compte ${esc(user.username)}` : 'Nouveau compte'}</h2>
         <div class="field"><label>Identifiant *</label><input name="username" required value="${esc(u.username)}" autocomplete="off"></div>
-        <div class="field"><label>${user ? 'Nouveau mot de passe (laisser vide pour ne pas changer)' : 'Mot de passe * (8 caractères min.)'}</label>
+        <div class="field"><label>${user ? `Nouveau mot de passe ${hint('Laisser vide pour ne pas changer.')}` : `Mot de passe * ${hint('8 caractères minimum.')}`}</label>
           <input name="password" type="password" autocomplete="new-password" minlength="8" ${user ? '' : 'required'}></div>
-        <div class="field"><label>Rôle</label><select name="role">
-          <option value="manager" ${u.role !== 'admin' ? 'selected' : ''}>Gestionnaire : gère les bibliothèques cochées ci-dessous</option>
-          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrateur : toutes les bibliothèques, comptes et réglages</option>
+        <div class="field"><label>Rôle ${hint('Gestionnaire : gère les bibliothèques cochées ci-dessous. Administrateur : toutes les bibliothèques, comptes et réglages.')}</label><select name="role">
+          <option value="manager" ${u.role !== 'admin' ? 'selected' : ''}>Gestionnaire</option>
+          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrateur</option>
         </select></div>
         <div class="field"><label>Bibliothèques gérées (★ = par défaut)</label>
           <div class="sel-list">${libs.map((l) => `
@@ -1950,25 +1979,24 @@
       ${editing ? '<h1>Modifier le livre</h1>' : `<div class="page-head"><div><h1>Ajouter un livre</h1></div>
         <div class="btn-row"><a class="btn hide-mobile" href="#/import">Ajout multiple</a></div></div>`}
       <div class="card" style="margin:14px 0">
-        <label for="isbn-search">Rechercher par ISBN</label>
+        <label for="isbn-search">Rechercher par ISBN ${hint('Scanne ou tape l\'ISBN pour pré-remplir la fiche, ou remplis-la directement ci-dessous.')}</label>
         <div class="isbn-row">
           <input id="isbn-search" inputmode="numeric" placeholder="978…" value="${esc(b.isbn)}" autocomplete="off">
           <button class="btn" id="isbn-go" type="button">Rechercher</button>
           <button class="btn btn-primary" id="isbn-scan" type="button">Scanner</button>
         </div>
-        <div id="isbn-result" class="small" style="margin-top:8px">${editing ? '' : '<span class="muted">Scanne ou tape l\'ISBN pour pré-remplir la fiche, ou remplis-la directement ci-dessous.</span>'}</div>
+        <div id="isbn-result" class="small" style="margin-top:8px"></div>
       </div>
       <form id="book-form" class="card">
         <div class="cover-edit field">
           <div class="cover" id="cover-preview"></div>
           <div>
-            <label>Illustration (couverture)</label>
+            <label>Couverture ${hint('La couverture trouvée par la recherche ISBN est enregistrée automatiquement.')}</label>
             <div class="btn-row">
               <label class="btn btn-small" style="margin:0">Choisir / photographier<input type="file" id="cover-file" accept="image/*" hidden></label>
               <button class="btn btn-small" type="button" id="cover-online">Chercher en ligne</button>
               <button class="btn btn-small btn-danger" type="button" id="cover-remove">Retirer</button>
             </div>
-            <p class="small muted" style="margin-top:8px">La couverture trouvée par la recherche ISBN est enregistrée automatiquement.</p>
           </div>
         </div>
         <div class="field"><label for="title">Titre *</label><input id="title" name="title" required value="${esc(b.title)}"></div>
@@ -1978,7 +2006,7 @@
           <div class="field"><label for="publisher">Éditeur</label><input id="publisher" name="publisher" value="${esc(b.publisher)}"></div>
           <div class="field"><label for="isbn">ISBN</label><input id="isbn" name="isbn" inputmode="numeric" value="${esc(b.isbn)}"></div>
         </div>
-        <div class="field"><label for="collection">Collection <span class="small muted">(de l'éditeur : Folio, Pocket Science-fiction…)</span></label><input id="collection" name="collection" placeholder="facultatif" value="${esc(b.collection || '')}" autocomplete="off"></div>
+        <div class="field"><label for="collection">Collection ${hint('Collection de l\'éditeur : Folio, Pocket Science-fiction…')}</label><input id="collection" name="collection" placeholder="facultatif" value="${esc(b.collection || '')}" autocomplete="off"></div>
         <div class="grid-collection">
           <div class="field"><label for="series">Série <span class="small muted">(saga, cycle…)</span></label><input id="series" name="series" placeholder="facultatif" value="${esc(b.series || '')}" autocomplete="off"></div>
           <div class="field"><label for="seriesNumber">Tome</label><input id="seriesNumber" name="seriesNumber" placeholder="ex. 3" value="${esc(b.seriesNumber || '')}"></div>
@@ -2009,14 +2037,13 @@
         </div>` : ''}
         ${editing ? '' : `
         <div class="grid-2" id="copies-block">
-          <div class="field"><label for="copies">Exemplaires papier</label><input id="copies" name="copies" type="number" min="0" max="50" value="1">
-            <p class="small muted" style="margin:4px 0 0">Chacun reçoit un code et une étiquette.</p></div>
+          <div class="field"><label for="copies">Exemplaires papier ${hint('Chacun reçoit un code et une étiquette.')}</label><input id="copies" name="copies" type="number" min="0" max="50" value="1"></div>
           <div class="field"><label for="location">Emplacement</label><input id="location" name="location" list="loc-list" placeholder="Étagère, armoire…">
             <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist></div>
         </div>
         ${features().ebooks ? `<div class="field"><label class="check"><input type="checkbox" name="ebook" id="ebook">
-          <span>Version numérique (epub, pdf…) <span class="small muted">— exemplaire numérique, sans code, étiquette ni prêt</span></span></label></div>` : ''}`}
-        <div class="field"><label for="notes">Notes internes (visibles uniquement par les gestionnaires)</label><textarea id="notes" name="notes" style="min-height:70px">${esc(b.notes)}</textarea></div>
+          <span>Version numérique ${hint('Exemplaire numérique (epub, pdf…), sans code, étiquette ni prêt.')}</span></label></div>` : ''}`}
+        <div class="field"><label for="notes">Notes internes ${hint('Visibles uniquement par les gestionnaires.')}</label><textarea id="notes" name="notes" style="min-height:70px">${esc(b.notes)}</textarea></div>
         <div id="form-err"></div>
         <div class="btn-row"><button class="btn btn-primary" type="submit">${editing ? 'Enregistrer' : 'Ajouter au catalogue'}</button></div>
       </form>`;
@@ -2086,6 +2113,23 @@
             $('#use-alt').onclick = () => { f.summary.value = d.summaryAlt.text; $('#summary-alt').innerHTML = ''; };
           }
           html += `<span style="color:var(--ok)">✓ Fiche pré-remplie (${esc(d.sources.join(', '))}). Vérifie et complète avant d'enregistrer.</span>`;
+          // Modification : les champs deja remplis sont gardes ; bouton pour tout
+          // remplacer par les informations du nouvel ISBN (champs absents vides).
+          const OVERWRITE = ['title', 'subtitle', 'authors', 'publisher', 'collection', 'year', 'pages', 'summary'];
+          const differs = OVERWRITE.some((k) => String(d[k] || '') !== f[k].value) || (d.coverUrl && form.cover.remoteUrl !== d.coverUrl);
+          if (editing && differs) {
+            html += ` <button type="button" class="btn btn-small" id="isbn-overwrite">Écraser la fiche</button>${hint('Remplace titre, auteurs, éditeur, année, pages, résumé, couverture… par les informations de cet ISBN. Les champs inconnus pour cet ISBN sont vidés (le titre est gardé).')}`;
+          }
+          out.innerHTML = html;
+          const ow = $('#isbn-overwrite');
+          if (ow) ow.onclick = () => {
+            OVERWRITE.forEach((k) => { if (d[k] || k !== 'title') f[k].value = d[k] || ''; });
+            if (d.coverUrl) { form.cover.remoteUrl = d.coverUrl; form.cover.data = ''; form.cover.removed = false; renderCover(); }
+            ow.remove();
+            toast('Fiche remplacée : vérifie puis enregistre.');
+          };
+          if (!editing) f.title.focus();
+          return;
         } else {
           html += '<span class="muted">Aucune information trouvée pour cet ISBN : complète la fiche à la main.</span>';
         }
@@ -2177,6 +2221,7 @@
     { key: 'seriesNumber', label: 'Tome', aliases: ['tome', 'n tome', 'numero de tome', 'volume', 'n dans la serie', 'numero dans la serie', 'n dans la collection', 'numero dans la collection', 'numero', 'num', 'no'] },
     { key: 'tags', label: 'Tags', aliases: ['tags', 'tag', 'mots cles', 'mots-cles', 'motscles', 'keywords', 'etiquettes libres'] },
     { key: 'format', label: 'Type (Papier, Numérique ou Papier + numérique)', aliases: ['type', 'format', 'support', 'type de livre', 'numerique', 'version'] },
+    { key: 'bookId', label: 'ID fiche (mise à jour)', aliases: ['id fiche', 'id', 'identifiant', 'id livre'] },
   ];
   const normHeader = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -2307,8 +2352,7 @@
     const tpl = (type, ext) => `${LIB}/api/import/template.${ext}${type === 'isbn' ? '?type=isbn' : ''}`;
     view().innerHTML = `
       <p><a href="#/add">← Ajouter un livre</a></p>
-      <div class="page-head"><div><h1>Ajout multiple</h1>
-        <p class="muted">Ajoute d'un coup plusieurs livres à « ${esc(state.settings.libraryName)} ». Les exemplaires et leurs codes sont créés automatiquement ; leurs étiquettes passent « en attente ».</p></div>
+      <div class="page-head"><div><h1>Ajout multiple ${hint('Ajoute d\'un coup plusieurs livres. Les exemplaires et leurs codes sont créés automatiquement ; leurs étiquettes passent « en attente ».')}</h1></div>
         <a class="btn" href="#/incomplete">Fiches incomplètes</a></div>
       <div class="seg seg-3" style="max-width:640px">
         <button type="button" data-mode="scan" class="${s.mode === 'scan' ? 'active' : ''}">Scanner en série</button>
@@ -2327,30 +2371,29 @@
     const body = $('#import-body');
 
     const formatOption = features().ebooks ? `
-      <div class="field"><label>Exemplaires à créer</label><select id="opt-format">
-        <option value="physical">Papier (avec code et étiquette)</option>
+      <div class="field"><label>Exemplaires à créer ${hint('Papier : avec code et étiquette. Numérique (epub, pdf…) : sans code ni étiquette.')}</label><select id="opt-format">
+        <option value="physical">Papier</option>
         <option value="both">Papier + numérique</option>
-        <option value="ebook">Numérique seul (epub, pdf… : sans code ni étiquette)</option>
+        <option value="ebook">Numérique seul</option>
       </select></div>` : '';
     const options = `
       <div class="grid-2">
         ${s.mode !== 'full' ? `
-          ${s.mode === 'isbn' ? `<div class="field"><label>Exemplaires papier par ISBN</label><input type="number" id="opt-copies" min="1" max="50" value="1">
-            <p class="small muted" style="margin-top:4px">Un ISBN présent plusieurs fois dans la liste compte pour plusieurs exemplaires.</p></div>` : ''}
+          ${s.mode === 'isbn' ? `<div class="field"><label>Exemplaires par ISBN ${hint('Exemplaires papier. Un ISBN présent plusieurs fois dans la liste compte pour plusieurs exemplaires.')}</label><input type="number" id="opt-copies" min="1" max="50" value="1"></div>` : ''}
           ${formatOption}
           <div class="field"><label>Emplacement</label><input id="opt-location" list="loc-list" placeholder="facultatif"></div>
           ${termField('icat', 'Catégories', allCats.map((c) => c.name), 'Choisir ou créer une catégorie…')}
           ${features().tags ? termField('itag', 'Tags', allTags.map((t) => t.name), 'Choisir ou créer un tag…') : ''}` : `
-          <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="opt-fill" checked> Compléter les champs vides grâce à l'ISBN</label>
-            <p class="small muted" style="margin-top:4px">Les valeurs du fichier restent prioritaires.</p></div>
-          <div class="field"><label>Emplacement par défaut</label><input id="opt-location" list="loc-list" placeholder="si la colonne est vide"></div>`}
-        <div class="field"><label>Si l'ISBN est déjà au catalogue</label><select id="opt-dup">
-          <option value="copy">Ajouter les exemplaires au livre existant (le numérique s'il manque)</option>
+          <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="opt-fill" checked> Compléter via l'ISBN ${hint('Les champs vides d\'un nouveau livre sont complétés par la recherche ISBN ; les valeurs du fichier restent prioritaires.')}</label></div>
+          <div class="field"><label>Emplacement par défaut ${hint('Utilisé pour les nouveaux livres quand la colonne Emplacement est vide.')}</label><input id="opt-location" list="loc-list" placeholder="facultatif"></div>`}
+        <div class="field"><label>ISBN déjà au catalogue ${hint(`Ajouter les exemplaires : au livre existant (le numérique s'il manque). Ignorer : la ligne n'est pas importée. Nouvelle fiche : crée un doublon.${s.mode === 'full' ? ' Mettre à jour : les colonnes remplies du fichier écrasent celles de la fiche (repérée par la colonne « ID fiche » des exports, sinon par l\'ISBN) ; aucun exemplaire créé, l\'emplacement rempli s\'applique aux exemplaires papier.' : ''}`)}</label><select id="opt-dup">
+          <option value="copy">Ajouter les exemplaires</option>
+          ${s.mode === 'full' ? `<option value="update" ${s.dup === 'update' ? 'selected' : ''}>Mettre à jour la fiche</option>` : ''}
           <option value="skip">Ignorer la ligne</option>
-          <option value="new">Créer quand même une nouvelle fiche</option>
+          <option value="new">Nouvelle fiche</option>
         </select></div>
         ${features().readingStatus ? `<div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="opt-toread" ${s.toRead ? 'checked' : ''}>
-          Marquer les nouveaux livres « À lire » (pour moi)</label></div>` : ''}
+          « À lire » pour moi ${hint('Marque les nouveaux livres « À lire » dans ton statut de lecture.')}</label></div>` : ''}
       </div>
       <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist>`;
 
@@ -2359,6 +2402,7 @@
       if ($('#itag-input')) chipField('itag', s.tags, (t) => '#' + t);
       const toRead = $('#opt-toread');
       if (toRead) toRead.onchange = () => { s.toRead = toRead.checked; };
+      $('#opt-dup').onchange = (e) => { s.dup = e.target.value; };
     };
     if (s.mode === 'scan') {
       batchScan(body, options);
@@ -2367,12 +2411,12 @@
       body.innerHTML = `
         <div class="card">
           <h3 style="margin-top:0">1. La liste</h3>
-          <div class="field"><label for="isbn-list">Colle les ISBN (un par ligne, ou séparés par des espaces, virgules…)</label>
+          <div class="field"><label for="isbn-list">ISBN ${hint('Un par ligne, ou séparés par des espaces, virgules… Tu peux aussi charger un fichier (.xlsx, .csv, .txt).')}</label>
             <textarea id="isbn-list" placeholder="9782070612758&#10;978-2-07-036822-8&#10;…">${esc(s.text)}</textarea></div>
           <div class="btn-row">
-            <label class="btn btn-small" style="margin:0">Ou choisir un fichier (.xlsx, .csv, .txt)<input type="file" id="import-file" accept=".xlsx,.csv,.txt" hidden></label>
+            <label class="btn btn-small" style="margin:0">Fichier…<input type="file" id="import-file" accept=".xlsx,.csv,.txt" hidden></label>
             <span class="small muted" id="file-name">${esc(s.fileName)}</span>
-            <span style="margin-left:auto" class="small">Modèle : <a href="${tpl('isbn', 'xlsx')}">Excel (.xlsx)</a> · <a href="${tpl('isbn', 'csv')}">CSV</a></span>
+            <span style="margin-left:auto" class="small">Modèle : <a href="${tpl('isbn', 'xlsx')}">Excel</a> · <a href="${tpl('isbn', 'csv')}">CSV</a></span>
           </div>
           <h3>2. Options</h3>
           ${options}
@@ -2417,12 +2461,11 @@
     } else {
       body.innerHTML = `
         <div class="card">
-          <h3 style="margin-top:0">1. Le fichier</h3>
-          <p class="small">Une ligne par livre, une colonne par champ. Télécharge le modèle : <a href="${tpl('full', 'xlsx')}">Excel (.xlsx)</a> · <a href="${tpl('full', 'csv')}">CSV</a>.
-            Seul l'ISBN <em>ou</em> le titre est obligatoire ; les autres colonnes sont facultatives et peuvent être dans n'importe quel ordre.</p>
+          <h3 style="margin-top:0">1. Le fichier ${hint('Une ligne par livre, une colonne par champ. Seul l\'ISBN ou le titre est obligatoire ; les autres colonnes sont facultatives, dans n\'importe quel ordre. Un export (inventaire, fiches incomplètes) peut être réimporté tel quel.')}</h3>
           <div class="btn-row">
-            <label class="btn" style="margin:0">Choisir le fichier (.xlsx ou .csv)<input type="file" id="import-file" accept=".xlsx,.csv" hidden></label>
+            <label class="btn" style="margin:0">Choisir le fichier<input type="file" id="import-file" accept=".xlsx,.csv" hidden></label>
             <span class="small muted">${esc(s.fileName)}</span>
+            <span style="margin-left:auto" class="small">Modèle : <a href="${tpl('full', 'xlsx')}">Excel</a> · <a href="${tpl('full', 'csv')}">CSV</a></span>
           </div>
           <div id="mapping"></div>
           <h3>2. Options</h3>
@@ -2435,7 +2478,7 @@
         const header = s.rows[0];
         $('#mapping').innerHTML = `
           <h3>Colonnes du fichier</h3>
-          <p class="small muted">${s.rows.length - 1} ligne(s). Vérifie à quel champ correspond chaque colonne.</p>
+          <p class="small muted">${s.rows.length - 1} ligne(s) ${hint('Vérifie à quel champ correspond chaque colonne.')}</p>
           <div class="table-wrap"><table><thead><tr><th>Colonne</th><th>Exemple</th><th>Champ</th></tr></thead><tbody>
           ${header.map((hd, i) => `<tr><td><strong>${esc(cellText(hd)) || `(colonne ${i + 1})`}</strong></td>
             <td class="small muted" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(cellText((s.rows.slice(1).find((r) => cellText(r[i])) || [])[i]))}</td>
@@ -2461,7 +2504,8 @@
       };
       $('#analyse').onclick = () => {
         const fill = $('#opt-fill').checked;
-        const defLocation = $('#opt-location').value.trim();
+        const update = $('#opt-dup').value === 'update';
+        const defLocation = update ? '' : $('#opt-location').value.trim();
         const col = (key) => s.mapping.lastIndexOf(key);
         s.items = s.rows.slice(1).map((r, n) => {
           const get = (key) => (col(key) >= 0 ? cellText(r[col(key)]) : '');
@@ -2475,7 +2519,7 @@
           if (ir.error && !d.title) return { error: `${line} : ${ir.error}`, label: line };
           d.isbn = ir.isbn || ir.raw || '';
           if (!d.isbn && !d.title) return { error: `${line} : ni ISBN ni titre.`, label: line };
-          if (!d.title && !fill) return { error: `${line} : titre manquant (active « Compléter grâce à l'ISBN »).`, label: line };
+          if (!d.title && !fill && !update) return { error: `${line} : titre manquant (active « Compléter via l'ISBN »).`, label: line };
           return { data: d, label: d.title || d.isbn, warning: ir.error ? `ISBN non valide, importé tel quel` : '' };
         });
         s.options = importOptions({ fillFromIsbn: fill });
@@ -2519,8 +2563,7 @@
               <button class="btn btn-primary" type="button" id="cam-toggle">Démarrer la caméra</button>
               <label class="btn" style="margin:0">Photo<input type="file" id="batch-photo" accept="image/*" capture="environment" hidden></label>
             </div>
-            <p class="small muted" id="batch-status" style="margin-top:8px">Scanne les livres les uns après les autres : un bip confirme chaque code-barres pris en compte.
-              Un lecteur de codes-barres USB fonctionne aussi dans le champ ci-dessous.</p>
+            <p class="small muted" style="margin-top:8px"><span id="batch-status">Un bip confirme chaque livre scanné.</span> ${hint('Scanne les livres les uns après les autres. Un lecteur de codes-barres USB fonctionne aussi dans le champ ci-dessous.')}</p>
             <form class="isbn-row" id="batch-manual">
               <input name="isbn" placeholder="ISBN tapé ou lu par un lecteur USB" inputmode="numeric" autocomplete="off">
               <button class="btn" type="submit">Ajouter</button>
@@ -2683,6 +2726,8 @@
       if (r.status === 'created') return `<span class="badge badge-ok">Ajouté</span> <a href="#/book/${r.bookId}">${esc(r.title)}</a> <span class="small muted code">${esc(r.codes.join(', '))}</span> ${r.ebook ? '<span class="badge badge-ebook">+ numérique</span>' : ''}`;
       if (r.status === 'copies') return `${r.codes.length ? `<span class="badge badge-ok">+ ${r.codes.length} ex.</span> ` : ''}<a href="#/book/${r.bookId}">${esc(r.title)}</a> <span class="small muted code">${esc(r.codes.join(', '))}</span> ${r.ebook ? '<span class="badge badge-ebook">+ numérique</span>' : ''}`;
       if (r.status === 'skipped') return `<span class="badge badge-muted">Ignoré</span> déjà au catalogue : <a href="#/book/${r.bookId}">${esc(r.title)}</a>`;
+      if (r.status === 'updated') return `<span class="badge badge-ok">Mis à jour</span> <a href="#/book/${r.bookId}">${esc(r.title)}</a> <span class="small muted">${esc(r.fields.join(', '))}</span>`;
+      if (r.status === 'unchanged') return `<span class="badge badge-muted">Inchangé</span> <a href="#/book/${r.bookId}">${esc(r.title)}</a>`;
       return `<span class="badge badge-warn">Erreur</span> <span class="small">${esc(r.error)}</span>`;
     };
     const done = s.results ? s.results.filter(Boolean).length : 0;
@@ -2698,6 +2743,8 @@
       { key: 'all', label: 'Tous', count: rows.length, test: () => true },
       { key: 'created', label: 'Ajoutés', count: count((k) => k === 'created'), test: (k) => k === 'created' },
       { key: 'copies', label: 'Exemplaires ajoutés', count: count((k) => k === 'copies'), test: (k) => k === 'copies' },
+      { key: 'updated', label: 'Mis à jour', count: count((k) => k === 'updated'), test: (k) => k === 'updated' },
+      { key: 'unchanged', label: 'Inchangés', count: count((k) => k === 'unchanged'), test: (k) => k === 'unchanged' },
       { key: 'skipped', label: 'Ignorés', count: count((k) => k === 'skipped'), test: (k) => k === 'skipped' },
       { key: 'error', label: 'Erreurs', count: count((k) => k === 'error' || k === 'invalid'), test: (k) => k === 'error' || k === 'invalid' },
       { key: 'not', label: 'Non importés', count: count(notImported), test: notImported },
@@ -2711,7 +2758,7 @@
     const retryable = errorRows.map((row) => row.i);
     const summary = s.results && !s.running ? (() => {
       const c = (st) => s.results.filter((r) => r && r.status === st).length;
-      return `<div class="info-box"><strong>Import terminé${s.stop ? ' (arrêté)' : ''}.</strong> ${c('created')} livre(s) ajouté(s), ${c('copies')} exemplaire(s) ajouté(s) à des livres existants, ${c('skipped')} ignoré(s), ${c('error')} erreur(s).</div>
+      return `<div class="info-box"><strong>Import terminé${s.stop ? ' (arrêté)' : ''}.</strong> ${c('created')} livre(s) ajouté(s), ${c('copies')} exemplaire(s) ajouté(s) à des livres existants${c('updated') || c('unchanged') ? `, ${c('updated')} fiche(s) mise(s) à jour, ${c('unchanged')} inchangée(s)` : ''}, ${c('skipped')} ignoré(s), ${c('error')} erreur(s).</div>
         <div class="btn-row" style="margin-bottom:12px"><button class="btn btn-primary" id="go-labels">Imprimer les étiquettes en attente</button><a class="btn" href="#/">Voir le catalogue</a></div>`;
     })() : '';
     $('#preview').innerHTML = `
@@ -2719,7 +2766,7 @@
       <div class="card">
         ${summary}
         <p><strong>${ok.length} livre(s)</strong> à importer (${copies} exemplaire(s))${bad.length ? `, <span style="color:var(--danger)">${bad.length} ligne(s) en erreur ignorée(s)</span>` : ''}.
-          ${s.mode === 'isbn' || s.options.fillFromIsbn ? '<span class="small muted">La recherche des informations prend 1 à 2 secondes par ISBN.</span>' : ''}</p>
+          ${s.mode === 'isbn' || s.options.fillFromIsbn ? hint('La recherche des informations prend 1 à 2 secondes par ISBN.') : ''}</p>
         ${s.running || s.results ? `<div style="background:var(--surface-2);border-radius:999px;height:10px;overflow:hidden;margin:12px 0"><div style="height:100%;width:${ok.length ? Math.round((done / ok.length) * 100) : 0}%;background:var(--accent);transition:width .2s"></div></div>
           <p class="small muted">${done} / ${ok.length}</p>` : ''}
         <div class="btn-row" style="margin:12px 0">
@@ -2847,23 +2894,25 @@
     if (!key || !keys.includes(key)) key = keys.find((k) => m.counts[k] > 0) || keys[0];
     let page = 1;
     view().innerHTML = `
-      <div class="page-head"><div><h1>Fiches incomplètes</h1>
-        <p class="muted">${m.total} livre${m.total > 1 ? 's' : ''} au catalogue. Choisis l'information manquante à rechercher.</p></div></div>
+      <div class="page-head"><div><h1>Fiches incomplètes ${hint(`${m.total} livre${m.total > 1 ? 's' : ''} au catalogue. Choisis l'information manquante à rechercher.`)}</h1></div></div>
       <div class="chips-filter">${missingPills(m, key)}</div>
       <div class="card">
         <div class="btn-row" style="justify-content:space-between;margin-bottom:6px">
           <strong id="missing-count"></strong>
-          <div class="btn-row">
-            <button class="btn btn-small" type="button" id="missing-catalog">Ouvrir dans le catalogue</button>
-            ${MISSING_REFILL.includes(key) ? '<button class="btn btn-small btn-primary" type="button" id="missing-refill" hidden>Compléter tout</button>' : ''}
+          <div class="btn-row" id="missing-actions">
+            <span class="btn-row" style="gap:6px">Exporter
+              <a class="btn btn-small" href="${LIB}/api/export/inventory.xlsx?missing=${key}">Excel</a>
+              <a class="btn btn-small" href="${LIB}/api/export/inventory.csv?missing=${key}">CSV</a>
+              ${hint('Exporte ces fiches pour les corriger dans Excel, puis réimporte le fichier : Ajout multiple › Fichier complet › « ISBN déjà au catalogue : Mettre à jour la fiche ». Seules les colonnes remplies écrasent les fiches.')}</span>
+            <button class="btn btn-small" type="button" id="missing-catalog" title="Ouvrir dans le catalogue (sélection en masse)">Catalogue</button>
+            ${MISSING_REFILL.includes(key) ? `<button class="btn btn-small btn-primary" type="button" id="missing-refill" hidden>Compléter tout</button>${hint(REFILL_HINT[key] || 'Relance la recherche en ligne pour chaque livre concerné ; le champ n\'est rempli que s\'il est toujours vide.')}` : ''}
           </div>
         </div>
-        ${REFILL_HINT[key] ? `<p class="small muted" style="margin:0 0 6px">${esc(REFILL_HINT[key])}</p>` : ''}
         <div id="refill-progress" class="small muted" hidden></div>
         ${MISSING_ASSIGN[key] ? `<form class="btn-row" id="assign-form" hidden style="margin-bottom:8px">
           <label class="small"><input type="checkbox" id="assign-all"> Tout cocher</label>
           <input name="value" placeholder="${esc(MISSING_ASSIGN[key])}" required style="flex:1;min-width:160px">
-          <button class="btn btn-small btn-primary" type="submit">Appliquer aux livres cochés</button>
+          <button class="btn btn-small btn-primary" type="submit" title="Appliquer aux livres cochés">Appliquer</button>
         </form>` : ''}
         <div class="list" id="missing-list"></div>
         <div class="more" id="missing-more"></div>
@@ -2881,7 +2930,7 @@
       $('#missing-count').textContent = data.total
         ? `${data.total} livre${data.total > 1 ? 's' : ''} · ${missingLabel(key).toLowerCase()}`
         : 'Aucun livre concerné.';
-      $('#missing-catalog').hidden = !data.total;
+      $('#missing-actions').hidden = !data.total;
       if ($('#missing-refill') && page === 1) {
         $('#missing-refill').hidden = !data.total;
         $('#missing-refill').onclick = () => refillMissing(key);
@@ -2932,9 +2981,8 @@
   async function viewLoans() {
     let tab = 'open';
     view().innerHTML = `
-      <div class="page-head"><h1>Prêts</h1></div>
+      <div class="page-head"><h1>Prêts ${hint('Pour prêter ou enregistrer un retour, scanne le QR code de l\'étiquette ou tape le code de l\'exemplaire.')}</h1></div>
       <div class="card" style="margin-bottom:18px">
-        <p>Pour prêter ou enregistrer un retour, scanne le QR code de l'étiquette ou tape le code de l'exemplaire.</p>
         <form class="isbn-row" id="code-form">
           <input name="code" placeholder="Code (ex. BIB-00042)" autocomplete="off" style="text-transform:uppercase">
           <button class="btn" type="submit">Ouvrir</button>
@@ -3089,7 +3137,7 @@
     let data = null;
 
     view().innerHTML = `
-      <div class="page-head"><div><h1>Étiquettes</h1><p class="muted">Planches A4 autocollantes, avec QR code à scanner pour les prêts et retours.</p></div></div>
+      <div class="page-head"><div><h1>Étiquettes ${hint('Planches A4 autocollantes, avec QR code à scanner pour les prêts et retours.')}</h1></div></div>
       <div class="label-layout">
         <div>
           <div class="card">
@@ -3110,17 +3158,15 @@
             <details id="dims"><summary class="small" style="cursor:pointer;margin-bottom:10px">Dimensions et marges</summary>
               <div class="grid-2">${LAYOUT_FIELDS.map(([k, label]) => `<div class="field"><label>${label}</label><input type="number" step="0.01" data-dim="${k}" value="${layout[k]}"></div>`).join('')}</div>
             </details>
-            <div class="field"><label>Commencer à la case n°</label><input type="number" id="start" min="1" value="1">
-              <p class="small muted" style="margin-top:4px">Pour réutiliser une planche déjà entamée.</p></div>
+            <div class="field"><label>Commencer à la case n° ${hint('Pour réutiliser une planche déjà entamée.')}</label><input type="number" id="start" min="1" value="1"></div>
             <label class="check"><input type="checkbox" id="opt-logo" ${layout.showLogo ? 'checked' : ''}> Logo</label>
             <label class="check"><input type="checkbox" id="opt-name" ${layout.showName ? 'checked' : ''}> Nom de la bibliothèque</label>
             <label class="check"><input type="checkbox" id="opt-title" ${layout.showTitle ? 'checked' : ''}> Titre du livre</label>
             <label class="check"><input type="checkbox" id="opt-author" ${layout.showAuthor ? 'checked' : ''}> Auteur(s)</label>
             <label class="check"><input type="checkbox" id="opt-guides" ${layout.guides ? 'checked' : ''}> Contours dans l'aperçu</label>
             <div class="btn-row" style="margin-top:14px">
-              <button class="btn btn-primary" id="print">Imprimer</button>
+              <button class="btn btn-primary" id="print">Imprimer</button>${hint('Dans la fenêtre d\'impression : format A4, marges « Aucune », échelle 100 % (« Taille réelle »).')}
             </div>
-            <p class="small muted" style="margin-top:10px">Dans la fenêtre d'impression : format A4, marges « Aucune », échelle 100 % (« Taille réelle »).</p>
           </div>
         </div>
         <div class="sheets" id="sheets"></div>
@@ -3151,10 +3197,9 @@
       const body = $('#mode-body');
       if (sel.mode === 'pending') {
         body.innerHTML = pending.length ? `
-          <p class="small muted">Nouveaux exemplaires et codes régénérés, pas encore imprimés.</p>
           <details><summary class="small" style="cursor:pointer;margin-bottom:8px">Voir le détail</summary>
             <div class="sel-list">${groupedHtml(pending)}</div></details>
-          <div class="btn-row" style="margin-top:10px"><button class="btn btn-small" type="button" id="customize">Personnaliser cette sélection</button></div>`
+          <div class="btn-row" style="margin-top:10px"><button class="btn btn-small" type="button" id="customize">Personnaliser</button>${hint('Nouveaux exemplaires et codes régénérés, pas encore imprimés. Personnaliser : copie cette liste dans « Sélection » pour la modifier.')}</div>`
           : '<p class="muted small">Aucune étiquette en attente. Utilise « Sélection » pour réimprimer des étiquettes.</p>';
         const cz = $('#customize');
         if (cz) cz.onclick = () => { sel.manual = []; addManual(pending); sel.mode = 'manual'; renderMode(); refresh(); };
@@ -3549,8 +3594,7 @@
     const p = ov.prefs;
     return `<details class="stat-prefs"><summary>⚙️ <strong>Mes réglages</strong> <span class="small muted">partage ${p.shareStats ? 'activé' : 'désactivé'}${p.yearlyGoal ? ` · objectif ${p.yearlyGoal} livres` : ''}</span></summary>
       <div class="grid-3" style="margin-top:12px">
-        <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="pf-share" ${p.shareStats ? 'checked' : ''} ${ov.member ? '' : 'disabled'}> Partager mes statistiques avec les membres de la bibliothèque</label>
-          ${ov.member ? '' : '<p class="small muted">Réservé aux comptes liés à cette bibliothèque.</p>'}</div>
+        <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="pf-share" ${p.shareStats ? 'checked' : ''} ${ov.member ? '' : 'disabled'}> Partager mes statistiques avec les membres de la bibliothèque</label>${ov.member ? '' : hint('Réservé aux comptes liés à cette bibliothèque.')}</div>
         <div class="field"><label>Objectif de l'année (livres)</label><input type="number" id="pf-goal" min="1" max="1000" placeholder="aucun" value="${p.yearlyGoal || ''}"></div>
         <div class="field"><label>Signaler une lecture en cours après (jours)</label><input type="number" id="pf-stale" min="1" max="3650" value="${p.staleDays}"></div>
       </div>
@@ -3708,25 +3752,22 @@
       <p class="settings-group">Bibliothèque</p>
       <h2>Nom, logo et en-tête</h2>
       <form class="card" id="lib-form">
-        <div class="field"><label for="lib-name">Nom de la bibliothèque</label><input id="lib-name" name="libraryName" required value="${esc(s.libraryName)}">
-          <p class="small muted" style="margin-top:4px">Changer le nom ne change pas l'adresse de la bibliothèque (les QR codes imprimés restent valables).</p></div>
+        <div class="field"><label for="lib-name">Nom de la bibliothèque ${hint('Changer le nom ne change pas l\'adresse de la bibliothèque : les QR codes imprimés restent valables.')}</label><input id="lib-name" name="libraryName" required value="${esc(s.libraryName)}"></div>
         <div class="field">
-          <label>Logo</label>
+          <label>Logo ${hint('Affiché dans l\'en-tête, sur les étiquettes et dans le catalogue intégré. PNG à fond transparent conseillé.')}</label>
           <div class="btn-row">
             ${s.logoUrl ? `<img src="${esc(mediaSrc(s.logoUrl))}" alt="" style="height:56px;max-width:160px;object-fit:contain;background:#fff;border-radius:8px;padding:4px;border:1px solid var(--border)">` : '<span class="muted small">Aucun logo</span>'}
             <label class="btn btn-small" style="margin:0">${s.logoUrl ? 'Remplacer' : 'Choisir une image'}<input type="file" id="logo-file" accept="image/png,image/jpeg,image/webp" hidden></label>
             ${s.logoUrl ? '<button class="btn btn-small btn-danger" type="button" id="logo-remove">Retirer</button>' : ''}
           </div>
-          <p class="small muted" style="margin-top:6px">Affiché dans l'en-tête, sur les étiquettes et dans le catalogue intégré. PNG à fond transparent conseillé.</p>
         </div>
         <div class="field">
-          <label>Afficher dans l'en-tête de l'application</label>
+          <label>En-tête de l'application ${s.logoUrl ? '' : hint('Sans logo, le nom est toujours affiché.')}</label>
           <div class="btn-row" id="brand-display">
             <label class="check"><input type="radio" name="brandDisplay" value="both" ${(s.brandDisplay || 'both') === 'both' ? 'checked' : ''}> Nom et logo</label>
             <label class="check"><input type="radio" name="brandDisplay" value="name" ${s.brandDisplay === 'name' ? 'checked' : ''}> Nom seul</label>
             <label class="check"><input type="radio" name="brandDisplay" value="logo" ${s.brandDisplay === 'logo' ? 'checked' : ''}> Logo seul</label>
           </div>
-          ${s.logoUrl ? '' : '<p class="small muted" style="margin-top:4px">Sans logo, le nom est toujours affiché.</p>'}
         </div>
         <button class="btn btn-primary" type="submit">Enregistrer</button>
       </form>
@@ -3736,13 +3777,13 @@
         ${feat ? '' : `<div class="error-box">Le serveur n'est pas à jour (options indisponibles). Vérifie que tous les fichiers de l'app ont été envoyés,
           y compris le dossier <span class="code">lib/</span>, puis redémarre l'application Node.</div>`}
         <label class="check" style="align-items:flex-start"><input type="checkbox" name="ebooks" ${feat && feat.ebooks ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
-          <span><strong>Livres numériques</strong><br><span class="small muted">Permet d'ajouter à un livre un exemplaire numérique (epub, pdf…), seul ou en plus des exemplaires papier : il apparaît au catalogue avec la mention « Numérique », sans code, étiquette ni prêt.</span></span></label>
+          <span><strong>Livres numériques</strong> ${hint('Permet d\'ajouter à un livre un exemplaire numérique (epub, pdf…), seul ou en plus des exemplaires papier : il apparaît au catalogue avec la mention « Numérique », sans code, étiquette ni prêt.')}</span></label>
         <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="readingStatus" ${feat && feat.readingStatus ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
-          <span><strong>Statuts de lecture</strong><br><span class="small muted">Chaque compte peut marquer un livre « À lire » ou « Lu », et « Aimé » ou « Pas aimé ». Visibles dans le catalogue (gestion), avec des filtres par compte. Jamais affichés sur le catalogue public.</span></span></label>
+          <span><strong>Statuts de lecture</strong> ${hint('Chaque compte peut marquer un livre « À lire » ou « Lu », et « Aimé » ou « Pas aimé ». Visibles dans le catalogue (gestion), avec des filtres par compte. Jamais affichés sur le catalogue public.')}</span></label>
         <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="tags" ${feat && feat.tags ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
-          <span><strong>Tags</strong><br><span class="small muted">Mots-clés libres en plus des catégories (ex. #incontournable, #formation-2025). Ajoutés sur la fiche d'un livre, visibles et filtrables dans le catalogue.</span></span></label>
+          <span><strong>Tags</strong> ${hint('Mots-clés libres en plus des catégories (ex. #incontournable, #formation-2025). Ajoutés sur la fiche d\'un livre, visibles et filtrables dans le catalogue.')}</span></label>
         <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="stats" ${feat && feat.stats ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
-          <span><strong>Statistiques</strong><br><span class="small muted">Page « Statistiques » : statistiques de lecture de chaque compte (privées, partageables avec les autres membres), et de la bibliothèque (lecture en totaux anonymes, prêts, fonds). Les statistiques de lecture demandent les statuts de lecture.</span></span></label>
+          <span><strong>Statistiques</strong> ${hint('Statistiques de lecture de chaque compte (privées, partageables avec les autres membres) et de la bibliothèque (lecture en totaux anonymes, prêts, fonds). Les statistiques de lecture demandent les statuts de lecture.')}</span></label>
       </form>
 
       <h2>Codes des exemplaires</h2>
@@ -3753,15 +3794,15 @@
           <div class="field"><label>Aperçu</label><input id="prefix-preview" disabled></div>
         </div>
         <div class="btn-row">
-          <button class="btn" type="submit">Appliquer aux nouveaux exemplaires</button>
-          <button class="btn btn-danger" type="button" id="renumber">Régénérer tous les codes…</button>
+          <button class="btn" type="submit" title="Appliquer aux nouveaux exemplaires">Enregistrer</button>
+          <button class="btn btn-danger" type="button" id="renumber">Régénérer…</button>${hint('Enregistrer : le préfixe vaut pour les prochains exemplaires. Régénérer : tous les exemplaires reçoivent un nouveau code.')}
         </div>
         <div id="renumber-panel" hidden style="margin-top:14px">
           <div class="info-box">
             Tous les exemplaires de cette bibliothèque reçoivent un code avec ce préfixe et leurs étiquettes repassent « en attente ».
             Les anciennes étiquettes restent utilisables en attendant : scannées, elles renvoient vers le bon exemplaire.
           </div>
-          <label class="check"><input type="checkbox" id="compact"> Renuméroter à partir de 1 (dans l'ordre d'ajout, sans trous)</label>
+          <label class="check"><input type="checkbox" id="compact"> Repartir de 1 ${hint('Renumérote dans l\'ordre d\'ajout, sans trous.')}</label>
           <p class="small muted" id="compact-warn" hidden>Avec le même préfixe, des numéros seront réattribués à d'autres livres : une ancienne étiquette pourrait alors ouvrir le mauvais exemplaire. Réimprime toutes les étiquettes rapidement.</p>
           <div class="btn-row" style="margin-top:10px">
             <button class="btn btn-danger" type="button" id="renumber-go">Régénérer maintenant</button>
@@ -3773,7 +3814,7 @@
       <p class="settings-group">Catalogue</p>
       <h2>Affichage du catalogue</h2>
       <form class="card" id="catalog-form">
-        <label>Filtres affichés dans le catalogue</label>
+        <label>Filtres affichés</label>
         <div class="btn-row" style="margin-bottom:14px">
           ${CATALOG_FILTER_LABELS.map(([k, l, needs]) => {
             const off = needs && !(feat && feat[needs]);
@@ -3782,10 +3823,10 @@
         </div>
         <label>Position des filtres</label>
         <div class="btn-row">
-          <label class="check"><input type="radio" name="position" value="top" ${catalog.position !== 'left' ? 'checked' : ''}> En haut du catalogue</label>
-          <label class="check"><input type="radio" name="position" value="left" ${catalog.position === 'left' ? 'checked' : ''}> Dans une colonne à gauche</label>
+          <label class="check"><input type="radio" name="position" value="top" ${catalog.position !== 'left' ? 'checked' : ''}> En haut</label>
+          <label class="check"><input type="radio" name="position" value="left" ${catalog.position === 'left' ? 'checked' : ''}> Colonne à gauche</label>
         </div>
-        <label style="margin-top:14px">Éléments affichés sur la miniature d'un livre</label>
+        <label style="margin-top:14px">Miniature d'un livre</label>
         <div class="btn-row">
           ${CATALOG_CARD_LABELS.map(([k, l, needs]) => {
             const off = needs && !(feat && feat[needs]);
@@ -3798,15 +3839,13 @@
       <div class="card" id="cat-manager"></div>
       ${feat && feat.tags ? '<h2>Tags</h2><div class="card" id="tag-manager"></div>' : ''}
 
-      <h2>Fiches incomplètes</h2>
+      <h2>Fiches incomplètes ${hint('Livres auxquels il manque une information. Touche un critère pour voir la liste et compléter les fiches.')}</h2>
       <div class="card">
-        <p class="muted small">Livres auxquels il manque une information. Touche un critère pour voir la liste et compléter les fiches.</p>
         <div class="chips-filter" id="missing-summary"><span class="muted small">Chargement…</span></div>
       </div>
 
-      <h2>Catalogue sur un site web (WordPress / Divi)</h2>
+      <h2>Catalogue sur un site web ${hint('WordPress / Divi : choisis ce que le catalogue affiché sur ton site propose, puis copie le code.')}</h2>
       <div class="card" id="embed-builder">
-        <p>Choisis ce que le catalogue affiché sur ton site propose, puis copie le code.</p>
         <label>Filtres proposés aux visiteurs</label>
         <div class="btn-row" style="margin-bottom:12px">
           ${[['recherche', 'Recherche', true], ['categories', 'Catégories', true], ['collections', 'Collections', false], ['series', 'Séries', false],
@@ -3817,7 +3856,7 @@
         <label>Position des filtres</label>
         <div class="btn-row" style="margin-bottom:12px">
           <label class="check"><input type="radio" name="emb-pos" value="haut" checked> En haut</label>
-          <label class="check"><input type="radio" name="emb-pos" value="gauche"> Dans une colonne à gauche</label>
+          <label class="check"><input type="radio" name="emb-pos" value="gauche"> Colonne à gauche</label>
         </div>
         <div class="grid-2">
           <div class="field"><label>Livres par page</label><input type="number" id="emb-per" min="1" max="100" value="24"></div>
@@ -3828,36 +3867,34 @@
             <option value="non">Rien</option>
           </select></div>
         </div>
-        <p>Avec l'extension fournie (dossier <span class="code">wordpress/</span> du projet), dans un module Texte ou Code de Divi :</p>
+        <label>Shortcode ${hint('Avec l\'extension fournie (dossier wordpress/ du projet), dans un module Texte ou Code de Divi.')}</label>
         <div class="snippet" id="emb-shortcode"></div>
-        <button class="btn btn-small" type="button" data-copy="emb-shortcode" style="margin-top:6px">Copier le shortcode</button>
-        <p style="margin-top:14px">Sans extension, dans un module Code :</p>
+        <button class="btn btn-small" type="button" data-copy="emb-shortcode" style="margin-top:6px">Copier</button>
+        <label style="margin-top:14px">Code HTML ${hint('Sans extension, dans un module Code.')}</label>
         <div class="snippet" id="emb-html"></div>
-        <button class="btn btn-small" type="button" data-copy="emb-html" style="margin-top:6px">Copier le code HTML</button>
+        <button class="btn btn-small" type="button" data-copy="emb-html" style="margin-top:6px">Copier</button>
       </div>
 
       <p class="settings-group">Données</p>
       <h2>Exporter</h2>
       <div class="card">
-        <p><strong>Inventaire des livres</strong> — une ligne par livre avec tous les champs, le nombre d'exemplaires et leurs codes.
-          Mêmes colonnes que le modèle d'import : il peut être modifié puis réimporté (<a href="#/import">Ajout multiple</a>).</p>
+        <p><strong>Inventaire des livres</strong> ${hint('Une ligne par livre avec tous les champs, le nombre d\'exemplaires et leurs codes. Mêmes colonnes que le modèle d\'import : modifiable puis réimportable (Ajout multiple › Fichier complet, option « Mettre à jour la fiche »).')}</p>
         <div class="btn-row">
-          <a class="btn btn-primary" href="${LIB}/api/export/inventory.xlsx">Inventaire Excel (.xlsx)</a>
-          <a class="btn" href="${LIB}/api/export/inventory.csv">Inventaire CSV</a>
+          <a class="btn btn-primary" href="${LIB}/api/export/inventory.xlsx">Excel</a>
+          <a class="btn" href="${LIB}/api/export/inventory.csv">CSV</a>
         </div>
-        <p style="margin-top:16px"><strong>Liste des exemplaires</strong> — une ligne par exemplaire (code, emplacement, prêt en cours).</p>
-        <a class="btn" href="${LIB}/api/export/copies.csv">Exemplaires CSV</a>
+        <p style="margin-top:16px"><strong>Liste des exemplaires</strong> ${hint('Une ligne par exemplaire : code, emplacement, prêt en cours.')}</p>
+        <a class="btn" href="${LIB}/api/export/copies.csv">CSV</a>
       </div>
 
       <h2>Vider la bibliothèque</h2>
       <div class="card danger-zone">
         <p>Supprime <strong>tous les livres</strong> de « ${esc(s.libraryName)} », avec leurs exemplaires, l'historique des prêts et les statuts de lecture.
-          Les réglages, le logo et les membres sont conservés. Une sauvegarde complète de la base est faite automatiquement juste avant.</p>
-        <p class="small muted">Pour supprimer seulement quelques livres : Catalogue → « Sélectionner ».</p>
+          Les réglages, le logo et les membres sont conservés. Une sauvegarde complète de la base est faite automatiquement juste avant. ${hint('Pour supprimer seulement quelques livres : Catalogue › « Sélectionner ».')}</p>
         <form id="empty-form">
           <label class="check"><input type="checkbox" name="borrowers"> Supprimer aussi les emprunteurs</label>
           <label class="check"><input type="checkbox" name="terms"> Supprimer aussi les catégories et les tags</label>
-          <label class="check"><input type="checkbox" name="resetCodes"> Recommencer la numérotation des codes à 1 (les anciennes étiquettes ne seront plus reconnues)</label>
+          <label class="check"><input type="checkbox" name="resetCodes"> Codes repartant de 1 ${hint('Les anciennes étiquettes ne seront plus reconnues.')}</label>
           <div class="field" style="margin-top:12px"><label for="empty-confirm">Pour confirmer, tape le nom de la bibliothèque : <strong>${esc(s.libraryName)}</strong></label>
             <input id="empty-confirm" name="confirm" autocomplete="off"></div>
           <button class="btn btn-danger" type="submit">Vider la bibliothèque</button>
@@ -4076,7 +4113,7 @@
       } else {
         const groups = new Map();
         cats.forEach((c) => { const l = letterOf(c.name); if (!groups.has(l)) groups.set(l, []); groups.get(l).push(c); });
-        body.innerHTML = `<p class="small muted">${cats.length} ${K.one}(s). Clique sur une lettre pour la déplier.</p>` +
+        body.innerHTML = `<p class="small muted">${cats.length} ${K.one}(s) ${hint('Clique sur une lettre pour la déplier.')}</p>` +
           Array.from(groups).sort(([a], [b]) => a.localeCompare(b)).map(([l, list]) => `
           <details class="cat-group" data-letter="${l}" ${open.has(l) ? 'open' : ''}>
             <summary><strong>${l}</strong> <span class="small muted">${list.length} ${K.one}(s)${list.some((c) => selected.has(c.id)) ? ' · sélection' : ''}</span></summary>

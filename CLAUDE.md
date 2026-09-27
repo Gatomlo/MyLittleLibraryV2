@@ -16,7 +16,7 @@ Utilisateur francophone : interface, commentaires et réponses **en français**.
 - PWA : `public/sw.js` (service worker sans cache, page hors connexion), manifeste dynamique par bibliothèque (`/:slug/manifest.webmanifest`, `sendManifest` dans server.js), icônes PNG dans `public/` (régénérer depuis `icon.svg` / `icon-maskable.svg` si le logo change).
 - `lib/stats.js` (stats, confidentialité), `lib/auth.js` (scrypt, sessions, rôles admin/gestionnaire), `lib/isbn.js` (Google Books / BnF SRU / Open Library ; résumés FR en dernier recours via leslibraires.fr, 1 requête / 3 s — placedeslibraires.fr et Decitre bloquent l'hébergeur), `lib/covers.js` (recherche de couvertures), `lib/media.js`.
 - Réglages globaux : table `settings` (clé/valeur, `getSetting`/`setSetting` dans db.js). Clé Google Books : `googleBooksKey()` = réglage `googleBooksApiKey` (Administration › Google Books), sinon `GOOGLE_BOOKS_API_KEY`.
-- Interface : palette et composants dans `style.css` (variables `:root`, teintes `--sun/--coral/--sky/--grape/--rose` + `-soft`), police Nunito (Google Fonts). Icones SVG inline : section `Icones` de app.js (`icon(nom)`, `PAGE_COLORS`, `decorateTitle` ajoute la pastille des h1 selon l'adresse).
+- Interface : palette et composants dans `style.css` (variables `:root`, teintes `--sun/--coral/--sky/--grape/--rose` + `-soft`), police Nunito (Google Fonts). Textes d'aide : jamais de paragraphe explicatif, utiliser `hint(texte)` (icône « ? » + info-bulle, section Utilitaires) et des libellés courts. Icones SVG inline : section `Icones` de app.js (`icon(nom)`, `PAGE_COLORS`, `decorateTitle` ajoute la pastille des h1 selon l'adresse).
 - `public/app.js` : SPA (routes en hash), sections repérables par `// ================= <Section> =================`. `public/embed.js` : widget catalogue WordPress (Shadow DOM). `wordpress/…/mylittlelibrary-catalogue.php` : plugin shortcode `[bibliotheque …]`.
 - `data/` (non versionné) : `library.db`, `media/`, `backups/`.
 
@@ -25,7 +25,8 @@ Utilisateur francophone : interface, commentaires et réponses **en français**.
 - `copies.format` = `physical` | `ebook` : l'exemplaire numérique n'a **pas de code, d'étiquette ni de prêt** (un seul par livre). `books.format` n'est plus utilisé.
 - Livre : `collection` (éditeur) distincte de `series` + `series_number` (tome). `collection_number` n'est plus utilisé.
 - Statuts de lecture par compte (`book_user_status`) : to_read / reading / read / abandoned + liked / disliked, avec dates.
-- Fiches incomplètes : `MISSING` (library-api.js, conditions SQL par champ) → `GET /books/missing` (comptes) et filtre `missing=` de `/books`.
+- Fiches incomplètes : `MISSING` (library-api.js, conditions SQL par champ) → `GET /books/missing` (comptes), filtre `missing=` de `/books` et de `/export/inventory.*`.
+- Import `onDuplicate` : `copy` | `skip` | `new` | `update` (`updateFromImport` : colonnes non vides écrasent la fiche, repérée par `bookId` = colonne « ID fiche » de l'export, sinon ISBN).
 - Options par bibliothèque : `enable_ebooks`, `enable_reading_status`, `enable_tags`, `enable_stats`, filtres et éléments des miniatures du catalogue (`catalog_filters`, `catalog_card` : JSON, NULL = tous).
 
 ## Méthode de travail
