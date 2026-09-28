@@ -5,6 +5,7 @@ const os = require('os');
 const { db, tx, getSetting, setSetting, isValidSlug, uniqueSlug, MEDIA_DIR } = require('./lib/db');
 const auth = require('./lib/auth');
 const media = require('./lib/media');
+const ebooks = require('./lib/ebooks');
 const { createLibraryRouter, findLibrary, mediaUrl, str, intOrNull } = require('./lib/library-api');
 
 // Filet de securite : une erreur imprevue ne doit jamais faire tomber tout le serveur.
@@ -40,6 +41,8 @@ function nodeModuleFile(...parts) {
 app.get('/vendor/barcode-detector.js', (req, res) => res.sendFile(nodeModuleFile('barcode-detector', 'dist', 'iife', 'ponyfill.js')));
 app.get('/vendor/quagga.min.js', (req, res) => res.sendFile(nodeModuleFile('@ericblade', 'quagga2', 'dist', 'quagga.min.js')));
 app.get('/vendor/read-excel-file.min.js', (req, res) => res.sendFile(nodeModuleFile('read-excel-file', 'bundle', 'read-excel-file.min.js')));
+app.get('/vendor/jszip.min.js', (req, res) => res.sendFile(nodeModuleFile('jszip', 'dist', 'jszip.min.js')));
+app.get('/vendor/epub.min.js', (req, res) => res.sendFile(nodeModuleFile('epubjs', 'dist', 'epub.min.js')));
 app.get('/vendor/zxing_reader.wasm', (req, res) => res.type('application/wasm').sendFile(nodeModuleFile('zxing-wasm', 'dist', 'reader', 'zxing_reader.wasm')));
 
 // Les POST/PUT doivent etre en JSON : un formulaire d'un autre site ne peut pas en
@@ -47,6 +50,8 @@ app.get('/vendor/zxing_reader.wasm', (req, res) => res.type('application/wasm').
 // declenche de toute facon une verification CORS prealable, refusee.
 function jsonOnly(req, res, next) {
   if (!['POST', 'PUT', 'PATCH'].includes(req.method) || req.is('application/json')) return next();
+  // Seule exception : envoi d'un fichier epub (PUT .../copies/:id/file).
+  if (req.method === 'PUT' && /\/copies\/\d+\/file$/.test(req.path) && req.is('application/epub+zip')) return next();
   res.status(415).json({ error: 'Requête JSON attendue.' });
 }
 
@@ -299,6 +304,7 @@ api.delete('/admin/libraries/:id', h((req, res) => {
     db.prepare('DELETE FROM libraries WHERE id = ?').run(id);
   });
   covers.concat(lib.logo || []).forEach((f) => media.remove(f));
+  ebooks.purgeOrphans();
   res.json({ ok: true });
 }));
 

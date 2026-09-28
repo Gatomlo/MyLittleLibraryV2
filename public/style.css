@@ -751,3 +751,11 @@ h1 .h-icon {
   padding: 8px 11px; border-radius: 10px; background: var(--text); color: var(--bg);
   font-size: 13px; font-weight: 500; line-height: 1.4; box-shadow: var(--shadow-lg); pointer-events: none;
 }
+
+/* Fichier epub et liseuse */
+.ebook-file { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.reader { display: flex; flex-direction: column; gap: 10px; height: calc(100dvh - 150px); min-height: 360px; }
+.reader-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.reader-title { font-weight: 700; flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reader-bar select { max-width: 260px; }
+.reader-area { flex: 1; min-height: 0; background: #fff; color: #222; border-radius: 12px; box-shadow: var(--shadow); padding: 12px 8px; overflow: hidden; }

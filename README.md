@@ -31,7 +31,9 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   recherche tout seul.
 - **Options par bibliothèque** (Réglages > Fonctionnalités) : livres numériques (exemplaire « numérique »
   — epub, pdf… — seul ou en plus des exemplaires papier, sans code, étiquette ni prêt ;
-  à l'import : Type = Papier, Numérique ou Papier + numérique) et statuts de lecture
+  à l'import : Type = Papier, Numérique ou Papier + numérique ; fichier epub facultatif, avec trois
+  niveaux d'accès réglables — voir le fichier, le lire en ligne dans la liseuse intégrée, le télécharger —
+  chacun pour tout le monde, les comptes de la bibliothèque ou les administrateurs) et statuts de lecture
   par compte (À lire / En cours / Lu / Abandonné, Aimé / Pas aimé),
   affichés et filtrables dans le catalogue de gestion.
 - **Lecteurs** d'un livre : les comptes membres qui le lisent, le liront ou l'ont lu

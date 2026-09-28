@@ -714,6 +714,7 @@
   const LIBRARY_ROUTES = [
     [/^\/?$/, viewCatalog],
     [/^\/book\/(\d+)$/, viewBook],
+    [/^\/read\/(\d+)$/, viewReader],
     [/^\/book\/(\d+)\/edit$/, viewBookForm, 'manage'],
     [/^\/c\/([^/]+)$/, viewCopy],
     [/^\/login$/, viewLogin],
@@ -1496,12 +1497,26 @@
     });
   }
 
+  // Fichier epub de l'exemplaire numerique : niveaux d'acces (voir, lire, telecharger).
+  const FILE_LEVELS = [['public', 'Tout le monde'], ['members', 'Comptes de la bibliothèque'], ['admin', 'Administrateurs']];
+  const fileLevelLabel = (v) => (FILE_LEVELS.find(([k]) => k === v) || FILE_LEVELS[2])[1];
+  const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} Mo` : `${Math.max(1, Math.round(n / 1024))} Ko`);
+
+  // Presence du fichier et boutons selon les droits du visiteur (book.ebookFile).
+  function ebookFileHtml(book) {
+    const f = book.ebookFile;
+    if (!f) return '';
+    return `<div class="ebook-file"><span class="small muted">Fichier epub · ${fmtSize(f.size)}</span>
+      ${f.read ? `<a class="btn btn-small btn-primary" href="#/read/${book.id}">Lire</a>` : ''}
+      ${f.download ? `<a class="btn btn-small" href="${esc(LIB)}/api/public/books/${book.id}/epub?download=1" download>Télécharger</a>` : ''}</div>`;
+  }
+
   function publicCopiesHtml(book) {
     if (!book.copies.length && !book.ebookCopies) return '<p class="muted">Aucun exemplaire.</p>';
     return `<div class="table-wrap"><table><thead><tr><th>Exemplaire</th><th>Emplacement</th><th>État</th></tr></thead><tbody>
       ${book.copies.map((c) => `<tr><td class="code">${esc(c.code)}</td><td>${esc(c.location) || '<span class="muted">—</span>'}</td>
         <td>${c.available ? '<span class="badge badge-ok">Disponible</span>' : '<span class="badge badge-warn">Emprunté</span>'}</td></tr>`).join('')}
-      ${book.ebookCopies ? '<tr><td><span class="badge badge-ebook">Numérique</span></td><td><span class="muted">—</span></td><td><span class="small muted">Version numérique</span></td></tr>' : ''}
+      ${book.ebookCopies ? `<tr><td><span class="badge badge-ebook">Numérique</span></td><td><span class="muted">—</span></td><td>${ebookFileHtml(book) || '<span class="small muted">Version numérique</span>'}</td></tr>` : ''}
     </tbody></table></div>`;
   }
 
@@ -1513,7 +1528,9 @@
       <tr class="copy-ebook">
         <td><span class="badge badge-ebook">Numérique</span></td>
         <td>${esc(c.location) || '<span class="muted">—</span>'}${c.notes ? `<div class="small muted">${esc(c.notes)}</div>` : ''}</td>
-        <td><span class="small muted">Pas de prêt</span></td>
+        <td>${c.file ? `${ebookFileHtml(book) || `<span class="small muted">Fichier epub · ${fmtSize(c.file.size)}</span>`}
+            <div class="small muted">Voir : ${fileLevelLabel(c.fileVisible)} · Lire : ${fileLevelLabel(c.fileRead)} · Télécharger : ${fileLevelLabel(c.fileDownload)}</div>`
+          : '<span class="small muted">Pas de fichier</span>'}</td>
         <td><span class="small muted">Pas d'étiquette</span></td>
         <td style="text-align:right;white-space:nowrap"><button class="btn btn-small" data-edit-copy="${c.id}">Modifier</button></td>
       </tr>` : `
@@ -1566,15 +1583,9 @@
       } catch (err) { toast(err.message, 'error'); }
     };
     const addEbook = $('#add-ebook');
-    if (addEbook) addEbook.onclick = async () => {
-      const location = prompt('Emplacement du fichier (facultatif : Calibre, dossier partagé, liseuse…) :', '');
-      if (location === null) return;
-      try {
-        await api(`/api/books/${book.id}/copies`, { method: 'POST', body: { format: 'ebook', location } });
-        toast('Exemplaire numérique ajouté.');
-        route();
-      } catch (err) { toast(err.message, 'error'); }
-    };
+    if (addEbook) addEbook.onclick = () => editCopyDialog({
+      id: null, bookId: book.id, format: 'ebook', location: '', notes: '', file: null, fileVisible: 'admin', fileRead: 'admin', fileDownload: 'admin',
+    });
     const print = $('#print-labels');
     if (print) print.onclick = () => {
       state.labels = { mode: 'manual', manual: physical.map((c) => ({ code: c.code, title: book.title })) };
@@ -1585,37 +1596,153 @@
     });
   }
 
+  // Envoi brut du fichier (hors JSON) : nom d'origine dans l'en-tete X-File-Name.
+  async function uploadEpub(copyId, file) {
+    if (file.size > 100 * 1024 * 1024) throw new Error('Fichier trop lourd (100 Mo max).');
+    const res = await fetch(`${LIB}/api/copies/${copyId}/file`, {
+      method: 'PUT', credentials: 'same-origin', body: file,
+      headers: { 'Content-Type': 'application/epub+zip', 'X-File-Name': encodeURIComponent(file.name) },
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* reponse vide */ }
+    if (!res.ok) throw new Error((data && data.error) || (res.status === 413 ? 'Fichier trop lourd.' : `Erreur ${res.status}`));
+    return data;
+  }
+
   async function editCopyDialog(copy) {
     const locations = await api('/api/locations').catch(() => []);
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
     backdrop.innerHTML = `
       <form class="modal">
-        <h2>${copy.format === 'ebook' ? 'Exemplaire numérique' : `Exemplaire <span class="code">${esc(copy.code)}</span>`}</h2>
+        <h2>${copy.format === 'ebook' ? (copy.id ? 'Exemplaire numérique' : 'Nouvel exemplaire numérique') : `Exemplaire <span class="code">${esc(copy.code)}</span>`}</h2>
         <div class="field"><label>${copy.format === 'ebook' ? 'Emplacement du fichier' : 'Emplacement'}</label><input name="location" list="loc-list" value="${esc(copy.location)}">
           <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist></div>
         <div class="field"><label>Notes (état, provenance…)</label><textarea name="notes" style="min-height:80px">${esc(copy.notes)}</textarea></div>
+        ${copy.format === 'ebook' ? `
+        <div class="field"><label>Fichier epub ${hint('Facultatif (100 Mo max). Un nouveau fichier remplace le précédent.')}</label>
+          ${copy.file ? `<div class="small" style="margin-bottom:6px">${esc(copy.file.name)} · ${fmtSize(copy.file.size)}
+            <label class="check" style="display:inline-flex;margin-left:10px"><input type="checkbox" name="removeFile"> Retirer</label></div>` : ''}
+          <input type="file" name="file" accept=".epub,application/epub+zip"></div>
+        ${[['fileVisible', 'Voir le fichier'], ['fileRead', 'Lire en ligne'], ['fileDownload', 'Télécharger']].map(([name, label]) => `
+          <div class="field"><label>${label}</label><select name="${name}">
+            ${FILE_LEVELS.map(([v, l]) => `<option value="${v}" ${copy[name] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}` : ''}
         <div class="btn-row">
           <button class="btn btn-primary" type="submit">Enregistrer</button>
           <button class="btn" type="button" data-close>Annuler</button>
-          <button class="btn btn-danger" type="button" data-delete style="margin-left:auto">Supprimer</button>
+          ${copy.id ? '<button class="btn btn-danger" type="button" data-delete style="margin-left:auto">Supprimer</button>' : ''}
         </div>
       </form>`;
     document.body.appendChild(backdrop);
     const close = () => backdrop.remove();
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(); });
-    $('[data-delete]', backdrop).onclick = async () => {
+    if (copy.id) $('[data-delete]', backdrop).onclick = async () => {
       if (!confirm(copy.format === 'ebook' ? "Supprimer l'exemplaire numérique ?" : `Supprimer l'exemplaire ${copy.code} et son historique de prêts ?`)) return;
       try { await api(`/api/copies/${copy.id}`, { method: 'DELETE' }); close(); toast('Exemplaire supprimé.'); route(); } catch (err) { toast(err.message, 'error'); }
     };
     $('form', backdrop).onsubmit = async (e) => {
       e.preventDefault();
+      const f = e.target;
+      const submit = $('[type=submit]', f);
+      submit.disabled = true;
       try {
-        await api(`/api/copies/${copy.id}`, { method: 'PUT', body: { location: e.target.location.value, notes: e.target.notes.value } });
+        let id = copy.id;
+        if (!id) {
+          const r = await api(`/api/books/${copy.bookId}/copies`, { method: 'POST', body: { format: 'ebook', location: f.location.value } });
+          id = r.book.copies.find((c) => c.format === 'ebook').id;
+        }
+        const body = { location: f.location.value, notes: f.notes.value };
+        if (copy.format === 'ebook') Object.assign(body, { fileVisible: f.fileVisible.value, fileRead: f.fileRead.value, fileDownload: f.fileDownload.value });
+        await api(`/api/copies/${id}`, { method: 'PUT', body });
+        const file = f.file && f.file.files[0];
+        if (file) {
+          submit.textContent = 'Envoi du fichier…';
+          await uploadEpub(id, file);
+        } else if (f.removeFile && f.removeFile.checked) {
+          await api(`/api/copies/${id}/file`, { method: 'DELETE' });
+        }
         close();
-        toast('Exemplaire mis à jour.');
+        toast(copy.id ? 'Exemplaire mis à jour.' : 'Exemplaire numérique ajouté.');
         route();
-      } catch (err) { toast(err.message, 'error'); }
+      } catch (err) {
+        toast(err.message, 'error');
+        submit.disabled = false;
+        submit.textContent = 'Enregistrer';
+      }
+    };
+  }
+
+  // ================= Liseuse epub (epub.js) =================
+  // Position de lecture gardee dans le navigateur (localStorage, par livre).
+  async function viewReader(id) {
+    const book = await api(canManage() ? `/api/books/${id}` : `/api/public/books/${id}`);
+    if (!book.ebookFile || !book.ebookFile.read) {
+      throw new Error(state.user ? "Ton compte n'a pas accès à la lecture de ce livre." : 'Connecte-toi pour lire ce livre.');
+    }
+    if (!window.JSZip) await loadScript(ROOT + '/vendor/jszip.min.js');
+    if (!window.ePub) await loadScript(ROOT + '/vendor/epub.min.js');
+    const res = await fetch(`${LIB}/api/public/books/${id}/epub`, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('Lecture du fichier impossible.');
+    const data = await res.arrayBuffer();
+    view().innerHTML = `
+      <div class="reader">
+        <div class="reader-bar">
+          <a href="#/book/${id}" class="reader-title">← ${esc(book.title)}</a>
+          <select id="reader-toc"><option value="">Sommaire</option></select>
+          <span class="small muted" id="reader-pos"></span>
+          <span class="btn-row">
+            <button class="btn btn-small" id="reader-prev" aria-label="Page précédente">‹</button>
+            <button class="btn btn-small" id="reader-next" aria-label="Page suivante">›</button>
+          </span>
+        </div>
+        <div id="reader-area" class="reader-area"></div>
+      </div>`;
+    const epub = window.ePub(data);
+    const rendition = epub.renderTo('reader-area', { width: '100%', height: '100%', spread: 'auto' });
+    const key = `mll-read-${LIBRARY.slug}-${id}`;
+    let start;
+    try { start = localStorage.getItem(key) || undefined; } catch (e) { /* stockage indisponible */ }
+    await rendition.display(start).catch(() => rendition.display());
+    const prev = () => rendition.prev();
+    const next = () => rendition.next();
+    $('#reader-prev').onclick = prev;
+    $('#reader-next').onclick = next;
+    const onKey = (e) => { if (e.key === 'ArrowLeft') prev(); if (e.key === 'ArrowRight') next(); };
+    document.addEventListener('keyup', onKey);
+    rendition.on('keyup', onKey);
+    // Balayage sur mobile
+    let x0 = null;
+    rendition.on('touchstart', (e) => { x0 = e.changedTouches[0].screenX; });
+    rendition.on('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].screenX - x0;
+      if (Math.abs(dx) > 50) (dx < 0 ? next : prev)();
+      x0 = null;
+    });
+    const pos = $('#reader-pos');
+    const showPos = (loc) => {
+      if (!loc || !loc.start) return;
+      try { localStorage.setItem(key, loc.start.cfi); } catch (e) { /* stockage indisponible */ }
+      if (epub.locations.length()) pos.textContent = `${Math.round(epub.locations.percentageFromCfi(loc.start.cfi) * 100)} %`;
+    };
+    rendition.on('relocated', showPos);
+    epub.locations.generate(1600).then(() => showPos(rendition.currentLocation())).catch(() => {});
+    epub.loaded.navigation.then((nav) => {
+      const opts = [];
+      const walk = (items, depth) => items.forEach((it) => {
+        opts.push(`<option value="${esc(it.href)}">${'  '.repeat(depth)}${esc(it.label.trim())}</option>`);
+        if (it.subitems && it.subitems.length) walk(it.subitems, depth + 1);
+      });
+      walk(nav.toc, 0);
+      const toc = $('#reader-toc');
+      if (!toc) return;
+      if (!opts.length) { toc.remove(); return; }
+      toc.insertAdjacentHTML('beforeend', opts.join(''));
+      toc.onchange = () => { if (toc.value) rendition.display(toc.value); toc.value = ''; };
+    }).catch(() => {});
+    pageCleanup = () => {
+      document.removeEventListener('keyup', onKey);
+      try { epub.destroy(); } catch (e) { /* deja detruit */ }
     };
   }
 

@@ -7,22 +7,23 @@ Utilisateur francophone : interface, commentaires et réponses **en français**.
 - Montée dans `C:\Users\thoma\ClaudeIA\node-gateway` : jonction `apps/mylittlelibrary` → ce dossier, servie sur `http://localhost:3000/mylittlelibrary/`. Prod : Infomaniak (même passerelle).
 - `server.js` exporte `app` ; `app.listen` seulement si lancé directement (`PORT`, défaut 3000).
 - Redémarrer la passerelle locale : tuer le process sur le port 3000 (TaskStop ne suffit pas toujours), puis `npm start` dans node-gateway.
-- Déploiement : envoyer `lib/`, `public/` (et `server.js` si modifié), **jamais `data/`**, puis redémarrer Node. Les migrations s'appliquent seules au démarrage.
+- Déploiement : envoyer `lib/`, `public/` (et `server.js`, `package.json` si modifiés, puis `npm install`), **jamais `data/`**, puis redémarrer Node. Les migrations s'appliquent seules au démarrage.
 
 ## Architecture
 - `server.js` : routes globales (`/api/auth/*`, `/api/me/*`, `/api/admin/*`), page `index.html` en gabarit (`{{ROOT}}`, `{{CONFIG}}`, `{{VERSION}}` = cache-busting), vendors (scanner, excel), montage `/:slug/…`.
-- `lib/db.js` : base + **migrations** (`MIGRATIONS`, `PRAGMA user_version`, SQL ou fonction ; clés étrangères coupées pendant les migrations). Actuellement v15. `bookSearchText`, `nextCopyCode`, `slugify`.
+- `lib/db.js` : base + **migrations** (`MIGRATIONS`, `PRAGMA user_version`, SQL ou fonction ; clés étrangères coupées pendant les migrations). Actuellement v16. `bookSearchText`, `nextCopyCode`, `slugify`.
 - `lib/library-api.js` : API d'une bibliothèque (`/:slug/api/...`) : public (catalogue, fiche), puis garde « gestion » ; livres, exemplaires, prêts, emprunteurs, étiquettes, import, export, suppression en masse, vidage.
 - PWA : `public/sw.js` (service worker sans cache, page hors connexion), manifeste dynamique par bibliothèque (`/:slug/manifest.webmanifest`, `sendManifest` dans server.js), icônes PNG dans `public/` (régénérer depuis `icon.svg` / `icon-maskable.svg` si le logo change).
 - `lib/stats.js` (stats, confidentialité), `lib/auth.js` (scrypt, sessions, rôles admin/gestionnaire), `lib/isbn.js` (Google Books / BnF SRU / Open Library ; résumés FR en dernier recours via leslibraires.fr, 1 requête / 3 s — placedeslibraires.fr et Decitre bloquent l'hébergeur), `lib/covers.js` (recherche de couvertures), `lib/media.js`.
 - Réglages globaux : table `settings` (clé/valeur, `getSetting`/`setSetting` dans db.js). Clé Google Books : `googleBooksKey()` = réglage `googleBooksApiKey` (Administration › Google Books), sinon `GOOGLE_BOOKS_API_KEY`.
 - Interface : palette et composants dans `style.css` (variables `:root`, teintes `--sun/--coral/--sky/--grape/--rose` + `-soft`), police Nunito (Google Fonts). Textes d'aide : jamais de paragraphe explicatif, utiliser `hint(texte)` (icône « ? » + info-bulle, section Utilitaires) et des libellés courts. Icones SVG inline : section `Icones` de app.js (`icon(nom)`, `PAGE_COLORS`, `decorateTitle` ajoute la pastille des h1 selon l'adresse).
 - `public/app.js` : SPA (routes en hash), sections repérables par `// ================= <Section> =================`. `public/embed.js` : widget catalogue WordPress (Shadow DOM). `wordpress/…/mylittlelibrary-catalogue.php` : plugin shortcode `[bibliotheque …]`.
-- `data/` (non versionné) : `library.db`, `media/`, `backups/`.
+- `data/` (non versionné) : `library.db`, `media/`, `ebooks/`, `backups/`.
 
 ## Modèle (points non évidents)
 - Multi-bibliothèques : tout est filtré par `library_id` ; URL de bibliothèque = slug fixé à la création.
 - `copies.format` = `physical` | `ebook` : l'exemplaire numérique n'a **pas de code, d'étiquette ni de prêt** (un seul par livre). `books.format` n'est plus utilisé.
+- Fichier epub (v16, `lib/ebooks.js`) : sur l'exemplaire numérique, `file_key` (fichier dans `data/ebooks/`, jamais servi en statique), `file_name`, `file_size` ; droits `file_visible` / `file_read` / `file_download` = `public` | `members` (comptes `canManage`) | `admin` (lire ou télécharger rend visible). Envoi brut `PUT /copies/:id/file` (application/epub+zip, en-tête `X-File-Name`, 100 Mo, exception dans `jsonOnly`) ; accès `GET /public/books/:id/epub[?download=1]` ; `book.ebookFile` = droits du visiteur. Liseuse `#/read/:id` (epub.js + JSZip servis sur `/vendor/`). Fichiers orphelins supprimés par `ebooks.purgeOrphans()` après chaque suppression.
 - Livre : `collection` (éditeur) distincte de `series` + `series_number` (tome). `collection_number` n'est plus utilisé.
 - Statuts de lecture par compte (`book_user_status`) : to_read / reading / read / abandoned + liked / disliked, avec dates.
 - Lecteurs (`book_readers`, v15) : comptes membres liés à un livre, indépendants du statut (jamais retirés par un changement de statut). Fiche : bouton « Intéressé » (soi-même, `POST/DELETE /books/:id/readers`) ; autres membres via le formulaire « Modifier » (`readers` de `PUT /books/:id` remplace la liste). Filtres catalogue `mine` (Mes livres) et `reader`. Ajout d'un livre et import : le créateur par défaut, ou `readers` (identifiants, ou noms séparés par des virgules pour la colonne « Lecteurs »). En mise à jour par import, seule la colonne compte. Membres : `libraryMembers` (library-api.js). Les emprunteurs sont des personnes extérieures sans compte.
