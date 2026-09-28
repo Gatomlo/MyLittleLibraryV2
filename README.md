@@ -40,7 +40,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   plusieurs fichiers epub : Ajout multiple > Fichiers epub ; ISBN lu dans les métadonnées ou, à défaut, dans la page de copyright), **liseuses Kobo** (branchées en USB : liste
   de leurs livres avec fiche / fichier présents dans la bibliothèque, création ou rattachement de fiche avec
   copie du fichier, statuts de lecture du propriétaire, envoi de livres avec série et tome ; copie directe
-  sur la liseuse avec Chrome, téléchargement avec Firefox) et statuts de lecture
+  sur la liseuse avec Chrome, téléchargement avec Firefox ; suppression d'un livre de la liseuse avec Chrome) et statuts de lecture
   par compte (À lire / En cours / Lu / Abandonné, Aimé / Pas aimé),
   affichés et filtrables dans le catalogue de gestion.
 - **Lecteurs** d'un livre : les comptes membres qui le lisent, le liront ou l'ont lu

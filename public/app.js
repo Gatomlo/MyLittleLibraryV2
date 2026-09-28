@@ -1830,6 +1830,16 @@
           await w.write(blob);
           await w.close();
         },
+        // Suppression d'un livre ; dossier parent retire s'il est vide (auteur, serie).
+        remove: async (p) => {
+          const parts = p.split('/');
+          const d = await dirOf(parts.slice(0, -1), false);
+          await d.removeEntry(parts[parts.length - 1]);
+          if (parts.length < 2) return;
+          for await (const _ of d.keys()) return; // eslint-disable-line no-unused-vars
+          const parent = await dirOf(parts.slice(0, -2), false);
+          await parent.removeEntry(parts[parts.length - 2]).catch(() => {});
+        },
       };
       src.alive = async () => !!(await src.file('.kobo/version'));
     } else {
@@ -1837,7 +1847,7 @@
       if (!files || !files.length) throw Object.assign(new Error('Aucun dossier choisi.'), { name: 'AbortError' });
       // Chemins relatifs a la racine choisie ("KOBOeReader/.kobo/version" -> ".kobo/version").
       const map = new Map(files.map((f) => [f.webkitRelativePath.split('/').slice(1).join('/'), f]));
-      src = { file: async (p) => map.get(p) || null, write: null };
+      src = { file: async (p) => map.get(p) || null, write: null, remove: null };
       // Fichier choisi illisible une fois la liseuse retiree.
       src.alive = async () => { try { await map.get('.kobo/version').slice(0, 1).text(); return true; } catch (e) { return false; } };
     }
@@ -2075,6 +2085,7 @@
     const filtered = ['q', 'category', 'collection', 'series', 'tag', 'reader', 'reading'].some((key) => k[key]);
     const opt = (v, label, cur) => `<option value="${esc(v)}" ${String(cur) === String(v) ? 'selected' : ''}>${esc(label)}</option>`;
     const connected = () => !!kobo && kobo.serial === d.serial;
+    const canRemove = connected() && !!kobo.remove;
     const f = koboState.filter;
     const items = d.items.filter((i) => f === 'all' || (f === 'nobook' && !i.book) || (f === 'nofile' && i.book && !i.book.hasFile));
     const toCopy = d.items.filter((i) => i.book && !i.book.hasFile && i.path && !i.pending);
@@ -2114,7 +2125,8 @@
       </div>
       ${items.length ? `<div class="card table-wrap"><table class="stack"><thead><tr><th>Livre sur la liseuse</th><th>Lecture</th><th>Fiche</th><th>Fichier dans la biblio</th></tr></thead><tbody>
         ${items.map((i) => `<tr>
-          <td><strong>${esc(i.title)}</strong><div class="small muted">${esc(i.authors || '')}${i.series ? ` · ${esc(i.series)}${i.seriesNumber ? ` #${esc(i.seriesNumber)}` : ''}` : ''}</div></td>
+          <td><strong>${esc(i.title)}</strong><div class="small muted">${esc(i.authors || '')}${i.series ? ` · ${esc(i.series)}${i.seriesNumber ? ` #${esc(i.seriesNumber)}` : ''}` : ''}</div>
+            ${canRemove && i.path ? `<button class="btn btn-small btn-danger" data-remove="${i.id}" title="Supprimer le fichier de la liseuse">Supprimer de la liseuse</button>` : ''}</td>
           <td>${reading(i)}</td>
           <td>${i.book
             ? `<a href="#/book/${i.book.id}">${esc(i.book.title)}</a> <button class="btn btn-small" data-unlink="${i.id}" title="Détacher de cette fiche">✕</button>`
@@ -2125,6 +2137,17 @@
         : '<div class="empty">Aucun livre dans cette liste.</div>'}`;
 
     const item = (btn, key) => d.items.find((i) => i.id === Number(btn.dataset[key]));
+    $$('[data-remove]').forEach((btn) => {
+      btn.onclick = busy(async () => {
+        const i = item(btn, 'remove');
+        if (!confirm(`Supprimer « ${i.title} » de la liseuse ? Le fichier sera effacé de la Kobo (la fiche et le fichier de la bibliothèque sont conservés).`)) return;
+        if (!connected()) throw new Error('Liseuse débranchée.');
+        try { await kobo.remove(i.path); } catch (e) { if (e.name !== 'NotFoundError') throw e; }
+        await api(`/api/kobo/items/${i.id}`, { method: 'DELETE' });
+        toast('Livre supprimé. Éjecte la liseuse pour qu’elle mette sa bibliothèque à jour.');
+        route();
+      });
+    });
     // Fichier de la liseuse envoye dans l'exemplaire numerique de la fiche.
     const copyFile = async (i, out) => {
       if (!out.book || out.book.hasFile || !i.path) return;
