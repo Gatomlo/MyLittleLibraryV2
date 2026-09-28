@@ -1430,7 +1430,7 @@
           ${manage && book.notes ? `<h3>Notes internes</h3><p class="summary muted">${esc(book.notes)}</p>` : ''}
           ${manage ? `<div class="btn-row" style="margin-top:14px">
               <a class="btn" href="#/book/${book.id}/edit">Modifier</a>
-              ${koboOn() && book.ebookFile && book.ebookFile.download ? `<button class="btn" id="push-kobo">Envoyer sur ${esc(kobo.device.name)}</button>` : ''}
+              ${koboOn() && book.ebookFile && book.ebookFile.download ? `<button class="btn" id="push-kobo" title="${esc(kobo.device.name)}">Envoyer sur ma liseuse</button>` : ''}
               <button class="btn btn-danger" id="del-book">Supprimer</button>
             </div>` : ''}
         </div>
@@ -2713,10 +2713,11 @@
       ${editing ? '<h1>Modifier le livre</h1>' : `<div class="page-head"><div><h1>Ajouter un livre</h1></div>
         <div class="btn-row"><a class="btn hide-mobile" href="#/import">Ajout multiple</a></div></div>`}
       <div class="card" style="margin:14px 0">
-        <label for="isbn-search">Rechercher par ISBN ${hint('Scanne ou tape l\'ISBN pour pré-remplir la fiche, ou remplis-la directement ci-dessous.')}</label>
+        <label for="isbn-search">Rechercher par ISBN ou titre ${hint('Scanne ou tape l\'ISBN pour pré-remplir la fiche. Sans ISBN : tape le titre et l\'auteur, ou « Titre + auteur » reprend ceux de la fiche, puis choisis l\'édition.')}</label>
         <div class="isbn-row">
-          <input id="isbn-search" inputmode="numeric" placeholder="978…" value="${esc(b.isbn)}" autocomplete="off">
+          <input id="isbn-search" placeholder="ISBN, ou titre et auteur" value="${esc(b.isbn)}" autocomplete="off">
           <button class="btn" id="isbn-go" type="button">Rechercher</button>
+          <button class="btn" id="isbn-title" type="button" title="Chercher l'édition avec le titre et l'auteur de la fiche">Titre + auteur</button>
           <button class="btn btn-primary" id="isbn-scan" type="button">Scanner</button>
         </div>
         <div id="isbn-result" class="small" style="margin-top:8px"></div>
@@ -2875,6 +2876,36 @@
         out.innerHTML = `<span style="color:var(--danger)">${esc(err.message)}</span>`;
       }
     }
+    // Pas d'ISBN : editions trouvees par titre + auteur (ou texte libre), a choisir.
+    // Fiche avec fichier epub : l'ISBN cite dans le fichier est propose en premier.
+    async function searchEditions(params) {
+      const out = $('#isbn-result');
+      out.innerHTML = '<span class="muted">Recherche des éditions…</span>';
+      try {
+        if (editing) params.bookId = b.id;
+        const r = await api(`/api/isbn-search?${new URLSearchParams(params)}`);
+        const row = (e) => `<li>
+            <div class="cover">${e.coverUrl ? `<img src="${esc(e.coverUrl)}" alt="" loading="lazy">` : ''}</div>
+            <div><strong>${esc(e.title || 'Sans titre')}</strong>${e.authors ? ` — ${esc(e.authors)}` : ''}
+              <div class="small muted">${[e.publisher, e.year, e.pages ? `${e.pages} p.` : '', e.isbn, (e.sources || []).join(', ')].filter(Boolean).map(esc).join(' · ')}</div></div>
+            <button class="btn btn-small" type="button" data-pick="${e.isbn}">Choisir</button></li>`;
+        let html = '';
+        if (r.fromFile) html += `<div class="info-box">ISBN cité dans le fichier epub : <strong>${esc(r.fromFile)}</strong> <button class="btn btn-small btn-primary" type="button" data-pick="${r.fromFile}">Utiliser</button></div>`;
+        html += r.editions.length
+          ? `<ul class="edition-list">${r.editions.map(row).join('')}</ul>`
+          : '<span class="muted">Aucune édition trouvée : essaie un titre plus court ou sans l\'auteur.</span>';
+        out.innerHTML = html;
+        $$('[data-pick]', out).forEach((btn) => { btn.onclick = () => { const isbn = btn.dataset.pick; $('#isbn-search').value = isbn; lastLookup = isbn; lookup(isbn); }; });
+      } catch (err) {
+        out.innerHTML = `<span style="color:var(--danger)">${esc(err.message)}</span>`;
+      }
+    }
+    // Saisie libre : un ISBN -> fiche ; sinon recherche d'editions.
+    const searchInput = (raw) => {
+      const isbn = isbnFromCell(raw).isbn;
+      if (isbn) { lastLookup = isbn; lookup(isbn); } else if (/\d{9,}/.test(raw.replace(/[\s-]/g, ''))) lookup(raw);
+      else if (raw.trim()) searchEditions({ q: raw.trim() });
+    };
     // Recherche automatique des qu'un ISBN complet et valide est saisi (scan, frappe,
     // collage ou lecteur de codes-barres USB) : pas besoin de cliquer sur Rechercher.
     let lastLookup = '';
@@ -2884,14 +2915,16 @@
       lastLookup = isbn;
       lookup(isbn);
     };
-    $('#isbn-go').onclick = () => { lastLookup = ''; lookup($('#isbn-search').value); };
+    $('#isbn-go').onclick = () => { lastLookup = ''; searchInput($('#isbn-search').value); };
+    $('#isbn-title').onclick = () => {
+      if (!f.title.value.trim()) { toast('Indique d\'abord le titre dans la fiche.'); f.title.focus(); return; }
+      searchEditions({ title: f.title.value.trim(), author: f.authors.value.split(',')[0].trim() });
+    };
     $('#isbn-search').addEventListener('input', debounce((e) => autoLookup(e.target.value), 300));
     $('#isbn-search').addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
-      const isbn = isbnFromCell(e.target.value).isbn;
-      if (isbn) lastLookup = isbn;
-      lookup(isbn || e.target.value);
+      searchInput(e.target.value);
     });
     $('#isbn-scan').onclick = async () => {
       const isbn = await scanIsbn();
@@ -3650,7 +3683,7 @@
   // Informations absentes des catalogues en ligne : attribution en masse aux livres coches.
   const MISSING_ASSIGN = { location: 'Emplacement (ex. Étagère A)', tags: 'Tag(s), séparés par des virgules' };
   const REFILL_HINT = {
-    isbn: 'Recherche par titre + auteur (BnF). L\'ISBN n\'est retenu que si une seule édition correspond (année, éditeur et pages de la fiche).',
+    isbn: 'ISBN cité dans le fichier epub, sinon recherche par titre + auteur (BnF) : l\'ISBN n\'est retenu que si une seule édition correspond (année, éditeur et pages de la fiche).',
     category: 'Seules tes catégories existantes sont attribuées, quand elles correspondent aux sujets trouvés en ligne.',
   };
 

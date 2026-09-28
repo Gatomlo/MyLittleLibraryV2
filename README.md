@@ -26,6 +26,8 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   Google Books, Amazon par ISBN, titre et auteur ; autres éditions proposées ; collage d'une URL).
 - **Ajout par ISBN** : scan du code-barres (webcam ou caméra du téléphone), saisie de
   l'ISBN ou encodage manuel. Recherche dans la BnF, Open Library et Google Books (résumés des livres francophones aussi via leslibraires.fr).
+  Sans ISBN : titre et auteur tapés dans la recherche, ou bouton « Titre + auteur » (ceux de la fiche) →
+  liste des éditions (BnF, Google Books) à choisir ; l'ISBN cité dans le fichier epub est proposé en premier.
 - **Scan en série** (page Ajout multiple, depuis « Ajouter ») : caméra ouverte en continu (ou lecteur USB),
   chaque code-barres lu s'ajoute à une liste avec miniature et titre ; toutes les
   fiches sont créées en une fois. Dans « Ajouter », un ISBN complet lance la
@@ -35,7 +37,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   à l'import : Type = Papier, Numérique ou Papier + numérique ; fichier epub facultatif, lisible dans la
   liseuse intégrée ; droits réglés pour toute la bibliothèque — voir le fichier, le lire en ligne, le
   télécharger — chacun pour tout le monde, les comptes, les gestionnaires ou les administrateurs ; import de
-  plusieurs fichiers epub : Ajout multiple > Fichiers epub), **liseuses Kobo** (branchées en USB : liste
+  plusieurs fichiers epub : Ajout multiple > Fichiers epub ; ISBN lu dans les métadonnées ou, à défaut, dans la page de copyright), **liseuses Kobo** (branchées en USB : liste
   de leurs livres avec fiche / fichier présents dans la bibliothèque, création ou rattachement de fiche avec
   copie du fichier, statuts de lecture du propriétaire, envoi de livres avec série et tome ; copie directe
   sur la liseuse avec Chrome, téléchargement avec Firefox) et statuts de lecture
@@ -102,7 +104,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   ouverture dans le catalogue pour une sélection en masse. Export Excel / CSV des
   fiches de l'onglet, à corriger puis réimporter en « Mettre à jour la fiche ».
   « Compléter tout » relance la recherche pour tous les livres de l'onglet (seules
-  les informations vides sont complétées) : ISBN retrouvé par titre + auteur seulement
+  les informations vides sont complétées) : ISBN lu dans le fichier epub, sinon retrouvé par titre + auteur seulement
   si une seule édition correspond, catégorie attribuée seulement si une catégorie
   existante correspond aux sujets en ligne. Emplacement et tags : cases à cocher et
   attribution en masse.
