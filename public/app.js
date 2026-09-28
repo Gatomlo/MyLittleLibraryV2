@@ -664,7 +664,8 @@
       <a class="menu-item" href="#/settings">${icon('settings')}Réglages</a>` : ''}
       ${canManage() && features().kobo ? `<div class="menu-sep"></div>
       <div class="menu-title">Liseuses</div>
-      <button class="menu-item" type="button" id="menu-kobo-connect">${icon('kobo')}${koboOn() ? `Rescanner ${esc(kobo.device.name)}` : 'Brancher une liseuse'}</button>
+      ${koboSavedInfo && !koboOn() ? `<button class="menu-item" type="button" id="menu-kobo-reconnect">${icon('kobo')}Reconnecter ${esc(koboSavedInfo.name)}</button>` : ''}
+      <button class="menu-item" type="button" id="menu-kobo-connect">${icon('kobo')}${koboOn() ? `Rescanner ${esc(kobo.device.name)}` : koboSavedInfo ? 'Brancher une autre liseuse' : 'Brancher une liseuse'}</button>
       <a class="menu-item" href="#/kobo">${icon('kobo')}Toutes les liseuses</a>` : ''}
       <div class="menu-sep"></div>
       <a class="menu-item" href="#/account">${icon('user')}Mon compte</a>
@@ -675,15 +676,17 @@
     $('#account-btn').setAttribute('aria-expanded', 'true');
     menu.addEventListener('click', (e) => e.stopPropagation());
     $$('a', menu).forEach((a) => a.addEventListener('click', closeMenu));
-    const menuKobo = $('#menu-kobo-connect', menu);
-    if (menuKobo) menuKobo.onclick = async () => {
+    const koboMenuAction = (btn, fn) => { if (btn) btn.onclick = async () => {
       closeMenu();
       try {
-        const d = await scanKobo();
+        const d = await fn();
         toast(`Liseuse « ${d.name} » branchée.`);
         go(`#/kobo/${d.id}`);
       } catch (err) { if (err.name !== 'AbortError') toast(err.message, 'error'); }
-    };
+    }; };
+    // Rescanner la liseuse branchee : sans repasser par le choix du dossier.
+    koboMenuAction($('#menu-kobo-connect', menu), () => (koboOn() && kobo.root ? scanKobo(kobo.root) : scanKobo()));
+    koboMenuAction($('#menu-kobo-reconnect', menu), reconnectKobo);
     $$('[data-default]', menu).forEach((btn) => {
       btn.onclick = async () => {
         const id = Number(btn.dataset.default);
@@ -1720,7 +1723,8 @@
   // champ "repertoire", en lecture seule ; les envois deviennent des telechargements.
   const KOBO_FS = typeof window.showDirectoryPicker === 'function';
   let kobo = null; // liseuse branchee : { serial, version, file(chemin), write(chemin, blob) | null }
-  const koboState = { filter: 'all' };
+  // Filtres de la page d'une liseuse (memes criteres que le catalogue, plus la lecture).
+  const koboState = { filter: 'all', q: '', category: '', collection: '', series: '', tag: '', reader: '', reading: '', sort: 'series', focus: false };
   // Liseuse branchee (et connue de la bibliotheque) : onglet, filtre du catalogue et
   // boutons d'envoi n'apparaissent qu'a cette condition.
   const koboOn = () => canManage() && features().kobo && !!kobo && !!kobo.device;
@@ -1739,17 +1743,79 @@
     });
   }
 
-  // Doit etre appele directement depuis un clic (le navigateur l'exige).
-  async function connectKobo() {
+  // Chrome : dossier de la liseuse memorise (IndexedDB, par bibliotheque) pour la
+  // retrouver apres un rechargement ; si le navigateur a garde l'autorisation, elle est
+  // reconnectee seule, sinon un clic sur "Reconnecter" suffit (le navigateur l'exige).
+  let koboSavedInfo = null; // liseuse memorisee a reconnecter : { root, name }
+  function koboStore(mode, fn) {
+    return new Promise((resolve) => {
+      try {
+        const req = indexedDB.open('mll-kobo', 1);
+        req.onupgradeneeded = () => req.result.createObjectStore('handles');
+        req.onerror = () => resolve(null);
+        req.onsuccess = () => {
+          const tx = req.result.transaction('handles', mode);
+          const r = fn(tx.objectStore('handles'));
+          tx.oncomplete = () => resolve(r ? r.result : null);
+          tx.onerror = () => resolve(null);
+        };
+      } catch (e) { resolve(null); }
+    });
+  }
+  const koboRemember = (src) => (src.root && LIBRARY
+    ? koboStore('readwrite', (st) => st.put({ root: src.root, name: src.device ? src.device.name : 'la liseuse' }, LIBRARY.slug)) : null);
+
+  async function koboRestore() {
+    if (!KOBO_FS || !LIBRARY || !canManage() || !features().kobo || kobo) return;
+    const info = await koboStore('readonly', (st) => st.get(LIBRARY.slug));
+    if (!info || !info.root) return;
+    const perm = await info.root.queryPermission({ mode: 'readwrite' }).catch(() => 'denied');
+    if (perm === 'granted') {
+      try { await connectKobo(info.root); route(); return; } catch (e) { /* liseuse debranchee */ }
+    }
+    koboSavedInfo = info;
+  }
+
+  // Liseuse memorisee : l'autorisation est redemandee (doit suivre un clic).
+  async function reconnectKobo() {
+    const info = koboSavedInfo;
+    if (!info) return scanKobo();
+    const perm = await info.root.requestPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') throw Object.assign(new Error('Accès refusé.'), { name: 'AbortError' });
+    return scanKobo(info.root);
+  }
+
+  // Debranchement : verification toutes les 5 s ; onglet, filtre et boutons retires.
+  let koboTimer = null;
+  function watchKobo() {
+    clearInterval(koboTimer);
+    koboTimer = setInterval(async () => {
+      if (!kobo) { clearInterval(koboTimer); return; }
+      if (await kobo.alive()) return;
+      const name = kobo.device ? kobo.device.name : 'La liseuse';
+      if (kobo.root) koboSavedInfo = { root: kobo.root, name };
+      kobo = null;
+      clearInterval(koboTimer);
+      renderNav();
+      toast(`${name} a été débranchée.`);
+      if (/^#?\/?(book\/\d+|kobo(\/\d+)?)?$/.test(location.hash) && !$('.modal-backdrop')) route();
+    }, 5000);
+  }
+
+  // Doit etre appele directement depuis un clic (le navigateur l'exige), sauf avec un
+  // dossier deja autorise (root).
+  async function connectKobo(root = null) {
+    const remembered = !!root;
     let src;
     if (KOBO_FS) {
-      const root = await window.showDirectoryPicker({ id: 'kobo', mode: 'readwrite' });
+      if (!root) root = await window.showDirectoryPicker({ id: 'kobo', mode: 'readwrite' });
       const dirOf = async (parts, create) => {
         let d = root;
         for (const p of parts) d = await d.getDirectoryHandle(p, { create });
         return d;
       };
       src = {
+        root,
         file: async (p) => {
           try {
             const parts = p.split('/');
@@ -1765,29 +1831,39 @@
           await w.close();
         },
       };
+      src.alive = async () => !!(await src.file('.kobo/version'));
     } else {
       const files = await pickDirectoryFiles();
       if (!files || !files.length) throw Object.assign(new Error('Aucun dossier choisi.'), { name: 'AbortError' });
       // Chemins relatifs a la racine choisie ("KOBOeReader/.kobo/version" -> ".kobo/version").
       const map = new Map(files.map((f) => [f.webkitRelativePath.split('/').slice(1).join('/'), f]));
       src = { file: async (p) => map.get(p) || null, write: null };
+      // Fichier choisi illisible une fois la liseuse retiree.
+      src.alive = async () => { try { await map.get('.kobo/version').slice(0, 1).text(); return true; } catch (e) { return false; } };
     }
     const version = await src.file('.kobo/version');
-    if (!version) throw new Error("Ce dossier n'est pas une liseuse Kobo : choisis la racine de la liseuse (le lecteur « KOBOeReader »).");
+    if (!version) {
+      throw new Error(remembered ? 'Liseuse introuvable : vérifie qu\'elle est bien branchée, sinon utilise « Brancher une liseuse ».'
+        : "Ce dossier n'est pas une liseuse Kobo : choisis la racine de la liseuse (le lecteur « KOBOeReader »).");
+    }
     src.version = (await version.text()).trim();
     src.serial = src.version.split(',')[0].trim();
     // Liseuse deja connue de la bibliotheque (filtres du catalogue, envois).
     src.device = (await api('/api/kobo/devices').catch(() => [])).find((d) => d.serial === src.serial) || null;
     kobo = src;
+    koboSavedInfo = null;
+    koboRemember(src);
+    watchKobo();
     renderNav();
     return src;
   }
 
-  async function scanKobo() {
-    const src = await connectKobo();
+  async function scanKobo(root = null) {
+    const src = await connectKobo(root);
     const dbFile = await src.file('.kobo/KoboReader.sqlite');
     if (!dbFile) throw new Error('Base de la liseuse introuvable (.kobo/KoboReader.sqlite).');
     src.device = await sendRaw('/api/kobo/scan', 'POST', dbFile, 'application/x-sqlite3', { 'X-Kobo-Version': encodeURIComponent(src.version) });
+    koboRemember(src);
     renderNav();
     return src.device;
   }
@@ -1809,7 +1885,7 @@
   // Envoi d'un livre sur la liseuse : copie directe (Chrome) ou telechargement.
   // Avec Chrome, la liseuse est scannee au premier envoi de la session.
   async function pushToKobo(bookId, { quiet = false } = {}) {
-    if (KOBO_FS && !kobo) await scanKobo();
+    if (KOBO_FS && !kobo) await (koboSavedInfo ? reconnectKobo() : scanKobo());
     if (!quiet && (await koboBookIds()).has(bookId) && !confirm('Ce livre est déjà sur la liseuse. L\'envoyer quand même ?')) return false;
     const res = await fetch(`${LIB}/api/kobo/books/${bookId}/epub`, { credentials: 'same-origin' });
     if (!res.ok) {
@@ -1839,7 +1915,7 @@
   // Envoi de plusieurs livres (selection du catalogue) : ceux deja sur la liseuse sont
   // ignores, comme ceux sans fichier ou sans droit de telechargement.
   async function pushManyToKobo(ids, progress) {
-    if (KOBO_FS && !kobo) await scanKobo();
+    if (KOBO_FS && !kobo) await (koboSavedInfo ? reconnectKobo() : scanKobo());
     const already = await koboBookIds();
     const out = { sent: 0, already: 0, skipped: 0 };
     for (const [n, id] of ids.entries()) {
@@ -1942,11 +2018,19 @@
   }
 
   async function viewKoboDevice(id) {
-    const [d, members] = await Promise.all([api(`/api/kobo/devices/${id}`), loadMembers().catch(() => [])]);
+    const k = koboState;
+    const qs = new URLSearchParams(['q', 'category', 'collection', 'series', 'tag', 'reader', 'reading', 'sort'].filter((key) => k[key]).map((key) => [key, k[key]]));
+    const [d, members, cats, collections, seriesList, tags] = await Promise.all([
+      api(`/api/kobo/devices/${id}?${qs}`), loadMembers().catch(() => []),
+      api('/api/public/categories').catch(() => []), api('/api/public/collections').catch(() => []),
+      api('/api/public/series').catch(() => []), features().tags ? api('/api/public/tags').catch(() => []) : [],
+    ]);
+    const filtered = ['q', 'category', 'collection', 'series', 'tag', 'reader', 'reading'].some((key) => k[key]);
+    const opt = (v, label, cur) => `<option value="${esc(v)}" ${String(cur) === String(v) ? 'selected' : ''}>${esc(label)}</option>`;
     const connected = () => !!kobo && kobo.serial === d.serial;
     const f = koboState.filter;
     const items = d.items.filter((i) => f === 'all' || (f === 'nobook' && !i.book) || (f === 'nofile' && i.book && !i.book.hasFile));
-    const toCopy = d.items.filter((i) => i.book && !i.book.hasFile && i.book.copyId && i.path && !i.pending);
+    const toCopy = d.items.filter((i) => i.book && !i.book.hasFile && i.path && !i.pending);
     const reading = (i) => {
       if (i.pending) return '<span class="badge badge-muted">Envoyé, en attente d\'import</span>';
       const main = i.readStatus === 2 ? '<span class="badge badge-ok">Lu</span>'
@@ -1966,8 +2050,20 @@
           <button class="btn" id="kobo-edit">Modifier</button>
         </div></div>
       ${koboWarning()}
+      <div class="filters" id="kobo-filters">
+        <input class="search" type="search" id="kq" placeholder="Titre, auteur, série…" value="${esc(k.q)}">
+        <button class="btn filters-toggle" type="button" id="kfilters-toggle">${filtered ? 'Filtres · actifs' : 'Filtres'}</button>
+        ${cats.some((x) => x.count > 0) ? '<input type="search" id="kcat" placeholder="Toutes les catégories">' : ''}
+        ${collections.length ? '<input type="search" id="kcoll" placeholder="Toutes les collections">' : ''}
+        ${seriesList.length ? '<input type="search" id="kseries" placeholder="Toutes les séries">' : ''}
+        ${tags.some((t) => t.count) ? '<input type="search" id="ktag" placeholder="Tous les tags">' : ''}
+        ${members.length ? `<select id="kreader">${opt('', 'Tous les lecteurs', k.reader)}${members.map((m) => opt(m.id, m.username, k.reader)).join('')}</select>` : ''}
+        <select id="kreading">${[['', 'Lecture : toutes'], ['unread', 'Pas commencés'], ['reading', 'En cours'], ['read', 'Lus'], ['abandoned', 'Abandonnés'], ['pending', 'En attente d’import']].map(([v, l]) => opt(v, l, k.reading)).join('')}</select>
+        <select id="ksort">${[['series', 'Tri : série'], ['title', 'Tri : titre'], ['author', 'Tri : auteur'], ['recent', 'Tri : dernière lecture']].map(([v, l]) => opt(v, l, k.sort)).join('')}</select>
+        ${filtered ? '<button class="btn" type="button" id="kclear">Effacer les filtres</button>' : ''}
+      </div>
       <div class="seg seg-3" style="max-width:560px">
-        ${seg('all', 'Tous', d.items.length)}${seg('nobook', 'Sans fiche', d.noBook)}${seg('nofile', 'Sans fichier', d.noFile)}
+        ${seg('all', 'Tous', d.items.length)}${seg('nobook', 'Sans fiche', d.items.filter((i) => !i.book).length)}${seg('nofile', 'Sans fichier', d.items.filter((i) => i.book && !i.book.hasFile).length)}
       </div>
       ${items.length ? `<div class="card table-wrap"><table class="stack"><thead><tr><th>Livre sur la liseuse</th><th>Lecture</th><th>Fiche</th><th>Fichier dans la biblio</th></tr></thead><tbody>
         ${items.map((i) => `<tr>
@@ -1984,16 +2080,38 @@
     const item = (btn, key) => d.items.find((i) => i.id === Number(btn.dataset[key]));
     // Fichier de la liseuse envoye dans l'exemplaire numerique de la fiche.
     const copyFile = async (i, out) => {
-      if (!out.book || out.book.hasFile || !out.book.copyId || !i.path) return;
+      if (!out.book || out.book.hasFile || !i.path) return;
       if (!connected()) { toast('Fiche enregistrée. Branche la liseuse (Brancher et scanner) pour copier le fichier.'); return; }
       const file = await kobo.file(i.path);
       if (!file) throw new Error('Fichier introuvable sur la liseuse.');
-      await uploadEpub(out.book.copyId, new File([file], i.path.split('/').pop(), { type: 'application/epub+zip' }));
+      // Fiche rapprochee automatiquement : exemplaire numerique cree au besoin.
+      let copyId = out.book.copyId;
+      if (!copyId) {
+        const r = await api(`/api/books/${out.book.id}/copies`, { method: 'POST', body: { format: 'ebook' } });
+        copyId = r.book.copies.find((c) => c.format === 'ebook').id;
+      }
+      await uploadEpub(copyId, new File([file], i.path.split('/').pop(), { type: 'application/epub+zip' }));
     };
     $$('[data-filter]').forEach((btn) => { btn.onclick = () => { koboState.filter = btn.dataset.filter; route(); }; });
+    // Filtres : page redessinee (la recherche garde le focus).
+    const refilter = () => { k.focus = document.activeElement && document.activeElement.id === 'kq'; route(); };
+    $('#kq').addEventListener('input', debounce((e) => { k.q = e.target.value; refilter(); }, 300));
+    if (k.focus) { const input = $('#kq'); input.focus(); input.setSelectionRange(input.value.length, input.value.length); k.focus = false; }
+    [['#kcat', 'category', cats.filter((x) => x.count > 0).map((x) => ({ id: x.id, name: x.name, count: x.count }))],
+      ['#kcoll', 'collection', collections.map((x) => ({ id: x.name, name: x.name, count: x.count }))],
+      ['#kseries', 'series', seriesList.map((x) => ({ id: x.name, name: x.name, count: x.count }))],
+      ['#ktag', 'tag', tags.filter((t) => t.count > 0).map((t) => ({ id: t.id, name: '#' + t.name, count: t.count }))],
+    ].forEach(([sel, key, list]) => {
+      if ($(sel)) searchPicker({ input: $(sel), items: list, value: k[key], onPick: (v) => { if (v !== String(k[key] || '')) { k[key] = v; refilter(); } } });
+    });
+    [['#kreader', 'reader'], ['#kreading', 'reading'], ['#ksort', 'sort']].forEach(([sel, key]) => {
+      if ($(sel)) $(sel).onchange = (e) => { k[key] = e.target.value; refilter(); };
+    });
+    $('#kfilters-toggle').onclick = () => $('#kobo-filters').classList.toggle('open');
+    if ($('#kclear')) $('#kclear').onclick = () => { Object.assign(k, { q: '', category: '', collection: '', series: '', tag: '', reader: '', reading: '' }); refilter(); };
     $('#kobo-edit').onclick = () => editKoboDialog(d, members);
     $('#kobo-rescan').onclick = busy(async () => {
-      const r = await scanKobo();
+      const r = await (connected() && kobo.root ? scanKobo(kobo.root) : koboSavedInfo ? reconnectKobo() : scanKobo());
       if (r.id !== d.id) { toast(`C'est une autre liseuse : ${r.name}.`); go(`#/kobo/${r.id}`); return; }
       toast('Liseuse scannée.');
       route();
@@ -2011,7 +2129,7 @@
     });
     const copyAll = $('#kobo-copy-all');
     if (copyAll) copyAll.onclick = busy(async (btn) => {
-      if (!connected()) await connectKobo();
+      if (!connected()) await (koboSavedInfo ? reconnectKobo() : connectKobo());
       if (!connected()) throw new Error("Ce n'est pas la bonne liseuse.");
       let ok = 0;
       let failed = 0;
@@ -2044,7 +2162,7 @@
     $$('[data-copy]').forEach((btn) => {
       btn.onclick = busy(async () => {
         const i = item(btn, 'copy');
-        if (!connected()) await connectKobo();
+        if (!connected()) await (koboSavedInfo ? reconnectKobo() : connectKobo());
         if (!connected()) throw new Error("Ce n'est pas la bonne liseuse.");
         await copyFile(i, i);
         toast('Fichier copié dans la bibliothèque.');
@@ -4915,5 +5033,6 @@
     renderHeader();
     window.addEventListener('hashchange', route);
     route();
+    koboRestore();
   })();
 })();
