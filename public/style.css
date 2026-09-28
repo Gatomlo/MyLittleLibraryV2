@@ -208,6 +208,10 @@ p { margin: 0 0 10px; }
 .stars-off { color: var(--border); }
 .rating-avg { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .rating-avg strong { font-size: 28px; }
+.rating-dist { display: flex; flex-direction: column; gap: 8px; }
+.rating-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 28px; gap: 10px; align-items: center; }
+.rating-row .stars { font-size: 15px; }
+.rating-row .rank-bar { margin: 0; }
 /* Lecteurs d'un livre (fiche) */
 .readers-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 4px; }
 .readers-box .chip { margin: 0; background: var(--grape-soft); color: var(--grape); }

@@ -4418,7 +4418,10 @@
   function ratingsHtml(r, empty) {
     if (!r.count) return `<p class="muted small">${empty}</p>`;
     return `<div class="rating-avg"><strong>${fmt(r.average)}</strong> / 5 ${starsHtml(Math.round(r.average))} <span class="small muted">${fmt(r.count)} note(s)</span></div>`
-      + rankList([5, 4, 3, 2, 1].map((n) => ({ name: '★'.repeat(n), count: r.distribution[n - 1] })), { empty }).replace(/<span class="rank-pos">\d+<\/span>/g, '');
+      + `<div class="rating-dist">${[5, 4, 3, 2, 1].map((n) => {
+        const v = r.distribution[n - 1];
+        return `<div class="rating-row">${starsHtml(n)}<div class="rank-bar"><span style="width:${(v / Math.max(1, ...r.distribution)) * 100}%"></span></div><span class="rank-count">${fmt(v)}</span></div>`;
+      }).join('')}</div>`;
   }
 
   const panel = (title, body, cls = '') => `<section class="panel ${cls}"><h3>${title}</h3>${body}</section>`;
