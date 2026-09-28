@@ -883,7 +883,8 @@
     ['cover', 'Couverture'], ['title', 'Titre'], ['authors', 'Auteurs'], ['series', 'Série et tome'], ['collection', 'Collection'],
     ['categories', 'Catégories'], ['tags', 'Tags', 'tags'], ['readers', 'Lecteurs (gestion)'], ['status', 'Statut de lecture et avis', 'readingStatus'], ['availability', 'Disponibilité'], ['ebook', 'Bandeau « Numérique »', 'ebooks'],
   ];
-  const ALL_CATALOG_FILTERS = ['search', 'category', 'collection', 'series', 'tag', 'reader', 'availability', 'format', 'status', 'sort', 'count'];
+  const ALL_CATALOG_FILTERS = ['search', 'category', 'collection', 'series', 'tag', 'mine', 'reader', 'availability', 'format',
+    'statusUser', 'reading', 'opinion', 'sort', 'count'];
   const catalogConf = () => {
     const conf = (state.settings && state.settings.catalog) || {};
     return {
@@ -894,8 +895,10 @@
 
   // [cle, libelle, option de la bibliotheque necessaire]
   const CATALOG_FILTER_LABELS = [
-    ['search', 'Recherche'], ['category', 'Catégories'], ['collection', 'Collections'], ['series', 'Séries'], ['tag', 'Tags', 'tags'], ['reader', 'Lecteurs (gestion)'],
-    ['availability', 'Disponibilité'], ['format', 'Papier / numérique', 'ebooks'], ['status', 'Statuts de lecture', 'readingStatus'], ['sort', 'Tri'], ['count', 'Nombre de livres'],
+    ['search', 'Recherche'], ['category', 'Catégories'], ['collection', 'Collections'], ['series', 'Séries'], ['tag', 'Tags', 'tags'], ['mine', 'Mes livres (gestion)'], ['reader', 'Lecteurs (gestion)'],
+    ['availability', 'Disponibilité'], ['format', 'Papier / numérique', 'ebooks'],
+    ['statusUser', 'Statuts de… (choix du compte)', 'readingStatus'], ['reading', 'Statut de lecture', 'readingStatus'], ['opinion', 'Avis', 'readingStatus'],
+    ['sort', 'Tri'], ['count', 'Nombre de livres'],
   ];
 
   // Transforme une page "titre h2 + contenu" en sections repliables (accordeon) ;
@@ -933,7 +936,7 @@
     const c = state.catalog;
     const conf = catalogConf();
     const show = (k) => conf.filters.includes(k);
-    const withStatus = statusesOn() && show('status');
+    const withStatus = statusesOn() && show('statusUser');
     const withReader = canManage() && show('reader');
     state.selecting = false;
     state.selected = new Set();
@@ -957,6 +960,9 @@
     if (show('collection') && collections.length) controls.push(['collection', 'Collection', '<input type="search" id="coll" placeholder="Toutes les collections">']);
     if (show('series') && seriesList.length) controls.push(['series', 'Série', '<input type="search" id="seriesf" placeholder="Toutes les séries">']);
     if (show('tag') && tags.some((t) => t.count)) controls.push(['tag', 'Tag', '<input type="search" id="tagf" placeholder="Tous les tags">']);
+    if (canManage() && show('mine')) {
+      controls.push(['mine', '', `<label class="check filter-check"><input type="checkbox" id="mine" ${c.mine ? 'checked' : ''}> Mes livres</label>`]);
+    }
     if (withReader && members.length) {
       controls.push(['reader', 'Lecteur', `<select id="reader">
         <option value="">Tous les lecteurs</option>
@@ -977,14 +983,18 @@
     if (withStatus) {
       controls.push(['status-user', 'Statuts de lecture', `<select id="status-user" title="Statuts de lecture de…">
         ${members.map((m) => `<option value="${m.id}" ${String(m.id) === c.statusUser ? 'selected' : ''}>${m.id === state.user.id ? 'Mes statuts' : 'Statuts de ' + esc(m.username)}</option>`).join('')}</select>`]);
-      controls.push(['reading', '', `<select id="reading">
+    }
+    if (statusesOn() && show('reading')) {
+      controls.push(['reading', withStatus ? '' : 'Lecture', `<select id="reading">
         <option value="">Lecture : tous</option>
         <option value="to_read" ${sel(c.reading, 'to_read')}>À lire</option>
         <option value="reading" ${sel(c.reading, 'reading')}>En cours</option>
         <option value="read" ${sel(c.reading, 'read')}>Lu</option>
         <option value="abandoned" ${sel(c.reading, 'abandoned')}>Abandonné</option>
         <option value="none" ${sel(c.reading, 'none')}>Sans statut</option></select>`]);
-      controls.push(['opinion', '', `<select id="opinion">
+    }
+    if (statusesOn() && show('opinion')) {
+      controls.push(['opinion', withStatus || show('reading') ? '' : 'Avis', `<select id="opinion">
         <option value="">Avis : tous</option>
         <option value="liked" ${sel(c.opinion, 'liked')}>Aimé</option>
         <option value="disliked" ${sel(c.opinion, 'disliked')}>Pas aimé</option></select>`]);
@@ -1019,7 +1029,7 @@
     function renderToggle() {
       const btn = $('#filters-toggle');
       if (!btn) return;
-      const n = ['category', 'collection', 'series', 'tag', 'reader', 'status', 'format', 'reading', 'opinion'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0);
+      const n = ['category', 'collection', 'series', 'tag', 'mine', 'reader', 'status', 'format', 'reading', 'opinion'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0);
       btn.textContent = n ? `Filtres · ${n}` : 'Filtres';
       btn.classList.toggle('btn-primary', n > 0);
     }
@@ -1081,6 +1091,7 @@
       });
     }
     if (canManage()) bindSelection(reload);
+    if ($('#mine')) $('#mine').onchange = (e) => { c.mine = e.target.checked; reload(); };
     [['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#reader', 'reader'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion']].forEach(([selector, key]) => {
       const el = $(selector);
       if (el) el.addEventListener('change', (e) => { c[key] = e.target.value; reload(); });
@@ -1287,12 +1298,13 @@
     if (c.missing && canManage()) params.set('missing', c.missing);
     if (features().tags && c.tag) params.set('tag', c.tag);
     if (canManage() && c.reader && show('reader')) params.set('reader', c.reader);
+    if (canManage() && c.mine && show('mine')) params.set('mine', '1');
     if (features().ebooks && c.format && show('format')) params.set('format', c.format);
     if (withStatus) {
       // Statuts affiches sur les couvertures : ceux du compte choisi (le sien par defaut).
-      params.set('statusUser', show('status') ? c.statusUser || '' : String(state.user.id));
-      if (show('status') && c.reading) params.set('reading', c.reading);
-      if (show('status') && c.opinion) params.set('opinion', c.opinion);
+      params.set('statusUser', show('statusUser') ? c.statusUser || '' : String(state.user.id));
+      if (show('reading') && c.reading) params.set('reading', c.reading);
+      if (show('opinion') && c.opinion) params.set('opinion', c.opinion);
     }
     Object.entries(extra).forEach(([k, v]) => params.set(k, v));
     return params;
@@ -1329,7 +1341,7 @@
         ${meta || ebookBadge ? `<div class="meta">${meta}${ebookBadge}</div>` : ''}
       </a>`;
     }).join('');
-    const filtered = c.missing || c.q || c.category || c.tag || c.reader || c.collection || c.series || c.status || c.format || c.reading || c.opinion;
+    const filtered = c.missing || c.q || c.category || c.tag || c.mine || c.reader || c.collection || c.series || c.status || c.format || c.reading || c.opinion;
     if (append) list.insertAdjacentHTML('beforeend', html);
     else list.innerHTML = html || `<div class="empty" style="grid-column:1/-1">${filtered ? 'Aucun livre ne correspond.' : 'Le catalogue est vide pour le moment.'}</div>`;
     if ($('#count')) $('#count').textContent = `${data.total} livre${data.total > 1 ? 's' : ''}`;
@@ -1342,10 +1354,7 @@
   // ================= Fiche livre =================
   async function viewBook(id) {
     const manage = canManage();
-    const [book, members] = await Promise.all([
-      api(manage ? `/api/books/${id}` : `/api/public/books/${id}`),
-      manage ? loadMembers().catch(() => []) : [],
-    ]);
+    const book = await api(manage ? `/api/books/${id}` : `/api/public/books/${id}`);
     const facts = [
       ['Auteur(s)', esc(book.authors)],
       ['Éditeur', esc(book.publisher)],
@@ -1365,7 +1374,7 @@
           <h1>${esc(book.title)}</h1>
           ${book.subtitle ? `<div class="subtitle">${esc(book.subtitle)}</div>` : ''}
           ${availabilityBadge(book)}
-          ${manage ? readersHtml(book, members) : ''}
+          ${manage ? readersHtml(book) : ''}
           ${manage && book.myStatus ? statusEditorHtml(book) : ''}
           <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
           ${book.summary ? `<h3>Résumé</h3><p class="summary">${esc(book.summary)}</p>` : ''}
@@ -1380,13 +1389,13 @@
       <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
       ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}`;
     if (manage) bindAdminBook(book);
-    if (manage) bindReaders(book, members);
+    if (manage) bindReaders(book);
     if (manage && book.myStatus) bindStatusEditor(book);
     // Tag : catalogue filtre sur ce tag.
     $$('[data-tag]').forEach((a) => {
       a.onclick = (e) => {
         e.preventDefault();
-        Object.assign(state.catalog, { q: '', category: '', collection: '', series: '', status: '', format: '', reading: '', opinion: '', tag: a.dataset.tag, page: 1 });
+        Object.assign(state.catalog, { q: '', category: '', collection: '', series: '', status: '', format: '', reading: '', opinion: '', mine: false, reader: '', tag: a.dataset.tag, page: 1 });
         go('#/');
       };
     });
@@ -1394,48 +1403,40 @@
     $$('[data-collection], [data-series]').forEach((a) => {
       a.onclick = (e) => {
         e.preventDefault();
-        Object.assign(state.catalog, { q: '', category: '', tag: '', status: '', format: '', reading: '', opinion: '',
+        Object.assign(state.catalog, { q: '', category: '', tag: '', status: '', format: '', reading: '', opinion: '', mine: false, reader: '',
           collection: a.dataset.collection || '', series: a.dataset.series || '', page: 1 });
         go('#/');
       };
     });
   }
 
-  // Lecteurs du livre (comptes membres) avec leur statut de lecture. Tout membre peut
-  // en ajouter ou en retirer ; le statut de lecture n'y touche jamais.
-  function readersHtml(book, members) {
+  // Lecteurs du livre (comptes membres) avec leur statut de lecture. Sur la fiche :
+  // bouton "Interesse" pour soi ; les autres lecteurs se choisissent dans "Modifier".
+  // Le statut de lecture n'y touche jamais.
+  function readersHtml(book) {
     const readers = book.readers || [];
     const statusOf = (u) => {
       const s = u.id === state.user.id ? book.myStatus : (book.statuses || []).find((o) => o.userId === u.id);
       return s && s.reading ? ` · ${READING_LABELS[s.reading]}` : '';
     };
-    const others = members.filter((m) => !readers.some((r) => r.id === m.id));
+    const mine = readers.some((r) => r.id === state.user.id);
     return `<div class="readers-box" id="readers">
-      <span class="small muted">Lecteurs</span>
-      ${readers.map((u) => `<span class="chip chip-reader">${u.id === state.user.id ? 'Moi' : esc(u.username)}${statusesOn() ? esc(statusOf(u)) : ''}<button type="button" data-reader-remove="${u.id}" aria-label="Retirer ${esc(u.username)}" title="Retirer ce lecteur">×</button></span>`).join('')}
-      ${others.length ? `<select id="reader-add" aria-label="Ajouter un lecteur"><option value="">+ Lecteur…</option>
-        ${others.map((m) => `<option value="${m.id}">${m.id === state.user.id ? 'Moi' : esc(m.username)}</option>`).join('')}</select>` : ''}
+      <button type="button" class="pill ${mine ? 'on pill-reader' : ''}" id="reader-me" title="${mine ? 'Ne plus être lecteur de ce livre' : 'Devenir lecteur de ce livre'}">${mine ? '✓ Intéressé' : 'Intéressé'}</button>
+      ${readers.length ? `<span class="small muted">Lecteurs</span>
+        ${readers.map((u) => `<span class="chip chip-reader">${u.id === state.user.id ? 'Moi' : esc(u.username)}${statusesOn() ? esc(statusOf(u)) : ''}</span>`).join('')}` : ''}
     </div>`;
   }
 
-  function bindReaders(book, members) {
-    const refresh = (readers) => {
-      book.readers = readers;
-      $('#readers').outerHTML = readersHtml(book, members);
-      bindReaders(book, members);
+  function bindReaders(book) {
+    $('#reader-me').onclick = async () => {
+      const mine = (book.readers || []).some((r) => r.id === state.user.id);
+      try {
+        book.readers = await api(`/api/books/${book.id}/readers${mine ? '/' + state.user.id : ''}`,
+          mine ? { method: 'DELETE' } : { method: 'POST', body: { userId: state.user.id } });
+        $('#readers').outerHTML = readersHtml(book);
+        bindReaders(book);
+      } catch (err) { toast(err.message, 'error'); }
     };
-    $$('[data-reader-remove]').forEach((btn) => {
-      btn.onclick = async () => {
-        try { refresh(await api(`/api/books/${book.id}/readers/${btn.dataset.readerRemove}`, { method: 'DELETE' })); } catch (err) { toast(err.message, 'error'); }
-      };
-    });
-    const add = $('#reader-add');
-    if (add) {
-      add.onchange = async () => {
-        if (!add.value) return;
-        try { refresh(await api(`/api/books/${book.id}/readers`, { method: 'POST', body: { userId: Number(add.value) } })); } catch (err) { toast(err.message, 'error'); }
-      };
-    }
   }
 
   // Statuts de lecture (propres a chaque compte) : A lire / En cours / Lu /
@@ -1474,7 +1475,7 @@
         book.myStatus = await api(`/api/books/${book.id}/status`, { method: 'PUT', body });
         $('.status-editor').outerHTML = statusEditorHtml(book);
         bindStatusEditor(book);
-        if ($('#readers')) { $('#readers').outerHTML = readersHtml(book, membersCache || []); bindReaders(book, membersCache || []); }
+        if ($('#readers')) { $('#readers').outerHTML = readersHtml(book); bindReaders(book); }
       } catch (err) { toast(err.message, 'error'); }
     };
     $$('.status-editor [data-reading], .status-editor [data-opinion]').forEach((btn) => {
@@ -2024,7 +2025,7 @@
       api('/api/public/collections').catch(() => []),
       api('/api/public/series').catch(() => []),
       features().tags ? api('/api/tags').catch(() => []) : [],
-      editing ? [] : loadMembers().catch(() => []),
+      loadMembers().catch(() => []),
     ]);
     const b = book || { isbn: '', title: '', subtitle: '', authors: '', publisher: '', collection: '', series: '', seriesNumber: '', year: '', pages: '', summary: '', notes: '', categories: [], coverUrl: null, format: 'physical' };
     const form = { categories: b.categories.map((c) => c.name), tags: (b.tags || []).map((t) => t.name), cover: { url: b.coverUrl ? mediaSrc(b.coverUrl) : '', remoteUrl: '', data: '', removed: false } };
@@ -2100,9 +2101,9 @@
             <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist></div>
         </div>
         ${features().ebooks ? `<div class="field"><label class="check"><input type="checkbox" name="ebook" id="ebook">
-          <span>Version numérique ${hint('Exemplaire numérique (epub, pdf…), sans code, étiquette ni prêt.')}</span></label></div>` : ''}
-        ${members.length > 1 ? `<div class="field"><label>Lecteurs ${hint('Comptes qui lisent ou liront ce livre.')}</label>
-          <div class="btn-row">${members.map((m) => `<label class="check"><input type="checkbox" data-reader="${m.id}" ${m.id === state.user.id ? 'checked' : ''}> ${m.id === state.user.id ? 'Moi' : esc(m.username)}</label>`).join('')}</div></div>` : ''}`}
+          <span>Version numérique ${hint('Exemplaire numérique (epub, pdf…), sans code, étiquette ni prêt.')}</span></label></div>` : ''}`}
+        ${members.length > 1 || editing ? `<div class="field"><label>Lecteurs ${hint('Comptes qui lisent, liront ou ont lu ce livre.')}</label>
+          <div class="btn-row">${members.map((m) => `<label class="check"><input type="checkbox" data-reader="${m.id}" ${(editing ? (b.readers || []).some((r) => r.id === m.id) : m.id === state.user.id) ? 'checked' : ''}> ${m.id === state.user.id ? 'Moi' : esc(m.username)}</label>`).join('')}</div></div>` : ''}
         <div class="field"><label for="notes">Notes internes ${hint('Visibles uniquement par les gestionnaires.')}</label><textarea id="notes" name="notes" style="min-height:70px">${esc(b.notes)}</textarea></div>
         <div id="form-err"></div>
         <div class="btn-row"><button class="btn btn-primary" type="submit">${editing ? 'Enregistrer' : 'Ajouter au catalogue'}</button></div>
@@ -2241,8 +2242,8 @@
         body.copies = Math.max(0, Number(f.copies.value) || 0);
         body.location = f.location.value;
         body.ebook = !!(f.ebook && f.ebook.checked);
-        if ($$('[data-reader]', f).length) body.readers = $$('[data-reader]', f).filter((x) => x.checked).map((x) => Number(x.dataset.reader));
       }
+      if ($$('[data-reader]', f).length) body.readers = $$('[data-reader]', f).filter((x) => x.checked).map((x) => Number(x.dataset.reader));
       try {
         const saved = await api(editing ? `/api/books/${b.id}` : '/api/books', { method: editing ? 'PUT' : 'POST', body });
         if (editing) toast('Fiche enregistrée.');

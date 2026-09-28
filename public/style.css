@@ -204,7 +204,7 @@ p { margin: 0 0 10px; }
 /* Lecteurs d'un livre (fiche) */
 .readers-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 4px; }
 .readers-box .chip { margin: 0; background: var(--grape-soft); color: var(--grape); }
-.readers-box select { width: auto; padding: 3px 8px; font-size: 13px; }
+.pill.pill-reader { background: var(--grape-soft); color: var(--grape); }
 .pill { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .pill:hover { background: var(--surface-2); }
 .pill.on { border-color: transparent; }
@@ -307,6 +307,7 @@ input[type="checkbox"], input[type="radio"] { width: auto; min-height: 0; paddin
 /* ---------- Catalogue ---------- */
 /* Filtres : se repartissent sur la largeur et passent a la ligne selon la place. */
 .filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.filter-check { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; white-space: nowrap; }
 .filters > * { min-width: 0; }
 .filters > .search { grid-column: span 2; }
 @media (max-width: 420px) { .filters > .search { grid-column: 1 / -1; } }
