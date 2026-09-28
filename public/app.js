@@ -598,13 +598,13 @@
     let links = [];
     if (LIBRARY) {
       links = canManage()
-        ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : []), ...(features().kobo ? [['#/kobo', 'Liseuses', 'kobo']] : [])]
+        ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : []), ...(koboOn() ? [[`#/kobo/${kobo.device.id}`, kobo.device.name, 'kobo']] : [])]
         : [['#/', 'Catalogue', 'catalog']];
     }
     let current = '#/' + (location.hash.replace(/^#\/?/, '').split('/')[0] || '');
     if (current === '#/import') current = '#/add'; // ajout multiple : sous-page de Ajouter
     $('#nav').innerHTML = links.map(([href, label, ic]) => {
-      const active = href === current || (href === '#/' && (current === '#/book' || current === '#/'));
+      const active = href === current || href.startsWith(current + '/') || (href === '#/' && (current === '#/book' || current === '#/'));
       return `<a href="${href}" class="${active ? 'active' : ''}" style="${colorVars(ic)}">${icon(ic)}<span>${label}</span></a>`;
     }).join('');
     // Etiquettes et reglages : seulement dans le menu du compte (tous les ecrans).
@@ -662,6 +662,10 @@
       <div class="menu-title">${esc(state.settings.libraryName)}</div>
       <a class="menu-item" href="#/labels">${icon('labels')}Étiquettes</a>
       <a class="menu-item" href="#/settings">${icon('settings')}Réglages</a>` : ''}
+      ${canManage() && features().kobo ? `<div class="menu-sep"></div>
+      <div class="menu-title">Liseuses</div>
+      <button class="menu-item" type="button" id="menu-kobo-connect">${icon('kobo')}${koboOn() ? `Rescanner ${esc(kobo.device.name)}` : 'Brancher une liseuse'}</button>
+      <a class="menu-item" href="#/kobo">${icon('kobo')}Toutes les liseuses</a>` : ''}
       <div class="menu-sep"></div>
       <a class="menu-item" href="#/account">${icon('user')}Mon compte</a>
       ${canInstall() ? `<button class="menu-item" type="button" id="install-app">${icon('install')}Installer l'application</button>` : ''}
@@ -671,6 +675,15 @@
     $('#account-btn').setAttribute('aria-expanded', 'true');
     menu.addEventListener('click', (e) => e.stopPropagation());
     $$('a', menu).forEach((a) => a.addEventListener('click', closeMenu));
+    const menuKobo = $('#menu-kobo-connect', menu);
+    if (menuKobo) menuKobo.onclick = async () => {
+      closeMenu();
+      try {
+        const d = await scanKobo();
+        toast(`Liseuse « ${d.name} » branchée.`);
+        go(`#/kobo/${d.id}`);
+      } catch (err) { if (err.name !== 'AbortError') toast(err.message, 'error'); }
+    };
     $$('[data-default]', menu).forEach((btn) => {
       btn.onclick = async () => {
         const id = Number(btn.dataset.default);
@@ -1007,13 +1020,11 @@
         <option value="disliked" ${sel(c.opinion, 'disliked')}>Pas aimé</option></select>`]);
     }
     // Liseuse : filtre disponible quand une Kobo est branchee (scannee dans cette session).
-    if (canManage() && features().kobo) {
-      controls.push(['kobo', 'Liseuse', kobo && kobo.device
-        ? `<select id="kobo-filter">
+    if (koboOn()) {
+      controls.push(['kobo', 'Liseuse', `<select id="kobo-filter">
             <option value="">Liseuse : tous les livres</option>
             <option value="on" ${sel(c.kobo, 'on')}>Déjà sur ${esc(kobo.device.name)}</option>
-            <option value="off" ${sel(c.kobo, 'off')}>Pas encore sur ${esc(kobo.device.name)}</option></select>`
-        : '<button class="btn" type="button" id="kobo-connect">Brancher la Kobo</button>']);
+            <option value="off" ${sel(c.kobo, 'off')}>Pas encore sur ${esc(kobo.device.name)}</option></select>`]);
     }
     if (show('sort')) {
       controls.push(['sort', 'Tri', `<select id="sort">
@@ -1109,8 +1120,6 @@
     }
     if (canManage()) bindSelection(reload);
     if ($('#mine')) $('#mine').onchange = (e) => { c.mine = e.target.checked; reload(); };
-    const koboConnect = $('#kobo-connect');
-    if (koboConnect) koboConnect.onclick = busy(async () => { await scanKobo(); toast('Liseuse branchée.'); route(); });
     [['#kobo-filter', 'kobo'], ['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#reader', 'reader'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion']].forEach(([selector, key]) => {
       const el = $(selector);
       if (el) el.addEventListener('change', (e) => { c[key] = e.target.value; reload(); });
@@ -1131,7 +1140,7 @@
       <button class="btn btn-small" type="button" id="select-all">Tout sélectionner</button>
       <button class="btn btn-small" type="button" id="select-none">Aucun</button>
       <button class="btn btn-small btn-primary" type="button" id="select-edit">Modifier</button>
-      ${features().kobo ? '<button class="btn btn-small" type="button" id="select-kobo">Envoyer sur la liseuse</button>' : ''}
+      ${koboOn() ? '<button class="btn btn-small" type="button" id="select-kobo">Envoyer sur la liseuse</button>' : ''}
       <button class="btn btn-small btn-danger" type="button" id="select-delete">Supprimer</button>
       <button class="btn btn-small" type="button" id="select-done" style="margin-left:auto">Terminer</button>
     </div>`);
@@ -1331,7 +1340,7 @@
     if (canManage() && c.reader && show('reader')) params.set('reader', c.reader);
     if (canManage() && c.mine && show('mine')) params.set('mine', '1');
     if (features().ebooks && c.format && show('format')) params.set('format', c.format);
-    if (canManage() && features().kobo && kobo && kobo.device && c.kobo) {
+    if (koboOn() && c.kobo) {
       params.set('kobo', c.kobo);
       params.set('koboDevice', kobo.device.id);
     }
@@ -1418,7 +1427,7 @@
           ${manage && book.notes ? `<h3>Notes internes</h3><p class="summary muted">${esc(book.notes)}</p>` : ''}
           ${manage ? `<div class="btn-row" style="margin-top:14px">
               <a class="btn" href="#/book/${book.id}/edit">Modifier</a>
-              ${features().kobo && book.ebookFile && book.ebookFile.download ? '<button class="btn" id="push-kobo">Envoyer sur la Kobo</button>' : ''}
+              ${koboOn() && book.ebookFile && book.ebookFile.download ? `<button class="btn" id="push-kobo">Envoyer sur ${esc(kobo.device.name)}</button>` : ''}
               <button class="btn btn-danger" id="del-book">Supprimer</button>
             </div>` : ''}
         </div>
@@ -1712,6 +1721,9 @@
   const KOBO_FS = typeof window.showDirectoryPicker === 'function';
   let kobo = null; // liseuse branchee : { serial, version, file(chemin), write(chemin, blob) | null }
   const koboState = { filter: 'all' };
+  // Liseuse branchee (et connue de la bibliotheque) : onglet, filtre du catalogue et
+  // boutons d'envoi n'apparaissent qu'a cette condition.
+  const koboOn = () => canManage() && features().kobo && !!kobo && !!kobo.device;
   let koboReturn = null; // fiche creee depuis une liseuse : { deviceId, name, bookId }
 
   const koboWarning = () => (KOBO_FS ? '' : `<div class="warn-box">Ce navigateur ne peut pas écrire sur la liseuse : le scan fonctionne, mais les livres envoyés sont téléchargés et doivent être copiés à la main sur la Kobo. <strong>Utilise de préférence Chrome</strong> (Windows, Linux, Chromebook).</div>`);
@@ -1767,6 +1779,7 @@
     // Liseuse deja connue de la bibliotheque (filtres du catalogue, envois).
     src.device = (await api('/api/kobo/devices').catch(() => [])).find((d) => d.serial === src.serial) || null;
     kobo = src;
+    renderNav();
     return src;
   }
 
@@ -1775,6 +1788,7 @@
     const dbFile = await src.file('.kobo/KoboReader.sqlite');
     if (!dbFile) throw new Error('Base de la liseuse introuvable (.kobo/KoboReader.sqlite).');
     src.device = await sendRaw('/api/kobo/scan', 'POST', dbFile, 'application/x-sqlite3', { 'X-Kobo-Version': encodeURIComponent(src.version) });
+    renderNav();
     return src.device;
   }
 
@@ -1909,12 +1923,18 @@
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(); });
     $('[data-delete]', backdrop).onclick = async () => {
       if (!confirm(`Retirer la liseuse « ${d.name} » de la bibliothèque ? (Rien n'est effacé sur la liseuse ni dans les fiches.)`)) return;
-      try { await api(`/api/kobo/devices/${d.id}`, { method: 'DELETE' }); close(); go('#/kobo'); } catch (err) { toast(err.message, 'error'); }
+      try {
+        await api(`/api/kobo/devices/${d.id}`, { method: 'DELETE' });
+        if (kobo && kobo.device && kobo.device.id === d.id) { kobo.device = null; renderNav(); }
+        close();
+        go('#/kobo');
+      } catch (err) { toast(err.message, 'error'); }
     };
     $('form', backdrop).onsubmit = async (e) => {
       e.preventDefault();
       try {
-        await api(`/api/kobo/devices/${d.id}`, { method: 'PUT', body: { name: e.target.name.value, userId: e.target.userId.value || null } });
+        const r = await api(`/api/kobo/devices/${d.id}`, { method: 'PUT', body: { name: e.target.name.value, userId: e.target.userId.value || null } });
+        if (kobo && kobo.device && kobo.device.id === r.id) { kobo.device = r; renderNav(); }
         close();
         route();
       } catch (err) { toast(err.message, 'error'); }
