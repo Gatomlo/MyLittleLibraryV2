@@ -1722,8 +1722,10 @@
   // lecture/ecriture (File System Access). Ailleurs (Firefox) : dossier choisi par un
   // champ "repertoire", en lecture seule ; les envois deviennent des telechargements.
   const KOBO_FS = typeof window.showDirectoryPicker === 'function';
-  // Smartphone ou tablette (ecran tactile sans souris) : pas de liseuse branchee en USB.
-  const TOUCH_ONLY = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+  // Smartphone (ecran tactile sans souris, petit cote < 600 px) : pas de liseuse
+  // branchee en USB. Les tablettes gardent le menu des liseuses.
+  const TOUCH_ONLY = window.matchMedia('(hover: none) and (pointer: coarse)').matches
+    && Math.min(screen.width, screen.height) < 600;
   let kobo = null; // liseuse branchee : { serial, version, file(chemin), write(chemin, blob) | null }
   // Filtres de la page d'une liseuse (memes criteres que le catalogue, plus la lecture).
   const koboState = { filter: 'all', q: '', category: '', collection: '', series: '', tag: '', reader: '', reading: '', sort: 'series', focus: false };
