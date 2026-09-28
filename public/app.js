@@ -900,14 +900,14 @@
 
   // Filtres du catalogue : choisis dans les Reglages (liste + position en haut ou
   // dans une colonne a gauche). Sans reglage : tous, en haut.
-  const ALL_CATALOG_CARD = ['cover', 'title', 'authors', 'series', 'collection', 'categories', 'tags', 'readers', 'status', 'availability', 'ebook'];
+  const ALL_CATALOG_CARD = ['cover', 'title', 'authors', 'series', 'collection', 'categories', 'tags', 'readers', 'status', 'rating', 'availability', 'ebook'];
   // Elements de la miniature d'un livre : [cle, libelle, option de la bibliotheque necessaire]
   const CATALOG_CARD_LABELS = [
     ['cover', 'Couverture'], ['title', 'Titre'], ['authors', 'Auteurs'], ['series', 'Série et tome'], ['collection', 'Collection'],
-    ['categories', 'Catégories'], ['tags', 'Tags', 'tags'], ['readers', 'Lecteurs (gestion)'], ['status', 'Statut de lecture et avis', 'readingStatus'], ['availability', 'Disponibilité'], ['ebook', 'Bandeau « Numérique »', 'ebooks'],
+    ['categories', 'Catégories'], ['tags', 'Tags', 'tags'], ['readers', 'Lecteurs (gestion)'], ['status', 'Statut de lecture et avis', 'readingStatus'], ['rating', 'Note (étoiles)', 'readingStatus'], ['availability', 'Disponibilité'], ['ebook', 'Bandeau « Numérique »', 'ebooks'],
   ];
   const ALL_CATALOG_FILTERS = ['search', 'category', 'collection', 'series', 'tag', 'mine', 'reader', 'availability', 'format',
-    'statusUser', 'reading', 'opinion', 'sort', 'count'];
+    'statusUser', 'reading', 'opinion', 'rating', 'sort', 'count'];
   const catalogConf = () => {
     const conf = (state.settings && state.settings.catalog) || {};
     return {
@@ -920,7 +920,7 @@
   const CATALOG_FILTER_LABELS = [
     ['search', 'Recherche'], ['category', 'Catégories'], ['collection', 'Collections'], ['series', 'Séries'], ['tag', 'Tags', 'tags'], ['mine', 'Mes livres (gestion)'], ['reader', 'Lecteurs (gestion)'],
     ['availability', 'Disponibilité'], ['format', 'Papier / numérique', 'ebooks'],
-    ['statusUser', 'Statuts de… (choix du compte)', 'readingStatus'], ['reading', 'Statut de lecture', 'readingStatus'], ['opinion', 'Avis', 'readingStatus'],
+    ['statusUser', 'Statuts de… (choix du compte)', 'readingStatus'], ['reading', 'Statut de lecture', 'readingStatus'], ['opinion', 'Avis', 'readingStatus'], ['rating', 'Note', 'readingStatus'],
     ['sort', 'Tri'], ['count', 'Nombre de livres'],
   ];
 
@@ -1022,6 +1022,12 @@
         <option value="liked" ${sel(c.opinion, 'liked')}>Aimé</option>
         <option value="disliked" ${sel(c.opinion, 'disliked')}>Pas aimé</option></select>`]);
     }
+    if (statusesOn() && show('rating')) {
+      controls.push(['rating', withStatus || show('reading') || show('opinion') ? '' : 'Note', `<select id="rating">
+        <option value="">Note : toutes</option>
+        ${[5, 4, 3, 2, 1].map((n) => `<option value="${n}" ${sel(c.rating, String(n))}>${'★'.repeat(n)}${n < 5 ? ' et plus' : ''}</option>`).join('')}
+        <option value="none" ${sel(c.rating, 'none')}>Pas noté</option></select>`]);
+    }
     // Liseuse : filtre disponible quand une Kobo est branchee (scannee dans cette session).
     if (koboOn()) {
       controls.push(['kobo', 'Liseuse', `<select id="kobo-filter">
@@ -1060,7 +1066,7 @@
     function renderToggle() {
       const btn = $('#filters-toggle');
       if (!btn) return;
-      const n = ['category', 'collection', 'series', 'tag', 'mine', 'reader', 'status', 'format', 'reading', 'opinion', 'kobo'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0);
+      const n = ['category', 'collection', 'series', 'tag', 'mine', 'reader', 'status', 'format', 'reading', 'opinion', 'rating', 'kobo'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0);
       btn.textContent = n ? `Filtres · ${n}` : 'Filtres';
       btn.classList.toggle('btn-primary', n > 0);
     }
@@ -1123,7 +1129,7 @@
     }
     if (canManage()) bindSelection(reload);
     if ($('#mine')) $('#mine').onchange = (e) => { c.mine = e.target.checked; reload(); };
-    [['#kobo-filter', 'kobo'], ['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#reader', 'reader'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion']].forEach(([selector, key]) => {
+    [['#kobo-filter', 'kobo'], ['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#reader', 'reader'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion'], ['#rating', 'rating']].forEach(([selector, key]) => {
       const el = $(selector);
       if (el) el.addEventListener('change', (e) => { c[key] = e.target.value; reload(); });
     });
@@ -1320,6 +1326,9 @@
     };
   }
 
+  // Note sur 5 etoiles (lecture seule).
+  const starsHtml = (n) => `<span class="stars" title="${n} / 5">${'★'.repeat(n)}<span class="stars-off">${'★'.repeat(5 - n)}</span></span>`;
+
   function statusIcons(s) {
     if (!s || (!s.reading && !s.opinion)) return '';
     return `<span class="status-icons">${s.reading ? `<span class="st st-${s.reading}">${READING_LABELS[s.reading]}</span>` : ''}${s.opinion ? `<span class="st st-${s.opinion}" title="${OPINION_LABELS[s.opinion]}">${OPINION_ICONS[s.opinion]}</span>` : ''}</span>`;
@@ -1352,6 +1361,7 @@
       params.set('statusUser', show('statusUser') ? c.statusUser || '' : String(state.user.id));
       if (show('reading') && c.reading) params.set('reading', c.reading);
       if (show('opinion') && c.opinion) params.set('opinion', c.opinion);
+      if (show('rating') && c.rating) params.set('rating', c.rating);
     }
     Object.entries(extra).forEach(([k, v]) => params.set(k, v));
     return params;
@@ -1377,6 +1387,7 @@
         has('tags') && features().tags && b.tags && b.tags.length ? `<span class="card-terms">${b.tags.map((t) => `<span class="term term-tag">#${esc(t.name)}</span>`).join('')}</span>` : '',
         has('readers') && b.readers && b.readers.length ? `<span class="card-terms">${b.readers.map((u) => `<span class="term term-reader">${esc(u.username)}</span>`).join('')}</span>` : '',
         withStatus && has('status') ? statusIcons(b.status) : '',
+        withStatus && has('rating') && b.status && b.status.rating ? starsHtml(b.status.rating) : '',
         has('availability') ? availabilityBadge(b, false) : '',
       ].join('');
       // Sans couverture, le bandeau "Numerique" passe en pastille.
@@ -1388,7 +1399,7 @@
         ${meta || ebookBadge ? `<div class="meta">${meta}${ebookBadge}</div>` : ''}
       </a>`;
     }).join('');
-    const filtered = c.missing || c.q || c.category || c.tag || c.mine || c.reader || c.collection || c.series || c.status || c.format || c.reading || c.opinion;
+    const filtered = c.missing || c.q || c.category || c.tag || c.mine || c.reader || c.collection || c.series || c.status || c.format || c.reading || c.opinion || c.rating;
     if (append) list.insertAdjacentHTML('beforeend', html);
     else list.innerHTML = html || `<div class="empty" style="grid-column:1/-1">${filtered ? 'Aucun livre ne correspond.' : 'Le catalogue est vide pour le moment.'}</div>`;
     if ($('#count')) $('#count').textContent = `${data.total} livre${data.total > 1 ? 's' : ''}`;
@@ -1447,7 +1458,7 @@
     $$('[data-tag]').forEach((a) => {
       a.onclick = (e) => {
         e.preventDefault();
-        Object.assign(state.catalog, { q: '', category: '', collection: '', series: '', status: '', format: '', reading: '', opinion: '', mine: false, reader: '', tag: a.dataset.tag, page: 1 });
+        Object.assign(state.catalog, { q: '', category: '', collection: '', series: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '', tag: a.dataset.tag, page: 1 });
         go('#/');
       };
     });
@@ -1455,7 +1466,7 @@
     $$('[data-collection], [data-series]').forEach((a) => {
       a.onclick = (e) => {
         e.preventDefault();
-        Object.assign(state.catalog, { q: '', category: '', tag: '', status: '', format: '', reading: '', opinion: '', mine: false, reader: '',
+        Object.assign(state.catalog, { q: '', category: '', tag: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '',
           collection: a.dataset.collection || '', series: a.dataset.series || '', page: 1 });
         go('#/');
       };
@@ -1500,7 +1511,7 @@
   function statusEditorHtml(book) {
     const s = book.myStatus;
     const btn = (group, value, label) => `<button type="button" class="pill ${s[group] === value ? 'on pill-' + value : ''}" data-${group}="${value}">${label}</button>`;
-    const others = (book.statuses || []).map((o) => `<span class="small">${esc(o.username)} : ${[o.reading && READING_LABELS[o.reading], o.opinion && OPINION_LABELS[o.opinion]].filter(Boolean).join(', ')}</span>`);
+    const others = (book.statuses || []).map((o) => `<span class="small">${esc(o.username)} : ${[o.reading && READING_LABELS[o.reading], o.opinion && OPINION_LABELS[o.opinion]].filter(Boolean).join(', ')}${o.rating ? ' ' + starsHtml(o.rating) : ''}</span>`);
     const dateField = (field, label) => `<label class="date-field">${label} <input type="date" data-date="${field}" value="${day(s[field])}" max="${new Date().toISOString().slice(0, 10)}"></label>`;
     let dates = '';
     if (s.reading === 'reading') dates = dateField('startedAt', 'Commencé le');
@@ -1516,6 +1527,9 @@
       ${dates ? `<div class="btn-row status-dates">${dates}</div>` : ''}
       <div class="btn-row" style="margin-top:6px">
         <span class="small muted">Mon avis</span>${btn('opinion', 'liked', '♥ Aimé')}${btn('opinion', 'disliked', '✕ Pas aimé')}
+      </div>
+      <div class="btn-row star-input" style="margin-top:6px">
+        <span class="small muted">Ma note</span>${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="star${s.rating >= n ? ' on' : ''}" data-rating="${n}" title="${n} / 5" aria-label="${n} étoile${n > 1 ? 's' : ''}">★</button>`).join('')}
       </div>
       ${others.length ? `<div class="others">${others.join(' · ')}</div>` : ''}
     </div>`;
@@ -1536,6 +1550,13 @@
         const value = btn.dataset[group];
         const s = book.myStatus;
         save({ reading: s.reading, opinion: s.opinion, [group]: s[group] === value ? null : value });
+      };
+    });
+    // Note : un clic sur la note actuelle la retire.
+    $$('.status-editor [data-rating]').forEach((btn) => {
+      btn.onclick = () => {
+        const n = Number(btn.dataset.rating);
+        save({ reading: book.myStatus.reading, opinion: book.myStatus.opinion, rating: book.myStatus.rating === n ? null : n });
       };
     });
     // Correction d'une date (ex. livre commence avant de l'enregistrer).
@@ -1728,7 +1749,7 @@
     && Math.min(screen.width, screen.height) < 600;
   let kobo = null; // liseuse branchee : { serial, version, file(chemin), write(chemin, blob) | null }
   // Filtres de la page d'une liseuse (memes criteres que le catalogue, plus la lecture).
-  const koboState = { filter: 'all', q: '', category: '', collection: '', series: '', tag: '', reader: '', reading: '', sort: 'series', focus: false };
+  const koboState = { filter: 'all', q: '', category: '', series: '', tag: '', reading: '', sort: 'series', focus: false };
   // Liseuse branchee (et connue de la bibliotheque) : onglet, filtre du catalogue et
   // boutons d'envoi n'apparaissent qu'a cette condition.
   const koboOn = () => canManage() && features().kobo && !!kobo && !!kobo.device;
@@ -2080,13 +2101,13 @@
 
   async function viewKoboDevice(id) {
     const k = koboState;
-    const qs = new URLSearchParams(['q', 'category', 'collection', 'series', 'tag', 'reader', 'reading', 'sort'].filter((key) => k[key]).map((key) => [key, k[key]]));
-    const [d, members, cats, collections, seriesList, tags] = await Promise.all([
+    const qs = new URLSearchParams(['q', 'category', 'series', 'tag', 'reading', 'sort'].filter((key) => k[key]).map((key) => [key, k[key]]));
+    const [d, members, cats, seriesList, tags] = await Promise.all([
       api(`/api/kobo/devices/${id}?${qs}`), loadMembers().catch(() => []),
-      api('/api/public/categories').catch(() => []), api('/api/public/collections').catch(() => []),
+      api('/api/public/categories').catch(() => []),
       api('/api/public/series').catch(() => []), features().tags ? api('/api/public/tags').catch(() => []) : [],
     ]);
-    const filtered = ['q', 'category', 'collection', 'series', 'tag', 'reader', 'reading'].some((key) => k[key]);
+    const filtered = ['q', 'category', 'series', 'tag', 'reading'].some((key) => k[key]);
     const opt = (v, label, cur) => `<option value="${esc(v)}" ${String(cur) === String(v) ? 'selected' : ''}>${esc(label)}</option>`;
     const connected = () => !!kobo && kobo.serial === d.serial;
     const canRemove = connected() && !!kobo.remove;
@@ -2112,14 +2133,12 @@
           <button class="btn" id="kobo-edit">Modifier</button>
         </div></div>
       ${koboWarning()}
-      <div class="filters" id="kobo-filters">
+      <div class="filters filters-search-row" id="kobo-filters">
         <input class="search" type="search" id="kq" placeholder="Titre, auteur, série…" value="${esc(k.q)}">
         <button class="btn filters-toggle" type="button" id="kfilters-toggle">${filtered ? 'Filtres · actifs' : 'Filtres'}</button>
         ${cats.some((x) => x.count > 0) ? '<input type="search" id="kcat" placeholder="Toutes les catégories">' : ''}
-        ${collections.length ? '<input type="search" id="kcoll" placeholder="Toutes les collections">' : ''}
         ${seriesList.length ? '<input type="search" id="kseries" placeholder="Toutes les séries">' : ''}
         ${tags.some((t) => t.count) ? '<input type="search" id="ktag" placeholder="Tous les tags">' : ''}
-        ${members.length ? `<select id="kreader">${opt('', 'Tous les lecteurs', k.reader)}${members.map((m) => opt(m.id, m.username, k.reader)).join('')}</select>` : ''}
         <select id="kreading">${[['', 'Lecture : toutes'], ['unread', 'Pas commencés'], ['reading', 'En cours'], ['read', 'Lus'], ['abandoned', 'Abandonnés'], ['pending', 'En attente d’import']].map(([v, l]) => opt(v, l, k.reading)).join('')}</select>
         <select id="ksort">${[['series', 'Tri : série'], ['title', 'Tri : titre'], ['author', 'Tri : auteur'], ['recent', 'Tri : dernière lecture']].map(([v, l]) => opt(v, l, k.sort)).join('')}</select>
         ${filtered ? '<button class="btn" type="button" id="kclear">Effacer les filtres</button>' : ''}
@@ -2172,17 +2191,16 @@
     $('#kq').addEventListener('input', debounce((e) => { k.q = e.target.value; refilter(); }, 300));
     if (k.focus) { const input = $('#kq'); input.focus(); input.setSelectionRange(input.value.length, input.value.length); k.focus = false; }
     [['#kcat', 'category', cats.filter((x) => x.count > 0).map((x) => ({ id: x.id, name: x.name, count: x.count }))],
-      ['#kcoll', 'collection', collections.map((x) => ({ id: x.name, name: x.name, count: x.count }))],
       ['#kseries', 'series', seriesList.map((x) => ({ id: x.name, name: x.name, count: x.count }))],
       ['#ktag', 'tag', tags.filter((t) => t.count > 0).map((t) => ({ id: t.id, name: '#' + t.name, count: t.count }))],
     ].forEach(([sel, key, list]) => {
       if ($(sel)) searchPicker({ input: $(sel), items: list, value: k[key], onPick: (v) => { if (v !== String(k[key] || '')) { k[key] = v; refilter(); } } });
     });
-    [['#kreader', 'reader'], ['#kreading', 'reading'], ['#ksort', 'sort']].forEach(([sel, key]) => {
+    [['#kreading', 'reading'], ['#ksort', 'sort']].forEach(([sel, key]) => {
       if ($(sel)) $(sel).onchange = (e) => { k[key] = e.target.value; refilter(); };
     });
     $('#kfilters-toggle').onclick = () => $('#kobo-filters').classList.toggle('open');
-    if ($('#kclear')) $('#kclear').onclick = () => { Object.assign(k, { q: '', category: '', collection: '', series: '', tag: '', reader: '', reading: '' }); refilter(); };
+    if ($('#kclear')) $('#kclear').onclick = () => { Object.assign(k, { q: '', category: '', series: '', tag: '', reading: '' }); refilter(); };
     $('#kobo-edit').onclick = () => editKoboDialog(d, members);
     $('#kobo-rescan').onclick = busy(async () => {
       const r = await (connected() && kobo.root ? scanKobo(kobo.root) : koboSavedInfo ? reconnectKobo() : scanKobo());
@@ -4396,6 +4414,13 @@
       </div>`).join('')}</div>`;
   }
 
+  // Notes : moyenne et repartition de 5 a 1 etoile.
+  function ratingsHtml(r, empty) {
+    if (!r.count) return `<p class="muted small">${empty}</p>`;
+    return `<div class="rating-avg"><strong>${fmt(r.average)}</strong> / 5 ${starsHtml(Math.round(r.average))} <span class="small muted">${fmt(r.count)} note(s)</span></div>`
+      + rankList([5, 4, 3, 2, 1].map((n) => ({ name: '★'.repeat(n), count: r.distribution[n - 1] })), { empty }).replace(/<span class="rank-pos">\d+<\/span>/g, '');
+  }
+
   const panel = (title, body, cls = '') => `<section class="panel ${cls}"><h3>${title}</h3>${body}</section>`;
   const coverStrip = (books, empty) => (books.length
     ? `<div class="cover-strip">${books.map((b) => `<div class="strip-item">${miniCover(b)}<div class="strip-title">${esc(b.title || b.name)}</div></div>`).join('')}</div>`
@@ -4532,7 +4557,7 @@
         ${panel('🏆 Auteurs favoris', podium(s.tastes.authors, { unit: ' livre(s)', empty: 'Aucun livre lu sur cette période.' }))}
         ${panel('Catégories', rankList(s.tastes.categories.map((t) => ({ name: t.name, count: t.read + t.abandoned, sub: `${t.read} lu(s)${t.abandoned ? ` · ${t.abandoned} abandonné(s)` : ''}${t.liked ? ` · ♥ ${t.liked}` : ''}` }))))}
         ${features().tags ? panel('Tags', rankList(s.tastes.tags.map((t) => ({ name: '#' + t.name, count: t.read + t.abandoned, sub: `${t.read} lu(s)${t.liked ? ` · ♥ ${t.liked}` : ''}` })))) : ''}
-        ${panel('Collections', rankList(s.tastes.collections))}
+        ${s.ratings ? panel('⭐ Mes notes', ratingsHtml(s.ratings, 'Aucun livre noté sur cette période.')) : ''}
         ${s.tastes.series && s.tastes.series.length ? panel('Séries', rankList(s.tastes.series)) : ''}
       </div>
 
@@ -4549,7 +4574,8 @@
               ${b.stale ? `<span class="badge badge-warn">Traîne (+ de ${s.staleDays} j)</span>` : ''}</div></div>`).join('')}</div>`
           : '<p class="muted small">Aucune lecture en cours.</p>', 'span-2')}
         ${panel('♥ Coups de cœur', coverStrip(s.favorites, 'Aucun livre aimé pour le moment.'))}
-      </div>`;
+      </div>
+      ${s.ratings && s.ratings.top.length ? panel('⭐ Les mieux notés', coverStrip(s.ratings.top.map((b) => ({ ...b, title: `${b.title} · ${'★'.repeat(b.rating)}` })), '')) : ''}`;
   }
 
   function libraryStatsHtml(s) {
@@ -4560,6 +4586,7 @@
       <div class="kpis kpis-wide">
         ${R ? kpi('📚', fmt(R.booksRead), 'Lectures terminées') : ''}
         ${R ? kpi('👥', fmt(R.activeReaders), 'Lecteurs actifs') : ''}
+        ${R && R.ratings ? kpi('⭐', R.ratings.average != null ? fmt(R.ratings.average) : '—', 'Note moyenne', `${fmt(R.ratings.count)} note(s)`) : ''}
         ${kpi('🔁', fmt(L.total), 'Prêts sur la période', '', L.perMonth.map((m) => m.count))}
         ${kpi('📤', fmt(L.open), 'Prêts en cours')}
         ${kpi('⏱', L.avgDays != null ? `${fmt(L.avgDays)} j` : '—', 'Durée moyenne d\'un prêt')}
@@ -4572,7 +4599,11 @@
         ${panel('🏆 Les plus lus', podium(R.mostRead, { covers: true, unit: ' lecteur(s)' }))}
         ${panel('♥ Les plus aimés', podium(R.mostLiked, { covers: true, empty: 'Aucun livre aimé.' }))}
         ${panel('Les plus abandonnés', rankList(R.mostAbandoned))}
-      </div>` : ''}
+      </div>
+      ${R.ratings ? `<div class="dash-grid">
+        ${panel('⭐ Les mieux notés', podium(R.bestRated, { covers: true, unit: ' ★', empty: 'Aucun livre noté.' }))}
+        ${panel('⭐ Notes données', ratingsHtml(R.ratings, 'Aucune note sur cette période.'))}
+      </div>` : ''}` : ''}
 
       <div class="dash-grid">
         ${panel('Prêts par mois', columns(L.perMonth.map((m) => ({ month: m.month, value: m.count })), { unit: 'prêt(s)' }), 'span-2')}
@@ -4594,12 +4625,9 @@
           { label: 'Papier seul', value: F.paperOnly, color: '--cat-1' },
           { label: 'Papier + numérique', value: F.both, color: '--cat-3' },
           { label: 'Numérique seul', value: F.ebookOnly, color: '--cat-2' },
-        ], F.books, 'livres')) : panel('Collections', rankList(F.byCollection))}
+        ], F.books, 'livres')) : panel('Catégories du fonds', rankList(F.byCategory))}
       </div>
-      <div class="dash-grid">
-        ${panel('Catégories du fonds', rankList(F.byCategory))}
-        ${features().ebooks ? panel('Collections', rankList(F.byCollection)) : ''}
-      </div>`;
+      ${features().ebooks ? `<div class="dash-grid">${panel('Catégories du fonds', rankList(F.byCategory))}</div>` : ''}`;
   }
 
   // ================= Reglages de la bibliotheque =================

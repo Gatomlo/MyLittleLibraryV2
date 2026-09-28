@@ -201,6 +201,13 @@ p { margin: 0 0 10px; }
 .st-disliked { background: var(--surface-2); color: var(--muted); }
 .status-editor { margin: 12px 0 4px; }
 .status-editor .others { margin-top: 6px; color: var(--muted); }
+/* Notes (etoiles) */
+.star-input { gap: 0; }
+.star-input .small { margin-right: 6px; }
+.stars { color: #d9a21b; font-size: 13px; letter-spacing: 1px; white-space: nowrap; }
+.stars-off { color: var(--border); }
+.rating-avg { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.rating-avg strong { font-size: 28px; }
 /* Lecteurs d'un livre (fiche) */
 .readers-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 4px; }
 .readers-box .chip { margin: 0; background: var(--grape-soft); color: var(--grape); }
@@ -310,6 +317,8 @@ input[type="checkbox"], input[type="radio"] { width: auto; min-height: 0; paddin
 .filter-check { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; white-space: nowrap; }
 .filters > * { min-width: 0; }
 .filters > .search { grid-column: span 2; }
+/* Recherche seule sur sa ligne, filtres en dessous (grand ecran). */
+@media (min-width: 641px) { .filters-search-row > .search { grid-column: 1 / -1; } }
 @media (max-width: 420px) { .filters > .search { grid-column: 1 / -1; } }
 .books { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
 @media (max-width: 420px) { .books { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }

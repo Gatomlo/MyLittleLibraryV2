@@ -41,7 +41,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   de leurs livres avec fiche / fichier présents dans la bibliothèque, création ou rattachement de fiche avec
   copie du fichier, statuts de lecture du propriétaire, envoi de livres avec série et tome ; copie directe
   sur la liseuse avec Chrome, téléchargement avec Firefox ; suppression d'un livre de la liseuse avec Chrome) et statuts de lecture
-  par compte (À lire / En cours / Lu / Abandonné, Aimé / Pas aimé),
+  par compte (À lire / En cours / Lu / Abandonné, Aimé / Pas aimé, note sur 5 étoiles),
   affichés et filtrables dans le catalogue de gestion.
 - **Lecteurs** d'un livre : les comptes membres qui le lisent, le liront ou l'ont lu
   (bibliothèque familiale partagée). Bouton « Intéressé » sur la fiche pour soi ; les
@@ -71,18 +71,19 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   ou dans une colonne à gauche. Même choix pour le catalogue WordPress (générateur de
   shortcode : `filtres="..."`, `position="gauche"`). Réglages présentés en accordéon.
 - **Miniatures du catalogue** paramétrables (Réglages > Affichage du catalogue) : couverture, titre,
-  auteurs, série et tome, collection, catégories, tags, statut de lecture, disponibilité, bandeau « Numérique »
+  auteurs, série et tome, collection, catégories, tags, statut de lecture, note (étoiles), disponibilité, bandeau « Numérique »
   en travers de la couverture.
-- **Statuts de lecture** (option) : À lire, En cours, Lu, Abandonné + Aimé / Pas aimé,
+- **Statuts de lecture** (option) : À lire, En cours, Lu, Abandonné + Aimé / Pas aimé
+  + note de 1 à 5 étoiles (filtre « Note » du catalogue : n étoiles et plus, pas noté),
   avec dates de début, de fin et d'abandon (automatiques, corrigeables).
 - **Statistiques** (option par bibliothèque, page « Statistiques ») :
   - par compte : livres lus / en cours / abandonnés, pages, rythme mensuel comparé à
     l'année précédente, objectif annuel, durées et pages par jour, lectures qui
-    traînent, goûts (catégories, tags, auteurs, collections) ;
+    traînent, goûts (catégories, tags, auteurs, séries), notes (moyenne, répartition, mieux notés) ;
   - privées par défaut, partageables avec les membres de la bibliothèque ; les
     administrateurs n'y ont pas d'accès particulier ;
   - bibliothèque : lecture en totaux anonymes, prêts (par mois, durée, plus empruntés,
-    jamais empruntés…), fonds (croissance, catégories, collections).
+    jamais empruntés…), note moyenne et livres les mieux notés, fonds (croissance, catégories).
 - **Rapport d'import** filtrable par statut (ajoutés, ignorés, erreurs, non importés),
   avec copie des ISBN en erreur et nouvel essai des erreurs.
 - **ISBN** : ISBN-13 (978/979), ISBN-10, avec ou sans tirets/espaces, reconnus à la
