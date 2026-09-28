@@ -1858,11 +1858,58 @@
     return src;
   }
 
+  // Fenetre d'avancement (etape + barre ; pct null = barre animee sans pourcentage).
+  function progressBox(title) {
+    const el = document.createElement('div');
+    el.className = 'modal-backdrop';
+    el.innerHTML = `<div class="modal progress-modal" role="status" aria-live="polite"><h2>${esc(title)}</h2>
+      <p class="small muted" data-step>…</p><div class="progress indeterminate"><span data-bar></span></div></div>`;
+    document.body.appendChild(el);
+    return {
+      step(text, pct = null) {
+        $('[data-step]', el).textContent = text;
+        $('[data-bar]', el).style.width = pct == null ? '' : `${pct}%`;
+        $('.progress', el).classList.toggle('indeterminate', pct == null);
+      },
+      close() { el.remove(); },
+    };
+  }
+
+  // Envoi brut avec suivi de l'envoi (fetch ne le permet pas).
+  function sendRawProgress(path, body, type, headers, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', LIB + path);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader('Content-Type', type);
+      Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+      xhr.upload.onload = () => onProgress(1);
+      xhr.onload = () => {
+        let data = null;
+        try { data = JSON.parse(xhr.responseText); } catch (e) { /* reponse vide */ }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+        else reject(new Error((data && data.error) || (xhr.status === 413 ? 'Base de la liseuse trop lourde.' : `Erreur ${xhr.status}`)));
+      };
+      xhr.onerror = () => reject(new Error('Connexion au serveur impossible.'));
+      xhr.send(body);
+    });
+  }
+
   async function scanKobo(root = null) {
     const src = await connectKobo(root);
-    const dbFile = await src.file('.kobo/KoboReader.sqlite');
-    if (!dbFile) throw new Error('Base de la liseuse introuvable (.kobo/KoboReader.sqlite).');
-    src.device = await sendRaw('/api/kobo/scan', 'POST', dbFile, 'application/x-sqlite3', { 'X-Kobo-Version': encodeURIComponent(src.version) });
+    const box = progressBox(`Scan de ${src.device ? src.device.name : 'la liseuse'}`);
+    try {
+      box.step('Lecture de la liseuse…');
+      const dbFile = await src.file('.kobo/KoboReader.sqlite');
+      if (!dbFile) throw new Error('Base de la liseuse introuvable (.kobo/KoboReader.sqlite).');
+      const mb = `${(dbFile.size / 1048576).toFixed(1).replace('.', ',')} Mo`;
+      box.step(`Envoi de la base de la liseuse (${mb})…`, 0);
+      src.device = await sendRawProgress('/api/kobo/scan', dbFile, 'application/x-sqlite3', { 'X-Kobo-Version': encodeURIComponent(src.version) }, (p) => {
+        if (p < 1) box.step(`Envoi de la base de la liseuse (${mb})… ${Math.round(p * 100)} %`, Math.round(p * 100));
+        else box.step('Analyse des livres et rapprochement avec les fiches…');
+      });
+    } finally { box.close(); }
     koboRemember(src);
     renderNav();
     return src.device;
