@@ -877,13 +877,13 @@
 
   // Filtres du catalogue : choisis dans les Reglages (liste + position en haut ou
   // dans une colonne a gauche). Sans reglage : tous, en haut.
-  const ALL_CATALOG_CARD = ['cover', 'title', 'authors', 'series', 'collection', 'categories', 'tags', 'status', 'availability', 'ebook'];
+  const ALL_CATALOG_CARD = ['cover', 'title', 'authors', 'series', 'collection', 'categories', 'tags', 'readers', 'status', 'availability', 'ebook'];
   // Elements de la miniature d'un livre : [cle, libelle, option de la bibliotheque necessaire]
   const CATALOG_CARD_LABELS = [
     ['cover', 'Couverture'], ['title', 'Titre'], ['authors', 'Auteurs'], ['series', 'Série et tome'], ['collection', 'Collection'],
-    ['categories', 'Catégories'], ['tags', 'Tags', 'tags'], ['status', 'Statut de lecture et avis', 'readingStatus'], ['availability', 'Disponibilité'], ['ebook', 'Bandeau « Numérique »', 'ebooks'],
+    ['categories', 'Catégories'], ['tags', 'Tags', 'tags'], ['readers', 'Lecteurs (gestion)'], ['status', 'Statut de lecture et avis', 'readingStatus'], ['availability', 'Disponibilité'], ['ebook', 'Bandeau « Numérique »', 'ebooks'],
   ];
-  const ALL_CATALOG_FILTERS = ['search', 'category', 'collection', 'series', 'tag', 'availability', 'format', 'status', 'sort', 'count'];
+  const ALL_CATALOG_FILTERS = ['search', 'category', 'collection', 'series', 'tag', 'reader', 'availability', 'format', 'status', 'sort', 'count'];
   const catalogConf = () => {
     const conf = (state.settings && state.settings.catalog) || {};
     return {
@@ -894,7 +894,7 @@
 
   // [cle, libelle, option de la bibliotheque necessaire]
   const CATALOG_FILTER_LABELS = [
-    ['search', 'Recherche'], ['category', 'Catégories'], ['collection', 'Collections'], ['series', 'Séries'], ['tag', 'Tags', 'tags'],
+    ['search', 'Recherche'], ['category', 'Catégories'], ['collection', 'Collections'], ['series', 'Séries'], ['tag', 'Tags', 'tags'], ['reader', 'Lecteurs (gestion)'],
     ['availability', 'Disponibilité'], ['format', 'Papier / numérique', 'ebooks'], ['status', 'Statuts de lecture', 'readingStatus'], ['sort', 'Tri'], ['count', 'Nombre de livres'],
   ];
 
@@ -925,12 +925,16 @@
     });
   }
 
+  // Comptes membres de la bibliotheque (statuts de lecture, lecteurs).
   let membersCache = null;
+  const loadMembers = () => (membersCache ? Promise.resolve(membersCache) : api('/api/members').then((m) => (membersCache = m)));
+
   async function viewCatalog() {
     const c = state.catalog;
     const conf = catalogConf();
     const show = (k) => conf.filters.includes(k);
     const withStatus = statusesOn() && show('status');
+    const withReader = canManage() && show('reader');
     state.selecting = false;
     state.selected = new Set();
     const [cats, collections, seriesList, tags, members] = await Promise.all([
@@ -938,7 +942,7 @@
       show('collection') ? api('/api/public/collections').catch(() => []) : [],
       show('series') ? api('/api/public/series').catch(() => []) : [],
       show('tag') && features().tags ? api('/api/public/tags').catch(() => []) : [],
-      withStatus ? (membersCache || api('/api/members').then((m) => (membersCache = m))) : [],
+      withStatus || withReader ? loadMembers() : [],
     ]);
     if (withStatus && !c.statusUser) c.statusUser = String(state.user.id);
     const left = conf.position === 'left';
@@ -953,6 +957,11 @@
     if (show('collection') && collections.length) controls.push(['collection', 'Collection', '<input type="search" id="coll" placeholder="Toutes les collections">']);
     if (show('series') && seriesList.length) controls.push(['series', 'Série', '<input type="search" id="seriesf" placeholder="Toutes les séries">']);
     if (show('tag') && tags.some((t) => t.count)) controls.push(['tag', 'Tag', '<input type="search" id="tagf" placeholder="Tous les tags">']);
+    if (withReader && members.length) {
+      controls.push(['reader', 'Lecteur', `<select id="reader">
+        <option value="">Tous les lecteurs</option>
+        ${members.map((m) => `<option value="${m.id}" ${sel(c.reader, String(m.id))}>Lecteur : ${m.id === state.user.id ? 'moi' : esc(m.username)}</option>`).join('')}</select>`]);
+    }
     if (show('availability')) {
       controls.push(['availability', 'Disponibilité', `<select id="status">
         <option value="">Tous les livres</option>
@@ -1010,7 +1019,7 @@
     function renderToggle() {
       const btn = $('#filters-toggle');
       if (!btn) return;
-      const n = ['category', 'collection', 'series', 'tag', 'status', 'format', 'reading', 'opinion'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0);
+      const n = ['category', 'collection', 'series', 'tag', 'reader', 'status', 'format', 'reading', 'opinion'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0);
       btn.textContent = n ? `Filtres · ${n}` : 'Filtres';
       btn.classList.toggle('btn-primary', n > 0);
     }
@@ -1072,7 +1081,7 @@
       });
     }
     if (canManage()) bindSelection(reload);
-    [['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion']].forEach(([selector, key]) => {
+    [['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#reader', 'reader'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion']].forEach(([selector, key]) => {
       const el = $(selector);
       if (el) el.addEventListener('change', (e) => { c[key] = e.target.value; reload(); });
     });
@@ -1181,12 +1190,14 @@
   async function bulkEditDialog(ids, done) {
     if (!ids.length) return;
     const f = features();
-    const [cats, tags, seriesList, collections] = await Promise.all([
+    const [cats, tags, seriesList, collections, members] = await Promise.all([
       loadCategories().catch(() => []),
       f.tags ? api('/api/public/tags').catch(() => []) : [],
       api('/api/public/series').catch(() => []),
       api('/api/public/collections').catch(() => []),
+      loadMembers().catch(() => []),
     ]);
+    const memberOptions = members.map((m) => [m.id, m.id === state.user.id ? 'Moi' : esc(m.username)]);
     const dl = (id, list) => `<datalist id="${id}">${list.map((x) => `<option value="${esc(x.name)}">`).join('')}</datalist>`;
     const text = (key, label, list, hint) => `<div class="bulk-row">
         <label class="bulk-check"><input type="checkbox" data-on="${key}"> <strong>${label}</strong></label>
@@ -1205,6 +1216,7 @@
         ${text('categoriesAdd', 'Ajouter des catégories', cats, 'Séparées par des virgules')}
         ${text('categoriesRemove', 'Retirer des catégories', cats, 'Séparées par des virgules')}
         ${f.tags ? text('tagsAdd', 'Ajouter des tags', tags, 'Séparés par des virgules') + text('tagsRemove', 'Retirer des tags', tags, 'Séparés par des virgules') : ''}
+        ${members.length ? choice('readersAdd', 'Ajouter un lecteur', memberOptions) + choice('readersRemove', 'Retirer un lecteur', memberOptions) : ''}
         ${f.ebooks ? choice('ebook', 'Type', [['add', 'Ajouter la version numérique'], ['remove', 'Retirer la version numérique']]) : ''}
         ${statusesOn() ? choice('reading', 'Mon statut de lecture', [['none', 'Aucun'], ...Object.entries(READING_LABELS)])
           + choice('opinion', 'Mon avis', [['none', 'Aucun'], ...Object.entries(OPINION_LABELS)]) : ''}
@@ -1274,6 +1286,7 @@
     if (c.series) params.set('series', c.series);
     if (c.missing && canManage()) params.set('missing', c.missing);
     if (features().tags && c.tag) params.set('tag', c.tag);
+    if (canManage() && c.reader && show('reader')) params.set('reader', c.reader);
     if (features().ebooks && c.format && show('format')) params.set('format', c.format);
     if (withStatus) {
       // Statuts affiches sur les couvertures : ceux du compte choisi (le sien par defaut).
@@ -1303,6 +1316,7 @@
         has('collection') && b.collection ? `<span class="coll coll-muted">${esc(b.collection)}</span>` : '',
         has('categories') && b.categories && b.categories.length ? `<span class="card-terms">${b.categories.map((t) => `<span class="term">${esc(t.name)}</span>`).join('')}</span>` : '',
         has('tags') && features().tags && b.tags && b.tags.length ? `<span class="card-terms">${b.tags.map((t) => `<span class="term term-tag">#${esc(t.name)}</span>`).join('')}</span>` : '',
+        has('readers') && b.readers && b.readers.length ? `<span class="card-terms">${b.readers.map((u) => `<span class="term term-reader">${esc(u.username)}</span>`).join('')}</span>` : '',
         withStatus && has('status') ? statusIcons(b.status) : '',
         has('availability') ? availabilityBadge(b, false) : '',
       ].join('');
@@ -1315,7 +1329,7 @@
         ${meta || ebookBadge ? `<div class="meta">${meta}${ebookBadge}</div>` : ''}
       </a>`;
     }).join('');
-    const filtered = c.missing || c.q || c.category || c.tag || c.collection || c.series || c.status || c.format || c.reading || c.opinion;
+    const filtered = c.missing || c.q || c.category || c.tag || c.reader || c.collection || c.series || c.status || c.format || c.reading || c.opinion;
     if (append) list.insertAdjacentHTML('beforeend', html);
     else list.innerHTML = html || `<div class="empty" style="grid-column:1/-1">${filtered ? 'Aucun livre ne correspond.' : 'Le catalogue est vide pour le moment.'}</div>`;
     if ($('#count')) $('#count').textContent = `${data.total} livre${data.total > 1 ? 's' : ''}`;
@@ -1328,7 +1342,10 @@
   // ================= Fiche livre =================
   async function viewBook(id) {
     const manage = canManage();
-    const book = await api(manage ? `/api/books/${id}` : `/api/public/books/${id}`);
+    const [book, members] = await Promise.all([
+      api(manage ? `/api/books/${id}` : `/api/public/books/${id}`),
+      manage ? loadMembers().catch(() => []) : [],
+    ]);
     const facts = [
       ['Auteur(s)', esc(book.authors)],
       ['Éditeur', esc(book.publisher)],
@@ -1348,6 +1365,7 @@
           <h1>${esc(book.title)}</h1>
           ${book.subtitle ? `<div class="subtitle">${esc(book.subtitle)}</div>` : ''}
           ${availabilityBadge(book)}
+          ${manage ? readersHtml(book, members) : ''}
           ${manage && book.myStatus ? statusEditorHtml(book) : ''}
           <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
           ${book.summary ? `<h3>Résumé</h3><p class="summary">${esc(book.summary)}</p>` : ''}
@@ -1362,6 +1380,7 @@
       <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
       ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}`;
     if (manage) bindAdminBook(book);
+    if (manage) bindReaders(book, members);
     if (manage && book.myStatus) bindStatusEditor(book);
     // Tag : catalogue filtre sur ce tag.
     $$('[data-tag]').forEach((a) => {
@@ -1380,6 +1399,43 @@
         go('#/');
       };
     });
+  }
+
+  // Lecteurs du livre (comptes membres) avec leur statut de lecture. Tout membre peut
+  // en ajouter ou en retirer ; le statut de lecture n'y touche jamais.
+  function readersHtml(book, members) {
+    const readers = book.readers || [];
+    const statusOf = (u) => {
+      const s = u.id === state.user.id ? book.myStatus : (book.statuses || []).find((o) => o.userId === u.id);
+      return s && s.reading ? ` · ${READING_LABELS[s.reading]}` : '';
+    };
+    const others = members.filter((m) => !readers.some((r) => r.id === m.id));
+    return `<div class="readers-box" id="readers">
+      <span class="small muted">Lecteurs</span>
+      ${readers.map((u) => `<span class="chip chip-reader">${u.id === state.user.id ? 'Moi' : esc(u.username)}${statusesOn() ? esc(statusOf(u)) : ''}<button type="button" data-reader-remove="${u.id}" aria-label="Retirer ${esc(u.username)}" title="Retirer ce lecteur">×</button></span>`).join('')}
+      ${others.length ? `<select id="reader-add" aria-label="Ajouter un lecteur"><option value="">+ Lecteur…</option>
+        ${others.map((m) => `<option value="${m.id}">${m.id === state.user.id ? 'Moi' : esc(m.username)}</option>`).join('')}</select>` : ''}
+    </div>`;
+  }
+
+  function bindReaders(book, members) {
+    const refresh = (readers) => {
+      book.readers = readers;
+      $('#readers').outerHTML = readersHtml(book, members);
+      bindReaders(book, members);
+    };
+    $$('[data-reader-remove]').forEach((btn) => {
+      btn.onclick = async () => {
+        try { refresh(await api(`/api/books/${book.id}/readers/${btn.dataset.readerRemove}`, { method: 'DELETE' })); } catch (err) { toast(err.message, 'error'); }
+      };
+    });
+    const add = $('#reader-add');
+    if (add) {
+      add.onchange = async () => {
+        if (!add.value) return;
+        try { refresh(await api(`/api/books/${book.id}/readers`, { method: 'POST', body: { userId: Number(add.value) } })); } catch (err) { toast(err.message, 'error'); }
+      };
+    }
   }
 
   // Statuts de lecture (propres a chaque compte) : A lire / En cours / Lu /
@@ -1418,6 +1474,7 @@
         book.myStatus = await api(`/api/books/${book.id}/status`, { method: 'PUT', body });
         $('.status-editor').outerHTML = statusEditorHtml(book);
         bindStatusEditor(book);
+        if ($('#readers')) { $('#readers').outerHTML = readersHtml(book, membersCache || []); bindReaders(book, membersCache || []); }
       } catch (err) { toast(err.message, 'error'); }
     };
     $$('.status-editor [data-reading], .status-editor [data-opinion]').forEach((btn) => {
@@ -1960,13 +2017,14 @@
   // ================= Ajout / modification d'un livre =================
   async function viewBookForm(id) {
     const editing = !!id;
-    const [book, cats, locations, collections, allSeries, allTags] = await Promise.all([
+    const [book, cats, locations, collections, allSeries, allTags, members] = await Promise.all([
       editing ? api(`/api/books/${id}`) : null,
       loadCategories(),
       api('/api/locations'),
       api('/api/public/collections').catch(() => []),
       api('/api/public/series').catch(() => []),
       features().tags ? api('/api/tags').catch(() => []) : [],
+      editing ? [] : loadMembers().catch(() => []),
     ]);
     const b = book || { isbn: '', title: '', subtitle: '', authors: '', publisher: '', collection: '', series: '', seriesNumber: '', year: '', pages: '', summary: '', notes: '', categories: [], coverUrl: null, format: 'physical' };
     const form = { categories: b.categories.map((c) => c.name), tags: (b.tags || []).map((t) => t.name), cover: { url: b.coverUrl ? mediaSrc(b.coverUrl) : '', remoteUrl: '', data: '', removed: false } };
@@ -2042,7 +2100,9 @@
             <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist></div>
         </div>
         ${features().ebooks ? `<div class="field"><label class="check"><input type="checkbox" name="ebook" id="ebook">
-          <span>Version numérique ${hint('Exemplaire numérique (epub, pdf…), sans code, étiquette ni prêt.')}</span></label></div>` : ''}`}
+          <span>Version numérique ${hint('Exemplaire numérique (epub, pdf…), sans code, étiquette ni prêt.')}</span></label></div>` : ''}
+        ${members.length > 1 ? `<div class="field"><label>Lecteurs ${hint('Comptes qui lisent ou liront ce livre.')}</label>
+          <div class="btn-row">${members.map((m) => `<label class="check"><input type="checkbox" data-reader="${m.id}" ${m.id === state.user.id ? 'checked' : ''}> ${m.id === state.user.id ? 'Moi' : esc(m.username)}</label>`).join('')}</div></div>` : ''}`}
         <div class="field"><label for="notes">Notes internes ${hint('Visibles uniquement par les gestionnaires.')}</label><textarea id="notes" name="notes" style="min-height:70px">${esc(b.notes)}</textarea></div>
         <div id="form-err"></div>
         <div class="btn-row"><button class="btn btn-primary" type="submit">${editing ? 'Enregistrer' : 'Ajouter au catalogue'}</button></div>
@@ -2181,6 +2241,7 @@
         body.copies = Math.max(0, Number(f.copies.value) || 0);
         body.location = f.location.value;
         body.ebook = !!(f.ebook && f.ebook.checked);
+        if ($$('[data-reader]', f).length) body.readers = $$('[data-reader]', f).filter((x) => x.checked).map((x) => Number(x.dataset.reader));
       }
       try {
         const saved = await api(editing ? `/api/books/${b.id}` : '/api/books', { method: editing ? 'PUT' : 'POST', body });
@@ -2220,6 +2281,7 @@
     { key: 'series', label: 'Série', aliases: ['serie', 'series', 'saga', 'cycle'] },
     { key: 'seriesNumber', label: 'Tome', aliases: ['tome', 'n tome', 'numero de tome', 'volume', 'n dans la serie', 'numero dans la serie', 'n dans la collection', 'numero dans la collection', 'numero', 'num', 'no'] },
     { key: 'tags', label: 'Tags', aliases: ['tags', 'tag', 'mots cles', 'mots-cles', 'motscles', 'keywords', 'etiquettes libres'] },
+    { key: 'readers', label: 'Lecteurs (noms des comptes)', aliases: ['lecteurs', 'lecteur', 'readers', 'reader', 'lu par', 'lecture par'] },
     { key: 'format', label: 'Type (Papier, Numérique ou Papier + numérique)', aliases: ['type', 'format', 'support', 'type de livre', 'numerique', 'version'] },
     { key: 'bookId', label: 'ID fiche (mise à jour)', aliases: ['id fiche', 'id', 'identifiant', 'id livre'] },
   ];
@@ -2337,18 +2399,24 @@
   // Options communes envoyees avec chaque ligne importee.
   function importOptions(extra) {
     const toRead = $('#opt-toread');
-    return { onDuplicate: $('#opt-dup').value, markToRead: !!(toRead && toRead.checked), ...extra };
+    const dup = $('#opt-dup').value;
+    // Lecteurs coches (pas en mise a jour : seule la colonne "Lecteurs" compte).
+    const readers = dup === 'update' ? undefined : importState.readers || [];
+    return { onDuplicate: dup, markToRead: !!(toRead && toRead.checked), readers, ...extra };
   }
 
-  const importState = { mode: 'scan', text: '', fileName: '', rows: null, mapping: [], items: [], results: null, running: false, stop: false, batch: [], cats: [], tags: [], toRead: true };
+  const importState = { mode: 'scan', text: '', fileName: '', rows: null, mapping: [], items: [], results: null, running: false, stop: false, batch: [], cats: [], tags: [], toRead: true, readers: null };
 
   async function viewImport() {
     const s = importState;
-    const [locations, allCats, allTags] = await Promise.all([
+    const [locations, allCats, allTags, members] = await Promise.all([
       api('/api/locations').catch(() => []),
       api('/api/categories').catch(() => []),
       features().tags ? api('/api/tags').catch(() => []) : [],
+      loadMembers().catch(() => []),
     ]);
+    // Par defaut, le compte qui importe est lecteur des livres ajoutes.
+    if (!s.readers) s.readers = [state.user.id];
     const tpl = (type, ext) => `${LIB}/api/import/template.${ext}${type === 'isbn' ? '?type=isbn' : ''}`;
     view().innerHTML = `
       <p><a href="#/add">← Ajouter un livre</a></p>
@@ -2394,6 +2462,8 @@
         </select></div>
         ${features().readingStatus ? `<div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="opt-toread" ${s.toRead ? 'checked' : ''}>
           « À lire » pour moi ${hint('Marque les nouveaux livres « À lire » dans ton statut de lecture.')}</label></div>` : ''}
+        ${members.length ? `<div class="field"><label>Lecteurs ${hint(`Comptes qui lisent ou liront ces livres (ajoutés aussi aux livres déjà au catalogue).${s.mode === 'full' ? ' La colonne « Lecteurs » du fichier, si elle est remplie, est prioritaire. En mise à jour, seule la colonne compte.' : ''}`)}</label>
+          <div class="btn-row">${members.map((m) => `<label class="check"><input type="checkbox" data-reader="${m.id}" ${s.readers.includes(m.id) ? 'checked' : ''}> ${m.id === state.user.id ? 'Moi' : esc(m.username)}</label>`).join('')}</div></div>` : ''}
       </div>
       <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist>`;
 
@@ -2402,6 +2472,9 @@
       if ($('#itag-input')) chipField('itag', s.tags, (t) => '#' + t);
       const toRead = $('#opt-toread');
       if (toRead) toRead.onchange = () => { s.toRead = toRead.checked; };
+      $$('[data-reader]').forEach((cb) => {
+        cb.onchange = () => { s.readers = $$('[data-reader]').filter((x) => x.checked).map((x) => Number(x.dataset.reader)); };
+      });
       $('#opt-dup').onchange = (e) => { s.dup = e.target.value; };
     };
     if (s.mode === 'scan') {
@@ -2818,7 +2891,10 @@
     for (const i of indexes) {
       if (s.stop) break;
       try {
-        s.results[i] = await api('/api/import/book', { method: 'POST', body: { ...ok[i].data, ...s.options } });
+        // Lecteurs : colonne du fichier si remplie, sinon le choix des options.
+        const body = { ...ok[i].data, ...s.options };
+        if (ok[i].data.readers) body.readers = ok[i].data.readers; else if (!s.options.readers) delete body.readers;
+        s.results[i] = await api('/api/import/book', { method: 'POST', body });
       } catch (err) {
         s.results[i] = { status: 'error', error: err.message };
       }

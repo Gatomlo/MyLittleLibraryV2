@@ -11,7 +11,7 @@ Utilisateur francophone : interface, commentaires et réponses **en français**.
 
 ## Architecture
 - `server.js` : routes globales (`/api/auth/*`, `/api/me/*`, `/api/admin/*`), page `index.html` en gabarit (`{{ROOT}}`, `{{CONFIG}}`, `{{VERSION}}` = cache-busting), vendors (scanner, excel), montage `/:slug/…`.
-- `lib/db.js` : base + **migrations** (`MIGRATIONS`, `PRAGMA user_version`, SQL ou fonction ; clés étrangères coupées pendant les migrations). Actuellement v14. `bookSearchText`, `nextCopyCode`, `slugify`.
+- `lib/db.js` : base + **migrations** (`MIGRATIONS`, `PRAGMA user_version`, SQL ou fonction ; clés étrangères coupées pendant les migrations). Actuellement v15. `bookSearchText`, `nextCopyCode`, `slugify`.
 - `lib/library-api.js` : API d'une bibliothèque (`/:slug/api/...`) : public (catalogue, fiche), puis garde « gestion » ; livres, exemplaires, prêts, emprunteurs, étiquettes, import, export, suppression en masse, vidage.
 - PWA : `public/sw.js` (service worker sans cache, page hors connexion), manifeste dynamique par bibliothèque (`/:slug/manifest.webmanifest`, `sendManifest` dans server.js), icônes PNG dans `public/` (régénérer depuis `icon.svg` / `icon-maskable.svg` si le logo change).
 - `lib/stats.js` (stats, confidentialité), `lib/auth.js` (scrypt, sessions, rôles admin/gestionnaire), `lib/isbn.js` (Google Books / BnF SRU / Open Library ; résumés FR en dernier recours via leslibraires.fr, 1 requête / 3 s — placedeslibraires.fr et Decitre bloquent l'hébergeur), `lib/covers.js` (recherche de couvertures), `lib/media.js`.
@@ -25,6 +25,8 @@ Utilisateur francophone : interface, commentaires et réponses **en français**.
 - `copies.format` = `physical` | `ebook` : l'exemplaire numérique n'a **pas de code, d'étiquette ni de prêt** (un seul par livre). `books.format` n'est plus utilisé.
 - Livre : `collection` (éditeur) distincte de `series` + `series_number` (tome). `collection_number` n'est plus utilisé.
 - Statuts de lecture par compte (`book_user_status`) : to_read / reading / read / abandoned + liked / disliked, avec dates.
+- Lecteurs (`book_readers`, v15) : comptes membres liés à un livre, indépendants du statut (jamais retirés par un changement de statut). Tout membre peut ajouter ou retirer n'importe quel membre. Ajout d'un livre et import : le créateur par défaut, ou `readers` (identifiants, ou noms séparés par des virgules pour la colonne « Lecteurs »). En mise à jour par import, seule la colonne compte. Membres : `libraryMembers` (library-api.js). Les emprunteurs sont des personnes extérieures sans compte.
+- Tags = vrais tags (thèmes libres). En v15, les tags qui portaient le nom d'un compte ont été convertis en lecteurs.
 - Fiches incomplètes : `MISSING` (library-api.js, conditions SQL par champ) → `GET /books/missing` (comptes), filtre `missing=` de `/books` et de `/export/inventory.*`.
 - Import `onDuplicate` : `copy` | `skip` | `new` | `update` (`updateFromImport` : colonnes non vides écrasent la fiche, repérée par `bookId` = colonne « ID fiche » de l'export, sinon ISBN).
 - Auteurs, séries, éditeurs, collections : pas de table, valeurs libres des fiches (auteurs séparés par des virgules). Gestion via `/values/:kind` (`VALUE_FIELDS`, `rewriteValues`, casse ignorée) ; front : `categoryManager` (`TERM_KINDS`, `free`), onglets « Classement » des réglages.

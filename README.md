@@ -34,6 +34,12 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   à l'import : Type = Papier, Numérique ou Papier + numérique) et statuts de lecture
   par compte (À lire / En cours / Lu / Abandonné, Aimé / Pas aimé),
   affichés et filtrables dans le catalogue de gestion.
+- **Lecteurs** d'un livre : les comptes membres qui le lisent, le liront ou l'ont lu
+  (bibliothèque familiale partagée). N'importe quel membre ajoute ou retire un lecteur
+  depuis la fiche. Un changement de statut ne retire jamais un lecteur. Le compte qui
+  ajoute un livre en devient lecteur ; l'ajout d'un livre et l'import proposent de
+  cocher les lecteurs, et la colonne « Lecteurs » d'un fichier est prioritaire. Filtre
+  « Lecteur » dans le catalogue, modification en masse, colonne dans l'export.
 - **Catégories** et **tags** (option par bibliothèque) : recherche, regroupement
   alphabétique repliable, fusion de plusieurs termes (les livres suivent), filtres
   avec recherche dans le catalogue.
