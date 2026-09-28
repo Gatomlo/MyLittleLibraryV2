@@ -662,7 +662,7 @@
       <div class="menu-title">${esc(state.settings.libraryName)}</div>
       <a class="menu-item" href="#/labels">${icon('labels')}Étiquettes</a>
       <a class="menu-item" href="#/settings">${icon('settings')}Réglages</a>` : ''}
-      ${canManage() && features().kobo ? `<div class="menu-sep"></div>
+      ${canManage() && features().kobo && !TOUCH_ONLY ? `<div class="menu-sep"></div>
       <div class="menu-title">Liseuses</div>
       ${koboSavedInfo && !koboOn() ? `<button class="menu-item" type="button" id="menu-kobo-reconnect">${icon('kobo')}Reconnecter ${esc(koboSavedInfo.name)}</button>` : ''}
       <button class="menu-item" type="button" id="menu-kobo-connect">${icon('kobo')}${koboOn() ? `Rescanner ${esc(kobo.device.name)}` : koboSavedInfo ? 'Brancher une autre liseuse' : 'Brancher une liseuse'}</button>
@@ -1722,6 +1722,8 @@
   // lecture/ecriture (File System Access). Ailleurs (Firefox) : dossier choisi par un
   // champ "repertoire", en lecture seule ; les envois deviennent des telechargements.
   const KOBO_FS = typeof window.showDirectoryPicker === 'function';
+  // Smartphone ou tablette (ecran tactile sans souris) : pas de liseuse branchee en USB.
+  const TOUCH_ONLY = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
   let kobo = null; // liseuse branchee : { serial, version, file(chemin), write(chemin, blob) | null }
   // Filtres de la page d'une liseuse (memes criteres que le catalogue, plus la lecture).
   const koboState = { filter: 'all', q: '', category: '', collection: '', series: '', tag: '', reader: '', reading: '', sort: 'series', focus: false };
