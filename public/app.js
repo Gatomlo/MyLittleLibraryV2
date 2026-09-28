@@ -1002,6 +1002,7 @@
     if (show('sort')) {
       controls.push(['sort', 'Tri', `<select id="sort">
         <option value="title">Tri : titre</option>
+        <option value="author" ${sel(c.sort, 'author')}>Tri : auteur</option>
         <option value="recent" ${sel(c.sort, 'recent')}>Tri : ajout récent</option>
         <option value="year" ${sel(c.sort, 'year')}>Tri : année</option></select>`]);
     }

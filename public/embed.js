@@ -220,7 +220,7 @@
           bar.insertAdjacentHTML('beforeend', `<select data-key="format"><option value="">Papier et numérique</option>
             <option value="physical">Livres papier</option><option value="ebook">Livres numériques</option></select>`);
         } else if (f === 'sort') {
-          bar.insertAdjacentHTML('beforeend', `<select data-key="sort"><option value="title">Tri : titre</option>
+          bar.insertAdjacentHTML('beforeend', `<select data-key="sort"><option value="title">Tri : titre</option><option value="author">Tri : auteur</option>
             <option value="recent">Tri : ajout récent</option><option value="year">Tri : année</option></select>`);
         }
       });
