@@ -759,3 +759,11 @@ h1 .h-icon {
 .reader-title { font-weight: 700; flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reader-bar select { max-width: 260px; }
 .reader-area { flex: 1; min-height: 0; background: #fff; color: #222; border-radius: 12px; box-shadow: var(--shadow); padding: 12px 8px; overflow: hidden; }
+
+/* Liseuses Kobo, import epub */
+.seg-4 { grid-template-columns: repeat(4, 1fr); }
+.warn-box { background: var(--warn-soft); color: var(--text); border-radius: 12px; padding: 10px 14px; margin: 0 0 14px; font-size: 14px; }
+.kobo-card { display: flex; flex-direction: column; gap: 6px; }
+.pick-list { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow: auto; margin-bottom: 12px; }
+.pick-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 10px; padding: 8px 10px; font: inherit; cursor: pointer; }
+.pick-row:hover { background: var(--surface-2); }

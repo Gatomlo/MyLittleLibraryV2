@@ -50,8 +50,11 @@ app.get('/vendor/zxing_reader.wasm', (req, res) => res.type('application/wasm').
 // declenche de toute facon une verification CORS prealable, refusee.
 function jsonOnly(req, res, next) {
   if (!['POST', 'PUT', 'PATCH'].includes(req.method) || req.is('application/json')) return next();
-  // Seule exception : envoi d'un fichier epub (PUT .../copies/:id/file).
+  // Exceptions : envoi d'un fichier epub (PUT .../copies/:id/file, POST .../import/epub)
+  // et base d'une liseuse Kobo (POST .../kobo/scan).
   if (req.method === 'PUT' && /\/copies\/\d+\/file$/.test(req.path) && req.is('application/epub+zip')) return next();
+  if (req.method === 'POST' && /\/kobo\/scan$/.test(req.path) && req.is('application/x-sqlite3')) return next();
+  if (req.method === 'POST' && /\/import\/epub$/.test(req.path) && req.is('application/epub+zip')) return next();
   res.status(415).json({ error: 'Requête JSON attendue.' });
 }
 
@@ -204,7 +207,7 @@ function applyUserLinks(userId, body) {
 }
 
 function readRole(v) {
-  return v === 'admin' ? 'admin' : 'manager';
+  return ['admin', 'user'].includes(v) ? v : 'manager';
 }
 
 function adminCount(exceptId) {

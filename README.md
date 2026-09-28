@@ -13,8 +13,9 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   (`…/mylittlelibrary/bibliotheque-du-bureau/`), ses livres, exemplaires, codes,
   emprunteurs, nom, logo et réglages d'étiquettes. L'adresse est fixée à la création
   (modifiable par un administrateur ; l'ancienne reste redirigée).
-- **Comptes** : administrateurs (créent bibliothèques et comptes, gèrent tout) et
-  gestionnaires (gèrent les bibliothèques auxquelles ils sont liés). Bibliothèque par
+- **Comptes** : administrateurs (créent bibliothèques et comptes, gèrent tout),
+  gestionnaires (gèrent les bibliothèques auxquelles ils sont liés, étiquettes et réglages compris)
+  et utilisateurs (mêmes outils que les gestionnaires, sans les étiquettes ni les réglages). Bibliothèque par
   défaut ouverte à la connexion ; le menu du compte permet de basculer.
   La racine du site n'affiche que la page de connexion.
 - **Catalogue public** (lecture seule, sans connexion) : recherche, filtre par
@@ -31,9 +32,13 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   recherche tout seul.
 - **Options par bibliothèque** (Réglages > Fonctionnalités) : livres numériques (exemplaire « numérique »
   — epub, pdf… — seul ou en plus des exemplaires papier, sans code, étiquette ni prêt ;
-  à l'import : Type = Papier, Numérique ou Papier + numérique ; fichier epub facultatif, avec trois
-  niveaux d'accès réglables — voir le fichier, le lire en ligne dans la liseuse intégrée, le télécharger —
-  chacun pour tout le monde, les comptes de la bibliothèque ou les administrateurs) et statuts de lecture
+  à l'import : Type = Papier, Numérique ou Papier + numérique ; fichier epub facultatif, lisible dans la
+  liseuse intégrée ; droits réglés pour toute la bibliothèque — voir le fichier, le lire en ligne, le
+  télécharger — chacun pour tout le monde, les comptes, les gestionnaires ou les administrateurs ; import de
+  plusieurs fichiers epub : Ajout multiple > Fichiers epub), **liseuses Kobo** (branchées en USB : liste
+  de leurs livres avec fiche / fichier présents dans la bibliothèque, création ou rattachement de fiche avec
+  copie du fichier, statuts de lecture du propriétaire, envoi de livres avec série et tome ; copie directe
+  sur la liseuse avec Chrome, téléchargement avec Firefox) et statuts de lecture
   par compte (À lire / En cours / Lu / Abandonné, Aimé / Pas aimé),
   affichés et filtrables dans le catalogue de gestion.
 - **Lecteurs** d'un livre : les comptes membres qui le lisent, le liront ou l'ont lu

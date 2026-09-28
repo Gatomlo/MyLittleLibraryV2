@@ -24,6 +24,9 @@
   const isAdmin = () => !!state.user && state.user.role === 'admin';
   // Le compte connecte peut-il gerer la bibliotheque de la page ?
   const canManage = () => !!state.user && !!LIBRARY && (isAdmin() || state.libraries.some((l) => l.slug === LIBRARY.slug));
+  // Utilisateur : outils de la bibliotheque, sans les etiquettes ni les reglages.
+  const canConfigure = () => canManage() && state.user.role !== 'user';
+  const roleLabel = (r) => (r === 'admin' ? 'Administrateur' : r === 'user' ? 'Utilisateur' : 'Gestionnaire');
   // Options de la bibliotheque (Reglages) : livres numeriques, statuts de lecture.
   const features = () => (state.settings && state.settings.features) || {};
   const statusesOn = () => canManage() && !!features().readingStatus;
@@ -552,6 +555,7 @@
     loans: '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
     borrowers: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     labels: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM21 14v.01M14 21h.01M17 21h4v-3"/>',
+    kobo: '<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6"/><path d="M9 11h6"/><path d="M9 15h3"/>',
     stats: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
     settings: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
@@ -568,7 +572,7 @@
   }
   // Couleur de chaque page (teinte, fond pastel) : navigation et pastille du titre.
   const PAGE_COLORS = {
-    catalog: 'accent', add: 'coral', import: 'sky', loans: 'sun', borrowers: 'grape', labels: 'rose', stats: 'sky', settings: 'accent',
+    catalog: 'accent', kobo: 'grape', add: 'coral', import: 'sky', loans: 'sun', borrowers: 'grape', labels: 'rose', stats: 'sky', settings: 'accent',
     user: 'grape', admin: 'coral', login: 'accent', library: 'accent', edit: 'coral', incomplete: 'sun',
   };
   const colorVars = (name) => { const c = PAGE_COLORS[name] || 'accent'; return `--c:var(--${c});--cs:var(--${c}-soft)`; };
@@ -576,7 +580,7 @@
   // Pastille d'icone devant le titre (h1) de chaque page, selon l'adresse.
   const TITLE_ICONS = [
     [/^\/book\/\d+\/edit$/, 'edit'], [/^\/add$/, 'add'], [/^\/import$/, 'import'], [/^\/incomplete/, 'incomplete'],
-    [/^\/loans$/, 'loans'], [/^\/borrowers?(\/|$)/, 'borrowers'], [/^\/labels$/, 'labels'], [/^\/stats$/, 'stats'],
+    [/^\/kobo/, 'kobo'], [/^\/loans$/, 'loans'], [/^\/borrowers?(\/|$)/, 'borrowers'], [/^\/labels$/, 'labels'], [/^\/stats$/, 'stats'],
     [/^\/settings$/, 'settings'], [/^\/account$/, 'user'], [/^\/admin$/, 'admin'], [/^\/login$/, 'login'],
   ];
   function decorateTitle() {
@@ -594,7 +598,7 @@
     let links = [];
     if (LIBRARY) {
       links = canManage()
-        ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : [])]
+        ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : []), ...(features().kobo ? [['#/kobo', 'Liseuses', 'kobo']] : [])]
         : [['#/', 'Catalogue', 'catalog']];
     }
     let current = '#/' + (location.hash.replace(/^#\/?/, '').split('/')[0] || '');
@@ -650,11 +654,11 @@
     const menu = document.createElement('div');
     menu.className = 'menu';
     menu.innerHTML = `
-      <div class="menu-head"><strong>${esc(u.username)}</strong>${u.role === 'admin' ? 'Administrateur' : 'Gestionnaire'}</div>
+      <div class="menu-head"><strong>${esc(u.username)}</strong>${roleLabel(u.role)}</div>
       <div class="menu-sep"></div>
       <div class="menu-title">Mes bibliothèques</div>
       ${libs || '<p class="small muted" style="padding:4px 10px">Aucune bibliothèque liée à ce compte.</p>'}
-      ${LIBRARY && canManage() ? `<div class="menu-sep"></div>
+      ${LIBRARY && canConfigure() ? `<div class="menu-sep"></div>
       <div class="menu-title">${esc(state.settings.libraryName)}</div>
       <a class="menu-item" href="#/labels">${icon('labels')}Étiquettes</a>
       <a class="menu-item" href="#/settings">${icon('settings')}Réglages</a>` : ''}
@@ -715,6 +719,8 @@
     [/^\/?$/, viewCatalog],
     [/^\/book\/(\d+)$/, viewBook],
     [/^\/read\/(\d+)$/, viewReader],
+    [/^\/kobo$/, viewKobo, 'manage'],
+    [/^\/kobo\/(\d+)$/, viewKoboDevice, 'manage'],
     [/^\/book\/(\d+)\/edit$/, viewBookForm, 'manage'],
     [/^\/c\/([^/]+)$/, viewCopy],
     [/^\/login$/, viewLogin],
@@ -724,9 +730,9 @@
     [/^\/loans$/, viewLoans, 'manage'],
     [/^\/borrowers$/, viewBorrowers, 'manage'],
     [/^\/borrower\/(\d+)$/, viewBorrower, 'manage'],
-    [/^\/labels$/, viewLabels, 'manage'],
+    [/^\/labels$/, viewLabels, 'config'],
     [/^\/stats$/, viewStats, 'manage'],
-    [/^\/settings$/, viewSettings, 'manage'],
+    [/^\/settings$/, viewSettings, 'config'],
     [/^\/account$/, viewAccount, 'user'],
     [/^\/admin$/, viewAdmin, 'admin'],
   ];
@@ -756,7 +762,7 @@
         sessionStorageSet('mll-after-login', location.hash);
         return go('#/login');
       }
-      if ((needs === 'manage' && !canManage()) || (needs === 'admin' && !isAdmin())) {
+      if ((needs === 'manage' && !canManage()) || (needs === 'config' && !canConfigure()) || (needs === 'admin' && !isAdmin())) {
         view().innerHTML = `<div class="empty">Ton compte n'a pas accès à cette page.<br><br><a class="btn" href="#/">Retour</a></div>`;
         return;
       }
@@ -1383,6 +1389,7 @@
           ${manage && book.notes ? `<h3>Notes internes</h3><p class="summary muted">${esc(book.notes)}</p>` : ''}
           ${manage ? `<div class="btn-row" style="margin-top:14px">
               <a class="btn" href="#/book/${book.id}/edit">Modifier</a>
+              ${features().kobo && book.ebookFile && book.ebookFile.download ? '<button class="btn" id="push-kobo">Envoyer sur la Kobo</button>' : ''}
               <button class="btn btn-danger" id="del-book">Supprimer</button>
             </div>` : ''}
         </div>
@@ -1391,6 +1398,8 @@
       <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
       ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}`;
     if (manage) bindAdminBook(book);
+    const push = $('#push-kobo');
+    if (push) push.onclick = busy(() => pushToKobo(book.id));
     if (manage) bindReaders(book);
     if (manage && book.myStatus) bindStatusEditor(book);
     // Tag : catalogue filtre sur ce tag.
@@ -1497,9 +1506,9 @@
     });
   }
 
-  // Fichier epub de l'exemplaire numerique : niveaux d'acces (voir, lire, telecharger).
-  const FILE_LEVELS = [['public', 'Tout le monde'], ['members', 'Comptes de la bibliothèque'], ['admin', 'Administrateurs']];
-  const fileLevelLabel = (v) => (FILE_LEVELS.find(([k]) => k === v) || FILE_LEVELS[2])[1];
+  // Fichier epub de l'exemplaire numerique : droits (voir, lire, telecharger) regles dans
+  // les reglages de la bibliotheque.
+  const FILE_LEVELS = [['public', 'Tout le monde (même sans connexion)'], ['members', 'Comptes de la bibliothèque'], ['managers', 'Gestionnaires'], ['admin', 'Administrateurs']];
   const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} Mo` : `${Math.max(1, Math.round(n / 1024))} Ko`);
 
   // Presence du fichier et boutons selon les droits du visiteur (book.ebookFile).
@@ -1528,8 +1537,7 @@
       <tr class="copy-ebook">
         <td><span class="badge badge-ebook">Numérique</span></td>
         <td>${esc(c.location) || '<span class="muted">—</span>'}${c.notes ? `<div class="small muted">${esc(c.notes)}</div>` : ''}</td>
-        <td>${c.file ? `${ebookFileHtml(book) || `<span class="small muted">Fichier epub · ${fmtSize(c.file.size)}</span>`}
-            <div class="small muted">Voir : ${fileLevelLabel(c.fileVisible)} · Lire : ${fileLevelLabel(c.fileRead)} · Télécharger : ${fileLevelLabel(c.fileDownload)}</div>`
+        <td>${c.file ? ebookFileHtml(book) || `<span class="small muted">Fichier epub · ${fmtSize(c.file.size)}</span>`
           : '<span class="small muted">Pas de fichier</span>'}</td>
         <td><span class="small muted">Pas d'étiquette</span></td>
         <td style="text-align:right;white-space:nowrap"><button class="btn btn-small" data-edit-copy="${c.id}">Modifier</button></td>
@@ -1551,7 +1559,7 @@
       <div class="btn-row" style="margin-top:12px">
         <button class="btn" id="add-copy">+ Exemplaire papier</button>
         ${features().ebooks && !hasEbook ? '<button class="btn" id="add-ebook">+ Exemplaire numérique</button>' : ''}
-        ${physical.length ? '<button class="btn" id="print-labels">Imprimer les étiquettes</button>' : ''}
+        ${physical.length && canConfigure() ? '<button class="btn" id="print-labels">Imprimer les étiquettes</button>' : ''}
       </div>`;
   }
 
@@ -1584,7 +1592,7 @@
     };
     const addEbook = $('#add-ebook');
     if (addEbook) addEbook.onclick = () => editCopyDialog({
-      id: null, bookId: book.id, format: 'ebook', location: '', notes: '', file: null, fileVisible: 'admin', fileRead: 'admin', fileDownload: 'admin',
+      id: null, bookId: book.id, format: 'ebook', location: '', notes: '', file: null,
     });
     const print = $('#print-labels');
     if (print) print.onclick = () => {
@@ -1597,16 +1605,17 @@
   }
 
   // Envoi brut du fichier (hors JSON) : nom d'origine dans l'en-tete X-File-Name.
-  async function uploadEpub(copyId, file) {
-    if (file.size > 100 * 1024 * 1024) throw new Error('Fichier trop lourd (100 Mo max).');
-    const res = await fetch(`${LIB}/api/copies/${copyId}/file`, {
-      method: 'PUT', credentials: 'same-origin', body: file,
-      headers: { 'Content-Type': 'application/epub+zip', 'X-File-Name': encodeURIComponent(file.name) },
-    });
+  async function sendRaw(path, method, body, type, headers = {}) {
+    const res = await fetch(LIB + path, { method, credentials: 'same-origin', body, headers: { 'Content-Type': type, ...headers } });
     let data = null;
     try { data = await res.json(); } catch (e) { /* reponse vide */ }
     if (!res.ok) throw new Error((data && data.error) || (res.status === 413 ? 'Fichier trop lourd.' : `Erreur ${res.status}`));
     return data;
+  }
+
+  async function uploadEpub(copyId, file) {
+    if (file.size > 100 * 1024 * 1024) throw new Error('Fichier trop lourd (100 Mo max).');
+    return sendRaw(`/api/copies/${copyId}/file`, 'PUT', file, 'application/epub+zip', { 'X-File-Name': encodeURIComponent(file.name) });
   }
 
   async function editCopyDialog(copy) {
@@ -1623,10 +1632,7 @@
         <div class="field"><label>Fichier epub ${hint('Facultatif (100 Mo max). Un nouveau fichier remplace le précédent.')}</label>
           ${copy.file ? `<div class="small" style="margin-bottom:6px">${esc(copy.file.name)} · ${fmtSize(copy.file.size)}
             <label class="check" style="display:inline-flex;margin-left:10px"><input type="checkbox" name="removeFile"> Retirer</label></div>` : ''}
-          <input type="file" name="file" accept=".epub,application/epub+zip"></div>
-        ${[['fileVisible', 'Voir le fichier'], ['fileRead', 'Lire en ligne'], ['fileDownload', 'Télécharger']].map(([name, label]) => `
-          <div class="field"><label>${label}</label><select name="${name}">
-            ${FILE_LEVELS.map(([v, l]) => `<option value="${v}" ${copy[name] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}` : ''}
+          <input type="file" name="file" accept=".epub,application/epub+zip"></div>` : ''}
         <div class="btn-row">
           <button class="btn btn-primary" type="submit">Enregistrer</button>
           <button class="btn" type="button" data-close>Annuler</button>
@@ -1651,9 +1657,7 @@
           const r = await api(`/api/books/${copy.bookId}/copies`, { method: 'POST', body: { format: 'ebook', location: f.location.value } });
           id = r.book.copies.find((c) => c.format === 'ebook').id;
         }
-        const body = { location: f.location.value, notes: f.notes.value };
-        if (copy.format === 'ebook') Object.assign(body, { fileVisible: f.fileVisible.value, fileRead: f.fileRead.value, fileDownload: f.fileDownload.value });
-        await api(`/api/copies/${id}`, { method: 'PUT', body });
+        await api(`/api/copies/${id}`, { method: 'PUT', body: { location: f.location.value, notes: f.notes.value } });
         const file = f.file && f.file.files[0];
         if (file) {
           submit.textContent = 'Envoi du fichier…';
@@ -1670,6 +1674,287 @@
         submit.textContent = 'Enregistrer';
       }
     };
+  }
+
+  // ================= Liseuses Kobo (USB) =================
+  // La liseuse branchee est lue par le navigateur. Chrome (et Edge) : dossier ouvert en
+  // lecture/ecriture (File System Access). Ailleurs (Firefox) : dossier choisi par un
+  // champ "repertoire", en lecture seule ; les envois deviennent des telechargements.
+  const KOBO_FS = typeof window.showDirectoryPicker === 'function';
+  let kobo = null; // liseuse branchee : { serial, version, file(chemin), write(chemin, blob) | null }
+  const koboState = { filter: 'all' };
+
+  const koboWarning = () => (KOBO_FS ? '' : `<div class="warn-box">Ce navigateur ne peut pas écrire sur la liseuse : le scan fonctionne, mais les livres envoyés sont téléchargés et doivent être copiés à la main sur la Kobo. <strong>Utilise de préférence Chrome</strong> (Windows, Linux, Chromebook).</div>`);
+
+  function pickDirectoryFiles() {
+    return new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.webkitdirectory = true;
+      input.onchange = () => resolve([...input.files]);
+      input.addEventListener('cancel', () => resolve(null));
+      input.click();
+    });
+  }
+
+  // Doit etre appele directement depuis un clic (le navigateur l'exige).
+  async function connectKobo() {
+    let src;
+    if (KOBO_FS) {
+      const root = await window.showDirectoryPicker({ id: 'kobo', mode: 'readwrite' });
+      const dirOf = async (parts, create) => {
+        let d = root;
+        for (const p of parts) d = await d.getDirectoryHandle(p, { create });
+        return d;
+      };
+      src = {
+        file: async (p) => {
+          try {
+            const parts = p.split('/');
+            const d = await dirOf(parts.slice(0, -1), false);
+            return await (await d.getFileHandle(parts[parts.length - 1])).getFile();
+          } catch (e) { return null; }
+        },
+        write: async (p, blob) => {
+          const parts = p.split('/');
+          const d = await dirOf(parts.slice(0, -1), true);
+          const w = await (await d.getFileHandle(parts[parts.length - 1], { create: true })).createWritable();
+          await w.write(blob);
+          await w.close();
+        },
+      };
+    } else {
+      const files = await pickDirectoryFiles();
+      if (!files || !files.length) throw Object.assign(new Error('Aucun dossier choisi.'), { name: 'AbortError' });
+      // Chemins relatifs a la racine choisie ("KOBOeReader/.kobo/version" -> ".kobo/version").
+      const map = new Map(files.map((f) => [f.webkitRelativePath.split('/').slice(1).join('/'), f]));
+      src = { file: async (p) => map.get(p) || null, write: null };
+    }
+    const version = await src.file('.kobo/version');
+    if (!version) throw new Error("Ce dossier n'est pas une liseuse Kobo : choisis la racine de la liseuse (le lecteur « KOBOeReader »).");
+    src.version = (await version.text()).trim();
+    src.serial = src.version.split(',')[0].trim();
+    kobo = src;
+    return src;
+  }
+
+  async function scanKobo() {
+    const src = await connectKobo();
+    const dbFile = await src.file('.kobo/KoboReader.sqlite');
+    if (!dbFile) throw new Error('Base de la liseuse introuvable (.kobo/KoboReader.sqlite).');
+    return sendRaw('/api/kobo/scan', 'POST', dbFile, 'application/x-sqlite3', { 'X-Kobo-Version': encodeURIComponent(src.version) });
+  }
+
+  // Bouton desactive pendant l'action ; annulation du choix de dossier ignoree.
+  const busy = (fn) => async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try { await fn(btn); } catch (err) { if (err.name !== 'AbortError') toast(err.message, 'error'); } finally { btn.disabled = false; }
+  };
+
+  // Envoi d'un livre sur la liseuse : copie directe (Chrome) ou telechargement.
+  async function pushToKobo(bookId) {
+    if (KOBO_FS && !kobo) await connectKobo();
+    const res = await fetch(`${LIB}/api/kobo/books/${bookId}/epub`, { credentials: 'same-origin' });
+    if (!res.ok) {
+      let data = null;
+      try { data = await res.json(); } catch (e) { /* reponse vide */ }
+      throw new Error((data && data.error) || `Erreur ${res.status}`);
+    }
+    const p = decodeURIComponent(res.headers.get('X-Kobo-Path') || 'Bibliotheque/livre.epub');
+    const blob = await res.blob();
+    if (kobo && kobo.write) {
+      await kobo.write(p, blob);
+      toast(`Copié sur la liseuse (${p}). Éjecte-la pour qu'elle l'importe.`);
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = p.split('/').pop();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    toast('Fichier téléchargé : copie-le sur la liseuse (dossier Bibliotheque).');
+  }
+
+  async function viewKobo() {
+    const devices = await api('/api/kobo/devices');
+    view().innerHTML = `
+      <div class="page-head"><div><h1>Liseuses ${hint('Branche une Kobo en USB puis « Scanner une Kobo » et choisis le lecteur de la liseuse (KOBOeReader). Rien n\'est modifié sur la liseuse.')}</h1></div>
+        <button class="btn btn-primary" id="kobo-scan">Scanner une Kobo</button></div>
+      ${koboWarning()}
+      ${devices.length ? `<div class="lib-grid">${devices.map((d) => `
+        <a class="card kobo-card" href="#/kobo/${d.id}">
+          <strong>${esc(d.name)}</strong>
+          <div class="small muted">${d.owner ? esc(d.owner.username) : 'Sans propriétaire'} · ${d.books} livre(s) · scan du ${d.lastScanAt ? fmtDate(d.lastScanAt) : '—'}</div>
+          ${d.noBook || d.noFile ? `<div class="badges">${d.noBook ? `<span class="badge badge-warn">${d.noBook} sans fiche</span>` : ''}${d.noFile ? `<span class="badge badge-muted">${d.noFile} sans fichier</span>` : ''}</div>` : ''}
+        </a>`).join('')}</div>`
+        : '<div class="empty">Aucune liseuse pour le moment : branche une Kobo et clique sur « Scanner une Kobo ».</div>'}`;
+    $('#kobo-scan').onclick = busy(async () => {
+      const d = await scanKobo();
+      toast('Liseuse scannée.');
+      go(`#/kobo/${d.id}`);
+    });
+  }
+
+  // Choix d'une fiche existante (recherche dans le catalogue).
+  function pickBookDialog(item) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      backdrop.innerHTML = `
+        <div class="modal">
+          <h2>Rattacher à une fiche</h2>
+          <p class="small muted">${esc(item.title)}${item.authors ? ` · ${esc(item.authors)}` : ''}</p>
+          <div class="field"><input type="search" id="pick-q" value="${esc(item.title)}" placeholder="Titre, auteur, ISBN…"></div>
+          <div id="pick-results" class="pick-list"></div>
+          <div class="btn-row"><button class="btn" type="button" data-close>Annuler</button></div>
+        </div>`;
+      document.body.appendChild(backdrop);
+      const close = (v) => { backdrop.remove(); resolve(v); };
+      backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(null); });
+      const search = async () => {
+        const q = $('#pick-q', backdrop).value.trim();
+        const r = await api(`/api/books?q=${encodeURIComponent(q)}&limit=20`).catch(() => ({ items: [] }));
+        $('#pick-results', backdrop).innerHTML = r.items.length ? r.items.map((b) => `
+          <button type="button" class="pick-row" data-pick="${b.id}"><strong>${esc(b.title)}</strong>
+            <span class="small muted">${esc(b.authors || '')}${b.series ? ` · ${esc(b.series)}${b.seriesNumber ? ` #${esc(b.seriesNumber)}` : ''}` : ''}</span></button>`).join('')
+          : '<p class="small muted">Aucune fiche trouvée.</p>';
+        $$('[data-pick]', backdrop).forEach((btn) => { btn.onclick = () => close(Number(btn.dataset.pick)); });
+      };
+      $('#pick-q', backdrop).oninput = debounce(search, 250);
+      search();
+      $('#pick-q', backdrop).focus();
+    });
+  }
+
+  function editKoboDialog(d, members) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <form class="modal">
+        <h2>Liseuse</h2>
+        <div class="field"><label>Nom</label><input name="name" required maxlength="80" value="${esc(d.name)}"></div>
+        <div class="field"><label>Propriétaire ${hint('Ses statuts de lecture suivent la liseuse, et il est ajouté comme lecteur des livres présents dessus.')}</label><select name="userId">
+          <option value="">Aucun</option>
+          ${members.map((m) => `<option value="${m.id}" ${d.owner && d.owner.id === m.id ? 'selected' : ''}>${esc(m.username)}</option>`).join('')}
+        </select></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" type="submit">Enregistrer</button>
+          <button class="btn" type="button" data-close>Annuler</button>
+          <button class="btn btn-danger" type="button" data-delete style="margin-left:auto">Supprimer</button>
+        </div>
+      </form>`;
+    document.body.appendChild(backdrop);
+    const close = () => backdrop.remove();
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(); });
+    $('[data-delete]', backdrop).onclick = async () => {
+      if (!confirm(`Retirer la liseuse « ${d.name} » de la bibliothèque ? (Rien n'est effacé sur la liseuse ni dans les fiches.)`)) return;
+      try { await api(`/api/kobo/devices/${d.id}`, { method: 'DELETE' }); close(); go('#/kobo'); } catch (err) { toast(err.message, 'error'); }
+    };
+    $('form', backdrop).onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await api(`/api/kobo/devices/${d.id}`, { method: 'PUT', body: { name: e.target.name.value, userId: e.target.userId.value || null } });
+        close();
+        route();
+      } catch (err) { toast(err.message, 'error'); }
+    };
+  }
+
+  async function viewKoboDevice(id) {
+    const [d, members] = await Promise.all([api(`/api/kobo/devices/${id}`), loadMembers().catch(() => [])]);
+    const connected = () => !!kobo && kobo.serial === d.serial;
+    const f = koboState.filter;
+    const items = d.items.filter((i) => f === 'all' || (f === 'nobook' && !i.book) || (f === 'nofile' && i.book && !i.book.hasFile));
+    const reading = (i) => {
+      const main = i.readStatus === 2 ? '<span class="badge badge-ok">Lu</span>'
+        : i.readStatus === 1 || i.percent > 0 ? `<span class="badge badge-muted">${Math.round(i.percent)} %</span>`
+          : '<span class="small muted">Pas commencé</span>';
+      return main + (i.status === 'abandoned' ? ' <span class="badge badge-warn">Abandonné</span>' : '')
+        + (i.lastReadAt ? `<div class="small muted">${fmtDate(i.lastReadAt)}</div>` : '');
+    };
+    const seg = (key, label, n) => `<button type="button" data-filter="${key}" class="${f === key ? 'active' : ''}">${label} (${n})</button>`;
+    view().innerHTML = `
+      <p><a href="#/kobo">← Liseuses</a></p>
+      <div class="page-head"><div><h1>${esc(d.name)}</h1>
+        <p class="small muted">${d.owner ? `Propriétaire : ${esc(d.owner.username)}` : 'Sans propriétaire'} · ${d.books} livre(s) · scan du ${d.lastScanAt ? fmtDate(d.lastScanAt) : '—'}${d.firmware ? ` · firmware ${esc(d.firmware)}` : ''}</p></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="kobo-rescan">${connected() ? 'Rescanner' : 'Brancher et scanner'}</button>
+          <button class="btn" id="kobo-edit">Modifier</button>
+        </div></div>
+      ${koboWarning()}
+      <div class="seg seg-3" style="max-width:560px">
+        ${seg('all', 'Tous', d.items.length)}${seg('nobook', 'Sans fiche', d.noBook)}${seg('nofile', 'Sans fichier', d.noFile)}
+      </div>
+      ${items.length ? `<div class="card table-wrap"><table class="stack"><thead><tr><th>Livre sur la liseuse</th><th>Lecture</th><th>Fiche</th><th>Fichier dans la biblio</th></tr></thead><tbody>
+        ${items.map((i) => `<tr>
+          <td><strong>${esc(i.title)}</strong><div class="small muted">${esc(i.authors || '')}${i.series ? ` · ${esc(i.series)}${i.seriesNumber ? ` #${esc(i.seriesNumber)}` : ''}` : ''}</div></td>
+          <td>${reading(i)}</td>
+          <td>${i.book
+            ? `<a href="#/book/${i.book.id}">${esc(i.book.title)}</a> <button class="btn btn-small" data-unlink="${i.id}" title="Détacher de cette fiche">✕</button>`
+            : `<span class="btn-row"><button class="btn btn-small btn-primary" data-create="${i.id}">Créer la fiche</button><button class="btn btn-small" data-link="${i.id}">Rattacher…</button></span>`}</td>
+          <td>${!i.book ? '<span class="muted">—</span>' : i.book.hasFile ? '<span class="badge badge-ok">Oui</span>'
+            : `<button class="btn btn-small" data-copy="${i.id}" ${i.path ? '' : 'disabled title="Livre sur carte SD : inaccessible"'}>Copier depuis la Kobo</button>`}</td>
+        </tr>`).join('')}</tbody></table></div>`
+        : '<div class="empty">Aucun livre dans cette liste.</div>'}`;
+
+    const item = (btn, key) => d.items.find((i) => i.id === Number(btn.dataset[key]));
+    // Fichier de la liseuse envoye dans l'exemplaire numerique de la fiche.
+    const copyFile = async (i, out) => {
+      if (!out.book || out.book.hasFile || !out.book.copyId || !i.path) return;
+      if (!connected()) { toast('Fiche enregistrée. Branche la liseuse (Brancher et scanner) pour copier le fichier.'); return; }
+      const file = await kobo.file(i.path);
+      if (!file) throw new Error('Fichier introuvable sur la liseuse.');
+      await uploadEpub(out.book.copyId, new File([file], i.path.split('/').pop(), { type: 'application/epub+zip' }));
+    };
+    $$('[data-filter]').forEach((btn) => { btn.onclick = () => { koboState.filter = btn.dataset.filter; route(); }; });
+    $('#kobo-edit').onclick = () => editKoboDialog(d, members);
+    $('#kobo-rescan').onclick = busy(async () => {
+      const r = await scanKobo();
+      if (r.id !== d.id) { toast(`C'est une autre liseuse : ${r.name}.`); go(`#/kobo/${r.id}`); return; }
+      toast('Liseuse scannée.');
+      route();
+    });
+    $$('[data-create]').forEach((btn) => {
+      btn.onclick = busy(async () => {
+        const i = item(btn, 'create');
+        const out = await api(`/api/kobo/items/${i.id}/create`, { method: 'POST', body: {} });
+        await copyFile(i, out);
+        toast('Fiche créée.');
+        route();
+      });
+    });
+    $$('[data-link]').forEach((btn) => {
+      btn.onclick = busy(async () => {
+        const i = item(btn, 'link');
+        const bookId = await pickBookDialog(i);
+        if (!bookId) return;
+        const out = await api(`/api/kobo/items/${i.id}/link`, { method: 'POST', body: { bookId } });
+        await copyFile(i, out);
+        toast('Livre rattaché.');
+        route();
+      });
+    });
+    $$('[data-unlink]').forEach((btn) => {
+      btn.onclick = busy(async () => {
+        const i = item(btn, 'unlink');
+        if (!confirm(`Détacher « ${i.title} » de la fiche « ${i.book.title} » ? (La fiche est conservée.)`)) return;
+        await api(`/api/kobo/items/${i.id}/link`, { method: 'POST', body: { bookId: null } });
+        route();
+      });
+    });
+    $$('[data-copy]').forEach((btn) => {
+      btn.onclick = busy(async () => {
+        const i = item(btn, 'copy');
+        if (!connected()) await connectKobo();
+        if (!connected()) throw new Error("Ce n'est pas la bonne liseuse.");
+        await copyFile(i, i);
+        toast('Fichier copié dans la bibliothèque.');
+        route();
+      });
+    });
   }
 
   // ================= Liseuse epub (epub.js) =================
@@ -1858,7 +2143,7 @@
     const u = state.user;
     view().innerHTML = `
       <h1>Mon compte</h1>
-      <p class="muted">${esc(u.username)} · ${u.role === 'admin' ? 'Administrateur (gère toutes les bibliothèques)' : 'Gestionnaire'}</p>
+      <p class="muted">${esc(u.username)} · ${u.role === 'admin' ? 'Administrateur (gère toutes les bibliothèques)' : roleLabel(u.role)}</p>
       <h2>Bibliothèque par défaut ${hint('Ouverte automatiquement après la connexion. Le menu du compte permet de basculer à tout moment.')}</h2>
       <div class="card">
         ${state.libraries.length ? `
@@ -2073,7 +2358,7 @@
       <div class="card">${users.length ? `<div class="list">${users.map((u) => `
         <div class="list-item">
           <div class="grow">
-            <strong>${esc(u.username)}</strong> ${u.role === 'admin' ? '<span class="badge badge-ok">Administrateur</span>' : '<span class="badge badge-muted">Gestionnaire</span>'}
+            <strong>${esc(u.username)}</strong> ${u.role === 'admin' ? '<span class="badge badge-ok">Administrateur</span>' : `<span class="badge badge-muted">${roleLabel(u.role)}</span>`}
             ${u.id === state.user.id ? '<span class="small muted">(toi)</span>' : ''}
             <div class="small muted">${u.role === 'admin' ? 'Toutes les bibliothèques' : (u.libraryIds.map((id) => esc(libName(id)) + (id === u.defaultLibraryId ? ' ★' : '')).join(', ') || 'Aucune bibliothèque')}</div>
           </div>
@@ -2101,8 +2386,9 @@
         <div class="field"><label>Identifiant *</label><input name="username" required value="${esc(u.username)}" autocomplete="off"></div>
         <div class="field"><label>${user ? `Nouveau mot de passe ${hint('Laisser vide pour ne pas changer.')}` : `Mot de passe * ${hint('8 caractères minimum.')}`}</label>
           <input name="password" type="password" autocomplete="new-password" minlength="8" ${user ? '' : 'required'}></div>
-        <div class="field"><label>Rôle ${hint('Gestionnaire : gère les bibliothèques cochées ci-dessous. Administrateur : toutes les bibliothèques, comptes et réglages.')}</label><select name="role">
-          <option value="manager" ${u.role !== 'admin' ? 'selected' : ''}>Gestionnaire</option>
+        <div class="field"><label>Rôle ${hint('Utilisateur : utilise les outils des bibliothèques cochées ci-dessous (catalogue, ajouts, prêts, liseuses…). Gestionnaire : en plus, étiquettes et réglages de ces bibliothèques. Administrateur : toutes les bibliothèques, comptes et réglages.')}</label><select name="role">
+          <option value="user" ${u.role === 'user' ? 'selected' : ''}>Utilisateur</option>
+          <option value="manager" ${u.role === 'manager' || !u.role ? 'selected' : ''}>Gestionnaire</option>
           <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrateur</option>
         </select></div>
         <div class="field"><label>Bibliothèques gérées (★ = par défaut)</label>
@@ -2536,6 +2822,57 @@
 
   const importState = { mode: 'scan', text: '', fileName: '', rows: null, mapping: [], items: [], results: null, running: false, stop: false, batch: [], cats: [], tags: [], toRead: true, readers: null };
 
+  // Import de fichiers epub : un fichier par requete, a la suite (fiche creee, ou fichier
+  // ajoute a la fiche existante).
+  function renderEpubImport(body) {
+    body.innerHTML = `
+      <div class="card">
+        <div class="field"><label>Fichiers epub ${hint('Une fiche est créée pour chaque fichier d\'après ses informations (titre, auteurs, résumé, série, couverture). Si la fiche existe déjà (même ISBN, ou même titre et auteur), le fichier lui est ajouté.')}</label>
+          <input type="file" id="epub-files" accept=".epub,application/epub+zip" multiple></div>
+        <div class="btn-row"><button class="btn btn-primary" id="epub-go" disabled>Importer</button></div>
+      </div>
+      <div id="epub-results"></div>`;
+    const input = $('#epub-files', body);
+    const goBtn = $('#epub-go', body);
+    input.onchange = () => {
+      goBtn.disabled = !input.files.length;
+      goBtn.textContent = input.files.length ? `Importer ${input.files.length} fichier(s)` : 'Importer';
+    };
+    goBtn.onclick = async () => {
+      const files = [...input.files];
+      goBtn.disabled = true;
+      input.disabled = true;
+      importState.running = true;
+      const out = $('#epub-results', body);
+      const LABELS = {
+        created: '<span class="badge badge-ok">Ajouté</span>',
+        attached: '<span class="badge badge-ok">Fichier ajouté à la fiche</span>',
+        skipped: '<span class="badge badge-muted">Déjà présent</span>',
+      };
+      const rows = files.map((f) => ({ name: f.name, html: '<span class="small muted">En attente…</span>' }));
+      const draw = () => {
+        out.innerHTML = `<div class="card table-wrap"><table><tbody>${rows.map((r) => `<tr><td class="small">${esc(r.name)}</td><td>${r.html}</td></tr>`).join('')}</tbody></table></div>`;
+      };
+      for (const [n, f] of files.entries()) {
+        rows[n].html = '<span class="small muted">Envoi…</span>';
+        draw();
+        try {
+          if (f.size > 100 * 1024 * 1024) throw new Error('Fichier trop lourd (100 Mo max).');
+          const r = await sendRaw('/api/import/epub', 'POST', f, 'application/epub+zip', { 'X-File-Name': encodeURIComponent(f.name) });
+          rows[n].html = `${LABELS[r.status] || ''} <a href="#/book/${r.bookId}">${esc(r.title)}</a>`;
+        } catch (err) {
+          rows[n].html = `<span class="badge badge-warn">Erreur</span> <span class="small">${esc(err.message)}</span>`;
+        }
+        draw();
+      }
+      importState.running = false;
+      input.value = '';
+      input.disabled = false;
+      goBtn.textContent = 'Importer';
+      toast('Import terminé.');
+    };
+  }
+
   async function viewImport() {
     const s = importState;
     const [locations, allCats, allTags, members] = await Promise.all([
@@ -2551,10 +2888,11 @@
       <p><a href="#/add">← Ajouter un livre</a></p>
       <div class="page-head"><div><h1>Ajout multiple ${hint('Ajoute d\'un coup plusieurs livres. Les exemplaires et leurs codes sont créés automatiquement ; leurs étiquettes passent « en attente ».')}</h1></div>
         <a class="btn" href="#/incomplete">Fiches incomplètes</a></div>
-      <div class="seg seg-3" style="max-width:640px">
+      <div class="seg seg-${features().ebooks ? 4 : 3}" style="max-width:${features().ebooks ? 820 : 640}px">
         <button type="button" data-mode="scan" class="${s.mode === 'scan' ? 'active' : ''}">Scanner en série</button>
         <button type="button" data-mode="isbn" class="${s.mode === 'isbn' ? 'active' : ''}">Liste d'ISBN</button>
         <button type="button" data-mode="full" class="${s.mode === 'full' ? 'active' : ''}">Fichier complet</button>
+        ${features().ebooks ? `<button type="button" data-mode="epub" class="${s.mode === 'epub' ? 'active' : ''}">Fichiers epub</button>` : ''}
       </div>
       <div id="import-body"></div>`;
     $$('.seg button').forEach((btn) => {
@@ -2566,6 +2904,7 @@
       };
     });
     const body = $('#import-body');
+    if (s.mode === 'epub' && features().ebooks) return renderEpubImport(body);
 
     const formatOption = features().ebooks ? `
       <div class="field"><label>Exemplaires à créer ${hint('Papier : avec code et étiquette. Numérique (epub, pdf…) : sans code ni étiquette.')}</label><select id="opt-format">
@@ -3001,7 +3340,8 @@
     const stop = $('#stop');
     if (stop) stop.onclick = () => { s.stop = true; stop.disabled = true; stop.textContent = 'Arrêt après le livre en cours…'; };
     const gl = $('#go-labels');
-    if (gl) gl.onclick = () => { state.labels = { mode: 'pending', manual: [] }; go('#/labels'); };
+    if (gl && !canConfigure()) gl.remove();
+    else if (gl) gl.onclick = () => { state.labels = { mode: 'pending', manual: [] }; go('#/labels'); };
   }
 
   function warnBeforeLeaving(e) { e.preventDefault(); e.returnValue = ''; }
@@ -3989,7 +4329,17 @@
           <span><strong>Tags</strong> ${hint('Mots-clés libres en plus des catégories (ex. #incontournable, #formation-2025). Ajoutés sur la fiche d\'un livre, visibles et filtrables dans le catalogue.')}</span></label>
         <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="stats" ${feat && feat.stats ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
           <span><strong>Statistiques</strong> ${hint('Statistiques de lecture de chaque compte (privées, partageables avec les autres membres) et de la bibliothèque (lecture en totaux anonymes, prêts, fonds). Les statistiques de lecture demandent les statuts de lecture.')}</span></label>
+        <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="kobo" ${feat && feat.kobo ? 'checked' : ''} ${feat && feat.ebooks ? '' : 'disabled'} style="margin-top:4px">
+          <span><strong>Liseuses Kobo</strong> ${hint('Demande les livres numériques. Liseuses branchées en USB : liste de leurs livres, rapprochement avec les fiches, statuts de lecture du propriétaire, envoi de livres (copie directe avec Chrome).')}</span></label>
       </form>
+      ${feat && feat.ebooks && s.ebookAccess ? `
+      <h2>Fichiers epub</h2>
+      <form class="card" id="ebook-access-form">
+        ${[['visible', 'Voir qu\'un fichier existe'], ['read', 'Lire en ligne'], ['download', 'Télécharger']].map(([key, label]) => `
+          <div class="field"><label>${label}</label><select name="${key}">
+            ${FILE_LEVELS.map(([v, l]) => `<option value="${v}" ${s.ebookAccess[key] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}
+        <p class="small muted">Pouvoir lire ou télécharger rend aussi le fichier visible.</p>
+      </form>` : ''}
 
       <h2>Codes des exemplaires</h2>
       <form class="card" id="code-form">
@@ -4189,7 +4539,16 @@
           toast(cb.checked ? 'Option activée.' : 'Option désactivée.');
           if (cb.name === 'tags') route(); // affiche / masque la gestion des tags
           if (cb.name === 'stats') renderNav(); // entree "Statistiques" du menu
+          if (cb.name === 'ebooks' || cb.name === 'kobo') { renderNav(); route(); } // Liseuses, droits epub
         } catch (err) { cb.checked = !cb.checked; toast(err.message, 'error'); }
+      };
+    });
+    $$('#ebook-access-form select').forEach((sel) => {
+      sel.onchange = async () => {
+        try {
+          await api('/api/settings', { method: 'PUT', body: { ebookAccess: { [sel.name]: sel.value } } });
+          toast('Droits enregistrés.');
+        } catch (err) { toast(err.message, 'error'); }
       };
     });
     // Generateur du code d'integration (shortcode WordPress / HTML).
