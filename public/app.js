@@ -863,7 +863,7 @@
     $('#brand-name').textContent = s.libraryName;
     document.title = s.libraryName;
     const brand = $('.brand');
-    brand.href = LIBRARY ? `${LIB}/#/` : `${ROOT}/#/`;
+    brand.href = LIBRARY ? `${LIB}/#/${state.user ? 'home' : ''}` : `${ROOT}/#/`;
     // Reglage de la bibliotheque : nom et logo, nom seul ou logo seul (sans logo,
     // le nom reste affiche pour que l'en-tete ne soit jamais vide).
     const display = s.brandDisplay || 'both';
@@ -903,6 +903,10 @@
     incomplete: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
     wish: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
     mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+    home: '<path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2z"/>',
+    todo: '<path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+    goal: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+    search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
     share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"/>',
   };
   function icon(name, size = 18) {
@@ -911,7 +915,7 @@
   // Couleur de chaque page (teinte, fond pastel) : navigation et pastille du titre.
   const PAGE_COLORS = {
     catalog: 'accent', kobo: 'grape', add: 'coral', import: 'sky', loans: 'sun', borrowers: 'grape', labels: 'rose', stats: 'sky', settings: 'accent',
-    user: 'grape', admin: 'coral', login: 'accent', library: 'accent', edit: 'coral', incomplete: 'sun', wish: 'rose',
+    user: 'grape', admin: 'coral', login: 'accent', library: 'accent', edit: 'coral', incomplete: 'sun', wish: 'rose', home: 'accent',
   };
   const colorVars = (name) => { const c = PAGE_COLORS[name] || 'accent'; return `--c:var(--${c});--cs:var(--${c}-soft)`; };
 
@@ -919,7 +923,7 @@
   const TITLE_ICONS = [
     [/^\/book\/\d+\/edit$/, 'edit'], [/^\/add$/, 'add'], [/^\/import$/, 'import'], [/^\/incomplete/, 'incomplete'],
     [/^\/kobo/, 'kobo'], [/^\/loans$/, 'loans'], [/^\/borrowers?(\/|$)/, 'borrowers'], [/^\/labels$/, 'labels'], [/^\/stats$/, 'stats'],
-    [/^\/settings$/, 'settings'], [/^\/account$/, 'user'], [/^\/admin$/, 'admin'], [/^\/login$/, 'login'], [/^\/wishes$/, 'wish'],
+    [/^\/settings$/, 'settings'], [/^\/account$/, 'user'], [/^\/admin$/, 'admin'], [/^\/login$/, 'login'], [/^\/wishes$/, 'wish'], [/^\/home$/, 'home'],
   ];
   function decorateTitle() {
     const h1 = view().querySelector('h1');
@@ -939,7 +943,10 @@
       links = canManage()
         ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : []), ...(koboOn() ? [[`#/kobo/${kobo.device.id}`, kobo.device.name, 'kobo']] : [])]
         : [['#/', 'Catalogue', 'catalog']];
-      if (state.user) links.splice(canManage() ? 4 : 1, 0, ['#/wishes', 'Souhaits', 'wish']);
+      if (state.user) {
+        links.splice(canManage() ? 4 : 1, 0, ['#/wishes', 'Souhaits', 'wish']);
+        links.unshift(['#/home', 'Accueil', 'home']);
+      }
     }
     let current = '#/' + (location.hash.replace(/^#\/?/, '').split('/')[0] || '');
     if (current === '#/import') current = '#/add'; // ajout multiple : sous-page de Ajouter
@@ -1076,6 +1083,7 @@
   // needs : 'manage' (gerer cette bibliotheque), 'user' (etre connecte), 'admin'.
   const LIBRARY_ROUTES = [
     [/^\/?$/, viewCatalog],
+    [/^\/home$/, viewDashboard, 'user'],
     [/^\/book\/(\d+)$/, viewBook],
     [/^\/read\/(\d+)$/, viewReader],
     [/^\/kobo$/, viewKobo, 'manage'],
@@ -2844,7 +2852,7 @@
 
   // ================= Connexion =================
   async function viewLogin() {
-    if (state.user) return go('#/');
+    if (state.user) return go(LIBRARY ? '#/home' : '#/');
     const setup = state.needsSetup;
     view().innerHTML = `
       <div class="card" style="max-width:400px;margin:24px auto">
@@ -2878,11 +2886,11 @@
         const after = sessionStorageTake('mll-after-login');
         if (LIBRARY) {
           renderHeader();
-          go(after || '#/');
+          go(after || (LIBRARY ? '#/home' : '#/'));
         } else {
           const def = state.libraries.find((l) => l.id === state.user.defaultLibraryId) || state.libraries[0];
           if (def && !after) location.href = libUrl(def.slug);
-          else { renderHeader(); go(after || '#/'); }
+          else { renderHeader(); go(after || (LIBRARY ? '#/home' : '#/')); }
         }
       } catch (err) {
         $('#err').innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -4451,7 +4459,8 @@
 
   // ================= Prets =================
   async function viewLoans() {
-    let tab = 'open';
+    let tab = loansTabNext || 'open';
+    loansTabNext = null;
     view().innerHTML = `
       <div class="page-head"><h1>Prêts ${hint('Pour prêter ou enregistrer un retour, scanne le QR code de l\'étiquette ou tape le code de l\'exemplaire.')}</h1></div>
       <div class="card" style="margin-bottom:18px">
@@ -4646,6 +4655,228 @@
     };
   }
 
+  // ================= Accueil personnalise (#/home) =================
+  // Cartes choisies et ordonnees par chaque compte (lib/home.js). Grand ecran : cartes
+  // detaillees. Smartphone : tuiles resumees qui tiennent dans l'ecran, sans defilement
+  // (ni vertical ni horizontal) ; chaque tuile ouvre la page correspondante.
+  const HOME_PHONE_QUERY = '(max-width: 599px), (max-height: 520px) and (orientation: landscape) and (pointer: coarse)';
+  const HOME_META = {
+    todo: { icon: 'todo', color: 'sun', wide: true },
+    reading: { icon: 'catalog', color: 'sky', wide: true },
+    forme: { icon: 'user', color: 'grape' },
+    due: { icon: 'loans', color: 'coral', wide: true },
+    wishes: { icon: 'wish', color: 'rose' },
+    news: { icon: 'add', color: 'accent', wide: true },
+    goal: { icon: 'goal', color: 'grape' },
+  };
+  // Onglet ouvert par la page Prets quand on y arrive depuis l'accueil.
+  let loansTabNext = null;
+
+  const openCatalog = (patch) => { state.catalog = { q: '', category: '', status: '', sort: 'title', page: 1, ...patch }; go('#/'); };
+  const daysLate = (due) => Math.round((Date.parse(new Date().toISOString().slice(0, 10)) - Date.parse(due)) / 86400000);
+  const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
+
+  function todoItems(t) {
+    if (!t) return [];
+    return [
+      t.reminderMode === 'auto' && [t.toRemind, 'Prêt à relancer', 'Prêts à relancer', 'remind', 'danger'],
+      [t.overdue, 'Prêt en retard', 'Prêts en retard', 'overdue', 'danger'],
+      [t.week, 'Retour cette semaine', 'Retours cette semaine', 'open', 'warn'],
+      [t.reservations, 'Réservation prête', 'Réservations prêtes', 'reservations', 'grape'],
+      [t.wishes, 'Souhait des membres', 'Souhaits des membres', '#/wishes', 'rose'],
+      [t.labels, 'Étiquette à imprimer', 'Étiquettes à imprimer', '#/labels', 'sky'],
+      [t.incomplete, 'Fiche incomplète', 'Fiches incomplètes', '#/incomplete', 'accent'],
+    ].filter((x) => x && x[0] > 0).map(([n, one, many, target, color]) => ({ n, label: n > 1 ? many : one, target, color }));
+  }
+
+  // Resume de chaque carte : valeur mise en avant, lignes, page ouverte (tuile smartphone).
+  function homeSummary(key, d) {
+    const x = d[key];
+    switch (key) {
+      case 'todo': {
+        const items = todoItems(x);
+        return { value: items.length ? String(items.reduce((s, i) => s + i.n, 0)) : '✓', lines: items.length ? items.map((i) => `${i.n} · ${i.label.toLowerCase()}`) : ['Tout est à jour'], go: items[0] ? items[0].target : 'open' };
+      }
+      case 'reading': return { value: String(x.length), lines: x.length ? x.map((b) => `${b.title}${b.percent != null ? ` · ${b.percent} %` : ''}`) : ['Aucune lecture en cours'], go: 'reading' };
+      case 'forme': return { value: String(x.length), lines: x.length ? x.map((f) => (f.kind === 'back' ? `${f.book.title} : disponible` : `${f.title} : ajouté`)) : ['Rien de neuf pour toi'], go: x[0] ? `#/book/${x[0].kind === 'back' ? x[0].book.id : x[0].bookId}` : '#/' };
+      case 'due': {
+        const late = x.filter((l) => l.overdue).length;
+        return { value: String(late || x.length), sub: late ? 'en retard' : 'à venir', lines: x.length ? x.map((l) => `${l.book.title} · ${l.overdue ? `${daysLate(l.dueAt)} j de retard` : fmtDay(l.dueAt)}`) : ['Aucune échéance proche'], go: late ? 'overdue' : 'open' };
+      }
+      case 'wishes': return { value: String(x.count), lines: x.items.length ? x.items.map((w) => w.title) : ['Aucun souhait'], go: '#/wishes' };
+      case 'news': return { value: String(x.month), sub: 'ce mois-ci', lines: x.items.map((b) => b.title), go: 'recent' };
+      case 'goal': return x.goal
+        ? { value: `${x.read}/${x.goal}`, lines: [x.ahead >= 0 ? `▲ ${plural(x.ahead, 'livre', 'livres')} d'avance` : `▼ ${plural(-x.ahead, 'livre', 'livres')} de retard`, `${x.pages.toLocaleString('fr-BE')} pages en ${x.year}`], go: '#/stats' }
+        : { value: String(x.read), sub: `lu${x.read > 1 ? 's' : ''} en ${x.year}`, lines: ['Aucun objectif défini'], go: '#/stats' };
+      default: return { value: '', lines: [], go: '#/' };
+    }
+  }
+
+  // Destination d'une carte ou d'une ligne : page, onglet des prets ou filtre du catalogue.
+  function homeGo(target) {
+    if (!target) return;
+    if (target.startsWith('#/')) { if (target === '#/wishes') wishState.owners = 'all'; return go(target); }
+    if (target === 'reading') return openCatalog({ reading: 'reading', statusUser: String(state.user.id) });
+    if (target === 'recent') return openCatalog({ sort: 'recent' });
+    loansTabNext = target;
+    go('#/loans');
+  }
+
+  const shelfHtml = (books, empty) => (books.length ? `<ul class="home-shelf" role="list">${books.map((b) => `<li><a class="home-book" href="#/book/${b.id}">
+      ${coverHtml(b, b.wish ? 'Ton souhait' : '')}<span class="t">${esc(b.title)}</span><span class="a">${esc(b.authors)}</span>
+      ${b.percent != null && b.percent !== undefined ? `<span class="bar" role="img" aria-label="${b.percent} % lus"><span style="width:${b.percent}%"></span></span>` : ''}</a></li>`).join('')}</ul>`
+    : `<p class="muted">${empty}</p>`);
+
+  function homeCardBody(key, d) {
+    const x = d[key];
+    switch (key) {
+      case 'todo': {
+        const items = todoItems(x);
+        return items.length ? `<div class="home-todo">${items.map((i) => `<button type="button" class="home-todo-item" data-home-go="${esc(i.target)}" style="${colorVars(i.color === 'danger' ? 'coral' : i.color === 'warn' ? 'sun' : i.color)}">
+            <span class="n">${i.n}</span><span class="l">${i.label}</span></button>`).join('')}</div>`
+          : '<p class="muted">Rien à faire : tout est à jour.</p>';
+      }
+      case 'reading': return shelfHtml(x, 'Aucune lecture en cours. Choisis « En cours » sur la fiche d\'un livre.');
+      case 'forme': return x.length ? `<ul class="list">${x.map((f) => (f.kind === 'back'
+        ? `<li class="list-item"><div class="grow"><a href="#/book/${f.book.id}"><strong>« ${esc(f.book.title)} » est disponible</strong></a><div class="small muted">Tu en es lecteur</div></div><span class="badge badge-ok">Disponible</span></li>`
+        : `<li class="list-item"><div class="grow">${f.bookId ? `<a href="#/book/${f.bookId}"><strong>« ${esc(f.title)} » a été ajouté</strong></a>` : `<strong>« ${esc(f.title)} » a été ajouté</strong>`}<div class="small muted">Ton souhait, le ${fmtDate(f.at)}</div></div><span class="badge badge-wish">Souhait</span></li>`)).join('')}</ul>`
+        : '<p class="muted">Rien de neuf pour toi : les livres dont tu es lecteur redevenus disponibles et tes souhaits acquis apparaîtront ici.</p>';
+      case 'due': return x.length ? `<ul class="list">${x.map((l) => { loanCache.set(l.id, l); return `<li class="list-item">
+          ${l.book.coverUrl ? `<img class="thumb" src="${esc(mediaSrc(l.book.coverUrl))}" alt="" loading="lazy">` : '<span class="thumb" aria-hidden="true"></span>'}
+          <div class="grow"><a href="#/book/${l.book.id}"><strong>${esc(l.book.title)}</strong></a><div class="small muted"><a href="#/borrower/${l.borrower.id}">${esc(l.borrower.name)}</a> · <span class="code">${esc(l.copy.code)}</span></div></div>
+          ${l.overdue ? `<span class="badge badge-late">${plural(daysLate(l.dueAt), 'jour', 'jours')} de retard</span>` : `<span class="badge badge-warn">${fmtDay(l.dueAt)}</span>`}
+          <button class="btn btn-small" type="button" data-remind="${l.id}" aria-label="Relancer ${esc(l.borrower.name)} pour « ${esc(l.book.title)} »">${icon('mail', 16)}<span class="hide-mobile">Relancer</span></button></li>`; }).join('')}</ul>`
+        : '<p class="muted">Aucune échéance dans les 14 prochains jours.</p>';
+      case 'wishes': return `${x.items.length ? `<ul class="list">${x.items.map((w) => `<li class="list-item">
+          ${w.coverUrl ? `<img class="thumb" src="${esc(w.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb" aria-hidden="true"></span>'}
+          <div class="grow"><strong>${esc(w.title)}</strong><div class="small muted">${esc(w.authors)}</div></div>${w.priority ? `<span class="badge badge-wish">Très envie</span>` : ''}</li>`).join('')}</ul>`
+        : '<p class="muted">Aucun souhait pour le moment.</p>'}<button class="btn btn-small" type="button" id="home-wish-add" style="margin-top:8px">${icon('add', 16)}Ajouter un souhait</button>`;
+      case 'news': return shelfHtml(x.items, 'Aucun livre pour le moment.');
+      case 'goal': {
+        if (!x.goal) return `<p><strong>${plural(x.read, 'livre lu', 'livres lus')} en ${x.year}</strong></p><p class="muted">Aucun objectif défini. <a href="#/stats">Définir mon objectif</a></p>`;
+        const p = Math.min(1, x.read / x.goal);
+        const c = 2 * Math.PI * 40;
+        return `<div class="home-goal"><svg class="ring" viewBox="0 0 100 100" width="92" height="92" role="img" aria-label="${x.read} livres lus sur ${x.goal}">
+            <circle cx="50" cy="50" r="40" class="track"/><circle cx="50" cy="50" r="40" class="val" stroke-dasharray="${(p * c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 50 50)"/>
+            <text x="50" y="57" text-anchor="middle">${x.read}</text></svg>
+          <div><p><strong>${x.read} livre${x.read > 1 ? 's' : ''} lu${x.read > 1 ? 's' : ''} sur ${x.goal}</strong></p>
+            <p class="${x.ahead >= 0 ? 'good' : 'bad'}">${x.ahead >= 0 ? `▲ ${plural(x.ahead, 'livre', 'livres')} d'avance` : `▼ ${plural(-x.ahead, 'livre', 'livres')} de retard`}</p>
+            <p class="small muted">${x.pages.toLocaleString('fr-BE')} pages en ${x.year}</p></div></div>`;
+      }
+      default: return '';
+    }
+  }
+  const HOME_LINKS = { reading: ['reading', 'Tout voir'], due: ['open', 'Page Prêts'], wishes: ['#/wishes', 'Tout voir'], news: ['recent', 'Catalogue'], goal: ['#/stats', 'Statistiques'] };
+
+  async function viewDashboard() {
+    const home = await api('/api/home');
+    const shown = home.cards.filter((c) => c.shown);
+    const d = home.data;
+    const now = new Date().toLocaleDateString('fr-BE', { weekday: 'long', day: 'numeric', month: 'long' });
+    const alerts = d.todo ? todoItems(d.todo).filter((i) => ['remind', 'overdue'].includes(i.target)).reduce((s, i) => s + i.n, 0) : 0;
+    const sub = alerts ? `${now} · ${plural(alerts, 'prêt demande', 'prêts demandent')} ton attention` : now;
+    view().innerHTML = `<div class="home">
+      <div class="home-head">
+        <div class="home-hello"><h1>Bonjour ${esc(state.user.username)}</h1><p class="muted">${esc(sub.charAt(0).toUpperCase() + sub.slice(1))}</p></div>
+        <form class="home-search" role="search" id="home-search">
+          <label for="home-q" class="sr-only">Rechercher dans le catalogue</label>
+          <input type="search" id="home-q" placeholder="Titre, auteur, ISBN…" autocomplete="off">
+          <button class="btn btn-primary" type="submit" aria-label="Rechercher">${icon('search', 16)}<span class="hide-phone">Rechercher</span></button>
+        </form>
+        <button class="btn btn-small home-custom" type="button" id="home-custom" aria-label="Personnaliser l'accueil">${icon('settings', 16)}<span class="hide-phone">Personnaliser</span></button>
+      </div>
+      ${shown.length ? `
+      <div class="home-cards">${shown.map((c) => `<section class="card home-card${HOME_META[c.key].wide ? ' wide' : ''}" aria-labelledby="hc-${c.key}">
+          <div class="home-card-head"><span class="h-icon" style="${colorVars(HOME_META[c.key].color)}" aria-hidden="true">${icon(HOME_META[c.key].icon, 18)}</span>
+            <h2 id="hc-${c.key}">${esc(c.label)}${c.key === 'wishes' && d.wishes.count ? ` <span class="muted">(${d.wishes.count})</span>` : ''}</h2>
+            ${HOME_LINKS[c.key] ? `<button type="button" class="link-btn" data-home-go="${HOME_LINKS[c.key][0]}">${HOME_LINKS[c.key][1]}</button>` : ''}</div>
+          ${homeCardBody(c.key, d)}</section>`).join('')}</div>
+      <nav class="home-tiles" id="home-tiles" aria-label="Accueil">${shown.map((c) => { const s = homeSummary(c.key, d); return `
+          <button type="button" class="home-tile" data-home-go="${esc(s.go)}" style="${colorVars(HOME_META[c.key].color)}">
+            <span class="tile-head"><span class="h-icon" aria-hidden="true">${icon(HOME_META[c.key].icon, 16)}</span><span class="tile-label">${esc(c.label)}</span></span>
+            <span class="tile-value">${esc(s.value)}${s.sub ? ` <small>${esc(s.sub)}</small>` : ''}</span>
+            <span class="tile-lines">${s.lines.map((l) => `<span>${esc(l)}</span>`).join('')}</span>
+          </button>`; }).join('')}</nav>`
+      : `<div class="empty">Toutes les cartes sont masquées.<br><br><button class="btn" type="button" id="home-custom-2">Choisir les cartes</button></div>`}
+    </div>`;
+    $('#home-search').onsubmit = (e) => { e.preventDefault(); openCatalog({ q: $('#home-q').value.trim() }); };
+    const custom = async () => { if (await homeCustomize(home.cards)) viewDashboard(); };
+    $('#home-custom').onclick = custom;
+    if ($('#home-custom-2')) $('#home-custom-2').onclick = custom;
+    $$('[data-home-go]').forEach((b) => { b.onclick = () => homeGo(b.dataset.homeGo); });
+    if ($('#home-wish-add')) $('#home-wish-add').onclick = async () => { if (await wishDialog()) viewDashboard(); };
+    fitHome();
+    // Apres la pastille du titre (ajoutee juste apres) : nouvelle mesure.
+    requestAnimationFrame(fitHome);
+  }
+
+  // Smartphone : la page tient dans l'ecran. Hauteur des tuiles = place restante sous
+  // l'en-tete, grille calculee selon le nombre de cartes et l'orientation.
+  function fitHome() {
+    const tiles = $('#home-tiles');
+    const phone = window.matchMedia(HOME_PHONE_QUERY).matches;
+    document.body.classList.toggle('home-fit', phone && !!$('.home'));
+    if (!tiles || !phone) { if (tiles) tiles.style.height = ''; return; }
+    const n = tiles.children.length;
+    const landscape = window.innerWidth > window.innerHeight;
+    const cols = landscape ? Math.min(n, 4) : (n <= 3 ? 1 : 2);
+    tiles.style.setProperty('--cols', cols);
+    tiles.style.setProperty('--rows', Math.ceil(n / cols));
+    tiles.classList.toggle('odd', cols === 2 && n % 2 === 1);
+    const h = (window.visualViewport ? window.visualViewport.height : window.innerHeight) - tiles.getBoundingClientRect().top - 12;
+    tiles.style.height = `${Math.max(120, Math.floor(h))}px`;
+  }
+  const refitHome = () => { if ($('#home-tiles')) fitHome(); };
+  window.addEventListener('resize', refitHome);
+  window.addEventListener('orientationchange', () => setTimeout(refitHome, 150));
+  [HOME_PHONE_QUERY, '(orientation: landscape)'].forEach((q) => { const m = window.matchMedia(q); if (m.addEventListener) m.addEventListener('change', refitHome); });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if ($('#home-tiles')) fitHome(); });
+  window.addEventListener('hashchange', () => { if (!/^#\/home$/.test(location.hash)) document.body.classList.remove('home-fit'); });
+
+  // Choix et ordre des cartes (cases a cocher, boutons Monter / Descendre).
+  function homeCustomize(cards) {
+    let list = cards.map((c) => ({ ...c }));
+    return new Promise((resolve) => {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      backdrop.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="hcust-title">
+        <h2 id="hcust-title">Personnaliser l'accueil</h2>
+        <p class="small muted">Coche les cartes à afficher et règle leur ordre.</p>
+        <ol class="home-order" id="home-order"></ol>
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn btn-primary" type="button" id="hcust-save">Enregistrer</button>
+          <button class="btn" type="button" id="hcust-reset">Ordre par défaut</button>
+          <button class="btn" type="button" data-close>Annuler</button>
+        </div></div>`;
+      document.body.appendChild(backdrop);
+      const close = (v) => { backdrop.remove(); resolve(v); };
+      backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(false); });
+      const box = $('#home-order', backdrop);
+      const render = (focus) => {
+        box.innerHTML = list.map((c, i) => `<li class="home-order-row">
+          <label class="check grow"><input type="checkbox" data-shown="${i}" ${c.shown ? 'checked' : ''}> <span class="h-icon" style="${colorVars(HOME_META[c.key].color)}" aria-hidden="true">${icon(HOME_META[c.key].icon, 16)}</span>${esc(c.label)}</label>
+          <button type="button" class="btn btn-small" data-move="${i}" data-dir="-1" aria-label="Monter ${esc(c.label)}" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button type="button" class="btn btn-small" data-move="${i}" data-dir="1" aria-label="Descendre ${esc(c.label)}" ${i === list.length - 1 ? 'disabled' : ''}>↓</button></li>`).join('');
+        if (focus) { const b = $(`[data-move="${focus[0]}"][data-dir="${focus[1]}"]`, box) || $(`[data-move="${focus[0]}"]:not([disabled])`, box); if (b) b.focus(); }
+      };
+      box.addEventListener('change', (e) => { const i = e.target.dataset.shown; if (i !== undefined) list[Number(i)].shown = e.target.checked; });
+      box.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-move]');
+        if (!b) return;
+        const i = Number(b.dataset.move);
+        const j = i + Number(b.dataset.dir);
+        [list[i], list[j]] = [list[j], list[i]];
+        render([j, b.dataset.dir]);
+      });
+      render();
+      const save = async (body) => {
+        try { await api('/api/home/cards', { method: 'PUT', body }); toast('Accueil enregistré.'); close(true); } catch (err) { toast(err.message, 'error'); }
+      };
+      $('#hcust-save', backdrop).onclick = () => save({ order: list.map((c) => c.key), hidden: list.filter((c) => !c.shown).map((c) => c.key) });
+      $('#hcust-reset', backdrop).onclick = () => save({ order: null });
+    });
+  }
+
   // ================= Souhaits =================
   // Liste de souhaits de chaque compte (hors bibliotheque, API globale /api/wishes).
   // Onglets : sa liste, celles partagees avec soi et, pour un gestionnaire de la
@@ -4658,8 +4889,9 @@
     const { owners, manager } = await gapi(`/api/wishes/owners?${libParam()}`);
     const me = state.user.id;
     const ids = new Set(owners.map((o) => o.id));
-    let selected = (wishState.owners || [me]).filter((id) => ids.has(id));
+    let selected = (wishState.owners === 'all' ? owners.map((o) => o.id) : wishState.owners || [me]).filter((id) => ids.has(id));
     if (!selected.length) selected = [me];
+    wishState.owners = selected;
     const VIA = { share: 'partagée', library: 'membre' };
     view().innerHTML = `
       <div class="page-head"><div><h1>Souhaits ${hint("Livres que tu aimerais lire ou voir acheter. Ta liste t'appartient (elle n'est dans aucune bibliothèque) ; tu peux la partager avec d'autres comptes. Les gestionnaires voient celles des membres de leur bibliothèque.")}</h1></div>
@@ -6110,6 +6342,7 @@
   (async function init() {
     await Promise.all([loadSettings(), loadStatus()]);
     renderHeader();
+    if (LIBRARY && state.user && /^#?\/?$/.test(location.hash)) history.replaceState(null, '', '#/home');
     window.addEventListener('hashchange', route);
     route();
     koboRestore();

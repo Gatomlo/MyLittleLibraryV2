@@ -858,3 +858,77 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
   .badge, .chip-toggle[aria-pressed="true"], .tabs button.active { border: 1px solid CanvasText; }
   .nav-badge { forced-color-adjust: none; }
 }
+
+/* Accueil personnalise (#/home) : cartes en grand ecran, tuiles sur smartphone. */
+.home { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.home-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; }
+.home-hello { flex: 1 1 240px; min-width: 0; }
+.home-hello h1 { margin: 0; }
+.home-hello p { margin: 2px 0 0; }
+.home-search { display: flex; gap: 8px; flex: 1 1 300px; max-width: 460px; min-width: 0; }
+.home-search input { flex: 1; min-width: 0; }
+.home .h-icon, .home-order .h-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 10px; flex-shrink: 0; background: var(--cs, var(--accent-soft)); color: var(--c, var(--accent)); }
+.home h1 .h-icon { width: 40px; height: 40px; border-radius: 13px; }
+.home-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+.home-card { min-width: 0; }
+.home-card.wide { grid-column: 1 / -1; }
+.home-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.home-card-head h2 { margin: 0; font-size: 17px; flex: 1; min-width: 0; }
+.link-btn { border: 0; background: none; padding: 4px 6px; color: var(--accent); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; border-radius: 8px; }
+.link-btn:hover { text-decoration: underline; }
+/* Rangee de livres : une seule ligne, les suivantes masquees (jamais de defilement). */
+.home-shelf { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); grid-template-rows: auto; grid-auto-rows: 0; column-gap: 14px; row-gap: 0; overflow: hidden; }
+.home-shelf > li { min-width: 0; min-height: 0; overflow: hidden; }
+.home-book { display: flex; flex-direction: column; gap: 4px; color: var(--text); text-decoration: none; padding-bottom: 2px; }
+.home-book .cover { border-radius: 8px; box-shadow: var(--shadow); }
+.home-book .t { font-size: 13px; font-weight: 700; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.home-book .a { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-book .bar { display: block; height: 5px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.home-book .bar span { display: block; height: 100%; background: var(--sky); border-radius: inherit; }
+.home-todo { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.home-todo-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border-radius: 14px; border: 1px solid transparent; background: var(--cs); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.home-todo-item:hover { border-color: var(--c); }
+.home-todo-item .n { font-size: 24px; font-weight: 800; line-height: 1.1; color: var(--c); font-variant-numeric: tabular-nums; }
+.home-todo-item .l { font-size: 13px; font-weight: 700; }
+.home-goal { display: flex; align-items: center; gap: 14px; }
+.home-goal p { margin: 0; }
+.home-goal .ring circle { fill: none; stroke-width: 10; }
+.home-goal .ring .track { stroke: var(--surface-2); }
+.home-goal .ring .val { stroke: var(--grape); stroke-linecap: round; }
+.home-goal .ring text { fill: var(--text); font-weight: 800; font-size: 20px; font-family: inherit; }
+.good { color: var(--ok); font-weight: 700; }
+.bad { color: var(--danger); font-weight: 700; }
+.home-tiles { display: none; }
+.home-order { list-style: none; margin: 0; padding: 0; }
+.home-order-row { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.home-order-row:last-child { border-bottom: 0; }
+.home-order-row .grow { flex: 1; min-width: 0; }
+
+/* Smartphone (et telephone a l'horizontale) : tuiles dans la hauteur de l'ecran. */
+@media (max-width: 599px), (max-height: 520px) and (orientation: landscape) and (pointer: coarse) {
+  html:has(body.home-fit), body.home-fit { overflow: hidden; overscroll-behavior: none; }
+  body.home-fit .shell { padding-top: 12px; padding-bottom: 0; }
+  .home { gap: 10px; }
+  .home-head { gap: 8px; align-items: center; }
+  .home-hello { flex-basis: 100%; }
+  .home-hello h1 { font-size: 20px; }
+  .home h1 .h-icon { width: 30px; height: 30px; border-radius: 10px; }
+  .home-hello p { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .home-search { flex: 1 1 0; max-width: none; }
+  .hide-phone { display: none !important; }
+  .home-cards { display: none; }
+  .home-tiles { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows, 4), minmax(0, 1fr)); gap: 8px; min-height: 0; overflow: hidden; }
+  .home-tiles.odd > :last-child { grid-column: 1 / -1; }
+  .home-tile { display: flex; flex-direction: column; align-items: stretch; gap: 2px; min-width: 0; min-height: 0; overflow: hidden; padding: 8px 10px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: var(--shadow); }
+  .home-tile .tile-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .home-tile .h-icon { width: 24px; height: 24px; border-radius: 8px; }
+  .home-tile .tile-label { font-size: 13px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .home-tile .tile-value { font-size: 22px; font-weight: 800; line-height: 1.15; color: var(--c); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .home-tile .tile-value small { font-size: 12px; font-weight: 700; color: var(--muted); }
+  .home-tile .tile-lines { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; font-size: 12px; color: var(--muted); line-height: 1.35; }
+  .home-tile .tile-lines span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+}
+@media (max-height: 520px) and (orientation: landscape) and (pointer: coarse) {
+  .home-hello { flex-basis: auto; }
+  .home-hello p { display: none; }
+}

@@ -140,6 +140,12 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   de la date de retour + J jours (négatif = avant), puis tous les 7 jours tant que le livre est en retard.
   Objet et message personnalisables ({nom}, {livres}, {bibliotheque}, {date_retour}). Sans e-mail : copie du message.
 - **ISBN inconnu au scan** : proposition d'ajouter le livre (fiche pré-remplie par l'ISBN) ou de l'ajouter à ses souhaits.
+- **Accueil personnalisé** (lien « Accueil », page d'arrivée d'un compte connecté ; visiteur : catalogue) :
+  cartes À faire (prêts à relancer ou en retard, retours de la semaine, réservations prêtes, souhaits des
+  membres, étiquettes, fiches incomplètes), Mes lectures en cours (progression Kobo), Pour moi (livres dont on
+  est lecteur redevenus disponibles, souhaits acquis), Échéances des prêts, Mes souhaits, Nouveautés, Objectif
+  de lecture. Chaque compte choisit ses cartes et leur ordre (« Personnaliser », par bibliothèque). Sur
+  smartphone : tuiles résumées qui tiennent dans l'écran, sans aucun défilement ; une tuile ouvre la page.
 - **Souhaits** (lien « Souhaits », tout compte connecté) : liste de livres souhaités propre à chaque compte
   (hors bibliothèque) ; ajout par ISBN (tapé ou scanné) ou par titre (choix de l'édition), notes, « Très envie ».
   Partage de sa liste avec d'autres comptes (lecture seule). Les gestionnaires d'une bibliothèque voient les
