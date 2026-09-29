@@ -134,8 +134,10 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   modifiable au prêt, « Prolonger » sur la page de l'exemplaire ; onglet « En retard » de la page Prêts
   et pastille rouge sur le lien Prêts de l'en-tête.
 - **ISBN inconnu au scan** : proposition d'ajouter le livre, fiche pré-remplie par l'ISBN.
-- **Réservations** : un compte membre réserve un livre dont tous les exemplaires sont prêtés (fiche du
-  livre) ; au retour d'un exemplaire, alerte « à mettre de côté pour … » ; onglet « Réservations » de la page Prêts.
+- **Réservations** : un compte connecté réserve, au nom d'un emprunteur (choisi ou créé), un livre dont tous
+  les exemplaires sont prêtés (fiche du livre) ; au retour d'un exemplaire, alerte « à mettre de côté pour … »
+  avec « Prêter à … » ; le prêt à cet emprunteur retire sa réservation. Onglet « Réservations » de la page
+  Prêts, réservations visibles sur la fiche de l'emprunteur.
 - **Emprunteurs** : formulaire de création ouvert à la demande, champ libre « Informations ». Fiche d'un
   emprunteur : prêts en cours (retards), historique, « Prêter un livre » (scanner avec l'emprunteur pré-rempli,
   « Prêter un autre livre à … » pour enchaîner).
