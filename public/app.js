@@ -906,7 +906,7 @@
     ['cover', 'Couverture'], ['title', 'Titre'], ['authors', 'Auteurs'], ['series', 'Série et tome'], ['collection', 'Collection'],
     ['categories', 'Catégories'], ['tags', 'Tags', 'tags'], ['readers', 'Lecteurs (gestion)'], ['status', 'Statut de lecture et avis', 'readingStatus'], ['rating', 'Note (étoiles)', 'readingStatus'], ['availability', 'Disponibilité'], ['ebook', 'Bandeau « Numérique »', 'ebooks'],
   ];
-  const ALL_CATALOG_FILTERS = ['search', 'category', 'collection', 'series', 'tag', 'mine', 'reader', 'availability', 'format',
+  const ALL_CATALOG_FILTERS = ['search', 'scan', 'category', 'collection', 'series', 'tag', 'mine', 'reader', 'availability', 'format',
     'statusUser', 'reading', 'opinion', 'rating', 'sort', 'count'];
   const catalogConf = () => {
     const conf = (state.settings && state.settings.catalog) || {};
@@ -918,7 +918,7 @@
 
   // [cle, libelle, option de la bibliotheque necessaire]
   const CATALOG_FILTER_LABELS = [
-    ['search', 'Recherche'], ['category', 'Catégories'], ['collection', 'Collections'], ['series', 'Séries'], ['tag', 'Tags', 'tags'], ['mine', 'Mes livres (gestion)'], ['reader', 'Lecteurs (gestion)'],
+    ['search', 'Recherche'], ['scan', 'Scanner un ISBN (recherche)'], ['category', 'Catégories'], ['collection', 'Collections'], ['series', 'Séries'], ['tag', 'Tags', 'tags'], ['mine', 'Mes livres (gestion)'], ['reader', 'Lecteurs (gestion)'],
     ['availability', 'Disponibilité'], ['format', 'Papier / numérique', 'ebooks'],
     ['statusUser', 'Statuts de… (choix du compte)', 'readingStatus'], ['reading', 'Statut de lecture', 'readingStatus'], ['opinion', 'Avis', 'readingStatus'], ['rating', 'Note', 'readingStatus'],
     ['sort', 'Tri'], ['count', 'Nombre de livres'],
@@ -977,7 +977,11 @@
     // [cle, libelle (colonne de gauche), html]
     const controls = [];
     if (show('search')) {
-      controls.push(['search', 'Recherche', `<input class="search" type="search" id="q" placeholder="Titre, auteur, éditeur, ISBN${canManage() ? ', code' : ''}…" value="${esc(c.q)}">`]);
+      const input = `<input ${show('scan') ? '' : 'class="search" '}type="search" id="q" placeholder="Titre, auteur, éditeur, ISBN${canManage() ? ', code' : ''}…" value="${esc(c.q)}">`;
+      // Bouton de scan du code-barres ISBN a cote de la recherche (au choix dans les Reglages).
+      controls.push(['search', 'Recherche', show('scan')
+        ? `<span class="search search-scan">${input}<button class="btn" type="button" id="q-scan" title="Scanner le code-barres ISBN">Scan ISBN</button></span>`
+        : input]);
     }
     if (show('category') && cats.some((x) => x.count > 0)) controls.push(['category', 'Catégorie', '<input type="search" id="cat" placeholder="Toutes les catégories">']);
     if (show('collection') && collections.length) controls.push(['collection', 'Collection', '<input type="search" id="coll" placeholder="Toutes les collections">']);
@@ -1046,7 +1050,7 @@
     const toggle = controls.some(([k]) => k !== 'search') ? '<button class="btn filters-toggle" type="button" id="filters-toggle" aria-expanded="false">Filtres</button>' : '';
     const filtersHtml = (left
       ? controls.map(([k, label, html]) => `<div class="fgroup${k === 'search' ? ' fgroup-search' : ''}">${label ? `<label>${label}</label>` : ''}${html}</div>`)
-      : controls.map(([, , html]) => html)).join('').replace(/^(<div class="fgroup fgroup-search">.*?<\/div>|<input class="search"[^>]*>)?/, (m) => m + toggle);
+      : controls.map(([, , html]) => html)).join('').replace(/^(<div class="fgroup fgroup-search">.*?<\/div>|<input class="search"[^>]*>|<span class="search search-scan">.*?<\/span>)?/, (m) => m + toggle);
     const results = '<div class="books" id="books"></div><div class="more" id="more"></div>';
     // Nombre de livres (au choix) : sous les filtres, en haut comme dans la colonne.
     const countHtml = show('count') ? '<p class="catalog-count" id="count"></p>' : '';
@@ -1095,6 +1099,15 @@
     renderActive();
 
     if ($('#q')) $('#q').addEventListener('input', debounce((e) => { c.q = e.target.value; reload(); }, 250));
+    if ($('#q-scan')) {
+      $('#q-scan').onclick = async () => {
+        const isbn = await scanIsbn();
+        if (!isbn || !$('#q')) return;
+        $('#q').value = isbn;
+        c.q = isbn;
+        reload();
+      };
+    }
     if ($('#cat')) {
       searchPicker({
         input: $('#cat'),

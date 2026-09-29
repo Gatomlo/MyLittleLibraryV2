@@ -66,7 +66,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   **Réglages > Vider la bibliothèque** (sauvegarde automatique de la base avant).
 - **Import** : catégories et tags choisis parmi les existants ; les nouveaux livres
   peuvent être marqués « À lire » pour soi (coché par défaut).
-- **Filtres du catalogue** au choix (Réglages > Affichage du catalogue : recherche, catégories,
+- **Filtres du catalogue** au choix (Réglages > Affichage du catalogue : recherche, bouton « Scanner » un ISBN à côté de la recherche, catégories,
   collections, tags, disponibilité, papier/numérique, mes livres, lecteur, compte des statuts, statut de lecture, avis, tri — chacun indépendant), en haut
   ou dans une colonne à gauche. Même choix pour le catalogue WordPress (générateur de
   shortcode : `filtres="..."`, `position="gauche"`). Réglages présentés en accordéon.
