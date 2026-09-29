@@ -816,7 +816,17 @@ ul.list { list-style: none; margin: 0; padding: 0; }
 .chip-toggle[aria-pressed="true"] { background: var(--rose-soft); border-color: var(--rose); color: var(--text); }
 .chip-toggle[aria-pressed="true"] .tab-avatar { background: var(--rose); color: #fff; }
 .wish-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
-.wish-toolbar .tabs { margin-bottom: 12px; flex: 1 1 auto; }
+.wish-toolbar { margin-bottom: 12px; }
+.wish-filter[aria-pressed="true"] { color: var(--rose); }
+.wish-filter[aria-pressed="true"] svg { fill: currentColor; }
+/* Coeur « Tres envie » : bouton (proprietaire) ou simple indication. */
+.wish-heart { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; border: 0; background: none; color: var(--muted); padding: 0; }
+button.wish-heart { cursor: pointer; }
+button.wish-heart:hover { background: var(--rose-soft); color: var(--rose); }
+.wish-heart[aria-pressed="true"], .wish-heart.on { color: var(--rose); }
+.wish-heart[aria-pressed="true"] svg, .wish-heart.on svg { fill: currentColor; }
+span.wish-heart:not(.on) { visibility: hidden; }
+@media (prefers-reduced-motion: no-preference) { button.wish-heart:active svg { transform: scale(.85); } button.wish-heart svg { transition: transform .12s; } }
 .wish-item { align-items: flex-start; flex-wrap: wrap; }
 .wish-item .grow { display: flex; flex-direction: column; gap: 4px; }
 .wish-notes { color: var(--text); font-style: italic; }

@@ -4890,7 +4890,7 @@
   // Onglets : sa liste, celles partagees avec soi et, pour un gestionnaire de la
   // bibliotheque ouverte, celles de ses membres. Plusieurs listes peuvent etre
   // selectionnees a la fois (affichage et export).
-  const wishState = { owners: null };
+  const wishState = { owners: null, priority: false };
   const libParam = () => (LIBRARY && canConfigure() ? `library=${LIBRARY.id}` : '');
 
   async function viewWishes() {
@@ -4911,6 +4911,7 @@
         <button type="button" class="btn btn-small" id="wish-all">${selected.length === owners.length ? 'Seulement moi' : 'Toutes'}</button>
       </div>` : ''}
       <div class="wish-toolbar">
+        <button type="button" class="chip-toggle wish-filter" id="wish-prio" aria-pressed="${wishState.priority}">${icon('wish', 16)}Très envie seulement</button>
         <div class="btn-row"><span class="small muted">Exporter${selected.length > 1 ? ` les ${selected.length} listes` : ''} :</span>
           <a class="btn btn-small" id="wish-xlsx" download>Excel</a><a class="btn btn-small" id="wish-csv" download>CSV</a></div>
       </div>
@@ -4928,7 +4929,8 @@
       };
     });
     if ($('#wish-all')) $('#wish-all').onclick = () => setSelected(selected.length === owners.length ? [me] : owners.map((o) => o.id));
-    const q = `owners=${selected.join(',')}${libParam() ? '&' + libParam() : ''}`;
+    $('#wish-prio').onclick = () => { wishState.priority = !wishState.priority; viewWishes(); };
+    const q = `owners=${selected.join(',')}${wishState.priority ? '&priority=1' : ''}${libParam() ? '&' + libParam() : ''}`;
     $('#wish-xlsx').href = `${ROOT}/api/wishes/export.xlsx?${q}`;
     $('#wish-csv').href = `${ROOT}/api/wishes/export.csv?${q}`;
     $('#wish-add').onclick = async () => { if (await wishDialog()) viewWishes(); };
@@ -4936,8 +4938,23 @@
     const wishes = await gapi(`/api/wishes?${q}`);
     const multi = selected.length > 1 || selected[0] !== me;
     $('#wish-list').innerHTML = wishes.length ? `<ul class="list wish-list">${wishes.map((w) => wishItemHtml(w, { me, manager, multi })).join('')}</ul>`
-      : `<div class="empty">Aucun souhait pour le moment.${selected.includes(me) ? '<br><br>Ajoute un livre par son ISBN, en le scannant ou par son titre.' : ''}</div>`;
+      : wishState.priority ? '<div class="empty">Aucun souhait « Très envie ».</div>'
+        : `<div class="empty">Aucun souhait pour le moment.${selected.includes(me) ? '<br><br>Ajoute un livre par son ISBN, en le scannant ou par son titre.' : ''}</div>`;
     const byId = new Map(wishes.map((w) => [w.id, w]));
+    // Coeur « Tres envie » : bascule immediate (proprietaire).
+    $$('[data-wish-heart]', $('#wish-list')).forEach((btn) => {
+      btn.onclick = async () => {
+        const w = byId.get(Number(btn.dataset.wishHeart));
+        const on = !w.priority;
+        try {
+          await gapi(`/api/wishes/${w.id}`, { method: 'PUT', body: { priority: on } });
+          w.priority = on ? 1 : 0;
+          if (wishState.priority && !on) return viewWishes();
+          btn.setAttribute('aria-pressed', String(on));
+          btn.title = on ? 'Très envie (cliquer pour retirer)' : 'Marquer « Très envie »';
+        } catch (err) { toast(err.message, 'error'); }
+      };
+    });
     $$('[data-wish-act]', $('#wish-list')).forEach((btn) => {
       btn.onclick = async () => {
         const w = byId.get(Number(btn.dataset.wish));
@@ -4966,14 +4983,18 @@
       acts.push(`<button class="btn btn-small" type="button" data-wish-act="edit" data-wish="${w.id}" aria-label="Modifier « ${esc(w.title)} »">Modifier</button>`);
       acts.push(`<button class="btn btn-small btn-danger" type="button" data-wish-act="delete" data-wish="${w.id}" aria-label="Supprimer « ${esc(w.title)} »">Supprimer</button>`);
     }
+    const heart = own
+      ? `<button type="button" class="wish-heart" data-wish-heart="${w.id}" aria-pressed="${!!w.priority}" aria-label="Très envie : ${esc(w.title)}"
+          title="${w.priority ? 'Très envie (cliquer pour retirer)' : 'Marquer « Très envie »'}">${icon('wish', 20)}</button>`
+      : `<span class="wish-heart${w.priority ? ' on' : ''}" aria-hidden="true">${icon('wish', 20)}</span>`;
     return `<li class="list-item wish-item">
+      ${heart}
       ${w.coverUrl ? `<img class="thumb" src="${esc(w.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb" aria-hidden="true"></span>'}
       <div class="grow">
-        <strong>${esc(w.title)}</strong>${w.subtitle ? ` <span class="muted">— ${esc(w.subtitle)}</span>` : ''}
+        <strong>${esc(w.title)}</strong>${!own && w.priority ? '<span class="sr-only"> (très envie)</span>' : ''}${w.subtitle ? ` <span class="muted">— ${esc(w.subtitle)}</span>` : ''}
         ${meta ? `<div class="small muted">${meta}</div>` : ''}
         ${w.notes ? `<div class="small wish-notes">${esc(w.notes)}</div>` : ''}
         <div class="badges">
-          ${w.priority ? `<span class="badge badge-wish">${icon('wish', 12)}Très envie</span>` : ''}
           ${multi ? `<span class="badge badge-muted">${own ? 'Moi' : esc(w.owner.username)}</span>` : ''}
           ${w.inLibrary ? `<a class="badge badge-ok" href="#/book/${w.inLibrary.id}">Déjà dans la bibliothèque</a>` : ''}
         </div>

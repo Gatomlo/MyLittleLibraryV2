@@ -147,7 +147,8 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   de lecture. Chaque compte choisit ses cartes et leur ordre (menu du compte > « Personnaliser l'accueil », par bibliothèque). Sur
   smartphone : tuiles résumées qui tiennent dans l'écran, sans aucun défilement ; une tuile ouvre la page.
 - **Souhaits** (lien « Souhaits », tout compte connecté) : liste de livres souhaités propre à chaque compte
-  (hors bibliothèque) ; ajout par ISBN (tapé ou scanné) ou par titre (choix de l'édition), notes, « Très envie ».
+  (hors bibliothèque) ; ajout par ISBN (tapé ou scanné) ou par titre (choix de l'édition), notes, « Très envie » (cœur cliquable dans la liste,
+  filtre « Très envie seulement », aussi appliqué à l'export).
   Partage de sa liste avec d'autres comptes (lecture seule). Les gestionnaires d'une bibliothèque voient les
   souhaits de ses membres, les ajoutent au catalogue en un clic (fiche pré-remplie, le membre coché comme
   lecteur ; à l'enregistrement, le souhait est retiré de sa liste) et exportent en .xlsx / .csv les souhaits d'un ou plusieurs membres
