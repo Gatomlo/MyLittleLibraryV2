@@ -113,6 +113,7 @@
   function toast(message, type) {
     const el = document.createElement('div');
     el.className = 'toast' + (type === 'error' ? ' error' : '');
+    if (type === 'error') el.setAttribute('role', 'alert');
     el.textContent = message;
     $('#toasts').appendChild(el);
     setTimeout(() => el.remove(), type === 'error' ? 6000 : 3500);
@@ -122,6 +123,65 @@
   const fmtDay = (s) => (s ? s.split('-').reverse().join('/') : '');
   // Echeance d'un pret en cours ("a rendre le ...", badge rouge si depassee).
   const dueHtml = (l) => (!l.dueAt ? '' : l.overdue ? `<span class="badge badge-late">En retard · ${fmtDay(l.dueAt)}</span>` : `à rendre le ${fmtDay(l.dueAt)}`);
+
+  // ---------- Rappels de retour (mailto) ----------
+  // Modele par defaut (reglages de la bibliotheque : objet et message personnalisables).
+  const REMINDER_DEFAULT = {
+    subject: 'Rappel : livre(s) à rendre à {bibliotheque}',
+    body: 'Bonjour {nom},\n\nPetit rappel concernant le(s) livre(s) emprunté(s) à {bibliotheque} :\n{livres}\n\n'
+      + 'Merci de le(s) rapporter dès que possible. Si un délai supplémentaire est nécessaire, il suffit de répondre à ce message.\n\nBonne lecture !',
+  };
+  function reminderText(tpl, borrower, loans) {
+    const due = loans.map((l) => l.dueAt).filter(Boolean).sort()[0] || '';
+    const lines = loans.map((l) => `- ${l.book.title} (${l.copy.code})${l.dueAt ? ` : à rendre le ${fmtDay(l.dueAt)}${l.overdue ? ' (en retard)' : ''}` : ''}`).join('\n');
+    const fill = (s) => s.replace(/\{(nom|livres|bibliotheque|date_retour)\}/g, (m, k) => ({
+      nom: borrower.name, livres: lines, bibliotheque: state.settings.libraryName, date_retour: fmtDay(due) })[k]);
+    return { subject: fill(tpl.subject || REMINDER_DEFAULT.subject), body: fill(tpl.body || REMINDER_DEFAULT.body) };
+  }
+  // Ouvre le message dans la messagerie de l'appareil, puis note la relance si elle est envoyee.
+  async function sendReminder(borrower, loans) {
+    const { reminder } = await api('/api/loans/summary');
+    const msg = reminderText(reminder || {}, borrower, loans);
+    if (!borrower.email) {
+      const v = await dialog(`<h2>Pas d'adresse e-mail</h2>
+        <p><strong>${esc(borrower.name)}</strong> n'a pas d'adresse e-mail enregistrée.</p>
+        <div class="btn-row">
+          <button class="btn btn-primary" type="button" data-v="mail">Écrire quand même</button>
+          <button class="btn" type="button" data-v="copy">Copier le message</button>
+          <button class="btn" type="button" data-v="edit">Ajouter l'adresse</button>
+          <button class="btn" type="button" data-close>Annuler</button>
+        </div>`);
+      if (v === 'edit') { go(`#/borrower/${borrower.id}`); return false; }
+      if (v === 'copy') {
+        try { await navigator.clipboard.writeText(`${msg.subject}\n\n${msg.body}`); toast('Message copié.'); } catch (e) { toast('Copie impossible.', 'error'); return false; }
+      } else if (v === 'mail') openMailto('', msg);
+      else return false;
+    } else openMailto(borrower.email, msg);
+    const ok = await dialog(`<h2>Relance de ${esc(borrower.name)}</h2>
+      <p>Le message est prêt dans ta messagerie. Une fois envoyé, note la relance pour ne pas relancer deux fois.</p>
+      <div class="btn-row"><button class="btn btn-primary" type="button" data-v="yes">Noter la relance</button><button class="btn" type="button" data-close>Pas envoyé</button></div>`);
+    if (ok !== 'yes') return false;
+    await api('/api/loans/reminded', { method: 'POST', body: { ids: loans.map((l) => l.id) } });
+    toast('Relance notée.');
+    refreshLoanBadge();
+    return true;
+  }
+  function openMailto(to, msg) {
+    const a = document.createElement('a');
+    a.href = `mailto:${encodeURIComponent(to).replace(/%40/g, '@')}?subject=${encodeURIComponent(msg.subject)}&body=${encodeURIComponent(msg.body)}`;
+    a.click();
+  }
+  // Prets affiches (pour le bouton « Relancer » des listes).
+  const loanCache = new Map();
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-remind]');
+    if (!btn) return;
+    e.preventDefault();
+    const l = loanCache.get(Number(btn.dataset.remind));
+    if (!l) return;
+    try { if (await sendReminder(l.borrower, [l])) route(); } catch (err) { toast(err.message, 'error'); }
+  });
+  const remindedHtml = (l) => (l.remindedAt ? `relancé le ${fmtDate(l.remindedAt)}${l.reminderCount > 1 ? ` (${l.reminderCount} fois)` : ''}` : '');
 
   // Fenetre simple : renvoie la valeur data-v du bouton touche, ou null.
   function dialog(html) {
@@ -140,6 +200,73 @@
       if (first) first.focus();
     });
   }
+
+  // ---------- Fenetres (accessibilite clavier) ----------
+  // Toute fenetre .modal-backdrop : focus place dedans a l'ouverture et rendu a
+  // l'element d'origine a la fermeture, Tab reste dans la fenetre, Echap ferme
+  // (bouton data-close, sinon clic sur le fond), titre h2 relie a role=dialog.
+  (() => {
+    const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+    const opened = new Map();
+    // Dernier element focalise hors fenetre (une fenetre prend souvent le focus
+    // avant que l'observateur ne la voie).
+    let lastOutside = null;
+    const remember = (el) => { if (el && el.closest && !el.closest('.modal-backdrop')) lastOutside = el.closest(FOCUSABLE) || el; };
+    document.addEventListener('focusin', (e) => remember(e.target));
+    document.addEventListener('click', (e) => remember(e.target), true);
+    const top = () => { const all = $$('.modal-backdrop'); return all[all.length - 1] || null; };
+    const focusables = (el) => $$(FOCUSABLE, el).filter((x) => x.offsetParent !== null || x === document.activeElement);
+    new MutationObserver((records) => {
+      for (const r of records) {
+        r.addedNodes.forEach((n) => {
+          if (!(n instanceof HTMLElement) || !n.classList.contains('modal-backdrop')) return;
+          opened.set(n, n.contains(document.activeElement) ? lastOutside : document.activeElement);
+          const box = $('[role=dialog]', n) || $('.modal', n);
+          if (box) {
+            if (!box.hasAttribute('role')) box.setAttribute('role', 'dialog');
+            box.setAttribute('aria-modal', 'true');
+            const h = $('h2, h1', box);
+            if (h && !box.hasAttribute('aria-labelledby') && !box.hasAttribute('aria-label')) {
+              if (!h.id) h.id = 'dlg-' + Math.random().toString(36).slice(2, 8);
+              box.setAttribute('aria-labelledby', h.id);
+            }
+          }
+          // Focus deja place par la fenetre (champ, bouton) : conserve.
+          setTimeout(() => { if (n.isConnected && !n.contains(document.activeElement)) { const f = focusables(n)[0]; if (f) f.focus(); } }, 0);
+        });
+        r.removedNodes.forEach((n) => {
+          if (!opened.has(n)) return;
+          const back = opened.get(n);
+          opened.delete(n);
+          if (back && back.isConnected && !top()) back.focus();
+        });
+      }
+    }).observe(document.body, { childList: true });
+    document.addEventListener('keydown', (e) => {
+      const m = top();
+      if (!m) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        const c = $('[data-close]', m);
+        if (c) c.click(); else m.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const list = focusables(m);
+      if (!list.length) return;
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (!m.contains(document.activeElement)) { e.preventDefault(); first.focus(); } else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }, true);
+  })();
+
+  // Lien « Aller au contenu » : focus sur la page sans toucher a l'adresse (routes en #).
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest || !e.target.closest('.skip-link')) return;
+    e.preventDefault();
+    view().focus();
+  });
 
   function go(hash) {
     if (location.hash === hash) route();
@@ -595,6 +722,9 @@
   let loanFor = null;
   // ISBN scanne absent de la bibliotheque : pre-rempli sur la page Ajouter.
   let pendingAddIsbn = null;
+  // Souhait a ajouter a la bibliotheque (page Souhaits) : fiche pre-remplie, puis
+  // souhait marque comme acquis a l'enregistrement.
+  let pendingWish = null;
 
   // Ligne d'une liste de choix : couverture, texte principal, detail.
   const pickLine = (coverUrl, main, sub) => `<span class="pick-line">${coverUrl ? `<img class="thumb" src="${esc(mediaSrc(coverUrl))}" alt="">` : '<span class="thumb"></span>'}
@@ -613,10 +743,13 @@
       }
       const { books } = await api(`/api/copies/by-isbn/${encodeURIComponent(r.isbn)}`);
       if (!books.length) {
-        if (confirm(`Aucun livre avec l'ISBN ${r.isbn} dans cette bibliothèque. L'ajouter ?`)) {
-          pendingAddIsbn = r.isbn;
-          go('#/add');
-        }
+        const v = await dialog(`<h2>ISBN ${esc(r.isbn)} inconnu</h2>
+          <p>Aucun livre avec cet ISBN dans cette bibliothèque.</p>
+          <div class="btn-row"><button class="btn btn-primary" type="button" data-v="add">Ajouter à la bibliothèque</button>
+            <button class="btn" type="button" data-v="wish">${icon('wish', 16)}Ajouter à mes souhaits</button>
+            <button class="btn" type="button" data-close>Annuler</button></div>`);
+        if (v === 'add') { pendingAddIsbn = r.isbn; go('#/add'); }
+        if (v === 'wish' && await wishDialog(null, { isbn: r.isbn })) go('#/wishes');
         return;
       }
       if (action === 'book') {
@@ -715,8 +848,12 @@
     api('/api/loans/summary').then((s) => {
       const old = $('.nav-badge', link);
       if (old) old.remove();
-      if (s.overdue) link.insertAdjacentHTML('beforeend', `<span class="nav-badge" title="Prêts en retard">${s.overdue}</span>`);
-      $('#menu-btn').classList.toggle('has-alert', s.overdue > 0);
+      // Rappels programmes : prets a relancer ; sinon prets en retard.
+      const auto = s.reminder && s.reminder.mode === 'auto';
+      const n = auto ? s.toRemind : s.overdue;
+      const label = auto ? 'Prêts à relancer' : 'Prêts en retard';
+      if (n) link.insertAdjacentHTML('beforeend', `<span class="nav-badge" title="${label}"><span class="sr-only">${label} : </span>${n}</span>`);
+      $('#menu-btn').classList.toggle('has-alert', n > 0);
     }).catch(() => {});
   }
 
@@ -764,6 +901,9 @@
     library: '<path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/>',
     edit: '<path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
     incomplete: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+    wish: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+    mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+    share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"/>',
   };
   function icon(name, size = 18) {
     return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ''}</svg>`;
@@ -771,7 +911,7 @@
   // Couleur de chaque page (teinte, fond pastel) : navigation et pastille du titre.
   const PAGE_COLORS = {
     catalog: 'accent', kobo: 'grape', add: 'coral', import: 'sky', loans: 'sun', borrowers: 'grape', labels: 'rose', stats: 'sky', settings: 'accent',
-    user: 'grape', admin: 'coral', login: 'accent', library: 'accent', edit: 'coral', incomplete: 'sun',
+    user: 'grape', admin: 'coral', login: 'accent', library: 'accent', edit: 'coral', incomplete: 'sun', wish: 'rose',
   };
   const colorVars = (name) => { const c = PAGE_COLORS[name] || 'accent'; return `--c:var(--${c});--cs:var(--${c}-soft)`; };
 
@@ -779,7 +919,7 @@
   const TITLE_ICONS = [
     [/^\/book\/\d+\/edit$/, 'edit'], [/^\/add$/, 'add'], [/^\/import$/, 'import'], [/^\/incomplete/, 'incomplete'],
     [/^\/kobo/, 'kobo'], [/^\/loans$/, 'loans'], [/^\/borrowers?(\/|$)/, 'borrowers'], [/^\/labels$/, 'labels'], [/^\/stats$/, 'stats'],
-    [/^\/settings$/, 'settings'], [/^\/account$/, 'user'], [/^\/admin$/, 'admin'], [/^\/login$/, 'login'],
+    [/^\/settings$/, 'settings'], [/^\/account$/, 'user'], [/^\/admin$/, 'admin'], [/^\/login$/, 'login'], [/^\/wishes$/, 'wish'],
   ];
   function decorateTitle() {
     const h1 = view().querySelector('h1');
@@ -799,12 +939,13 @@
       links = canManage()
         ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : []), ...(koboOn() ? [[`#/kobo/${kobo.device.id}`, kobo.device.name, 'kobo']] : [])]
         : [['#/', 'Catalogue', 'catalog']];
+      if (state.user) links.splice(canManage() ? 4 : 1, 0, ['#/wishes', 'Souhaits', 'wish']);
     }
     let current = '#/' + (location.hash.replace(/^#\/?/, '').split('/')[0] || '');
     if (current === '#/import') current = '#/add'; // ajout multiple : sous-page de Ajouter
     $('#nav').innerHTML = links.map(([href, label, ic]) => {
       const active = href === current || href.startsWith(current + '/') || (href === '#/' && (current === '#/book' || current === '#/'));
-      return `<a href="${href}" class="${active ? 'active' : ''}" style="${colorVars(ic)}">${icon(ic)}<span>${label}</span></a>`;
+      return `<a href="${href}" class="${active ? 'active' : ''}"${active ? ' aria-current="page"' : ''} style="${colorVars(ic)}">${icon(ic)}<span>${esc(label)}</span></a>`;
     }).join('');
     // Etiquettes et reglages : seulement dans le menu du compte (tous les ecrans).
     $('#nav').hidden = links.length <= 1;
@@ -870,6 +1011,7 @@
       <a class="menu-item" href="#/kobo">${icon('kobo')}Toutes les liseuses</a>` : ''}
       <div class="menu-sep"></div>
       <a class="menu-item" href="#/account">${icon('user')}Mon compte</a>
+      <a class="menu-item" href="#/wishes">${icon('wish')}Mes souhaits</a>
       ${canInstall() ? `<button class="menu-item" type="button" id="install-app">${icon('install')}Installer l'application</button>` : ''}
       ${u.role === 'admin' ? `<a class="menu-item" href="#/admin">${icon('admin')}Administration</a>` : ''}
       <button class="menu-item" type="button" id="logout">${icon('logout')}Déconnexion</button>`;
@@ -951,16 +1093,30 @@
     [/^\/stats$/, viewStats, 'manage'],
     [/^\/settings$/, viewSettings, 'config'],
     [/^\/account$/, viewAccount, 'user'],
+    [/^\/wishes$/, viewWishes, 'user'],
     [/^\/admin$/, viewAdmin, 'admin'],
   ];
   const HOME_ROUTES = [
     [/^\/?$/, viewHome],
     [/^\/login$/, viewLogin],
     [/^\/account$/, viewAccount, 'user'],
+    [/^\/wishes$/, viewWishes, 'user'],
     [/^\/admin$/, viewAdmin, 'admin'],
     // Anciennes etiquettes (d'avant les bibliotheques multiples) : #/c/CODE a la racine.
     [/^\/(c\/[^/]+|book\/\d+)$/, viewLegacyRedirect],
   ];
+
+  // Apres un changement de page : titre de l'onglet = titre de la page, et focus
+  // sur le contenu (sauf au premier affichage), pour les lecteurs d'ecran et le clavier.
+  let firstPage = true;
+  function announcePage() {
+    const h1 = $('h1', view());
+    const name = state.settings && state.settings.libraryName;
+    const t = h1 ? h1.textContent.replace(/\?/g, '').trim() : '';
+    document.title = t && t !== name ? `${t} – ${name || 'Bibliothèques'}` : (name || 'Bibliothèques');
+    if (firstPage) { firstPage = false; return; }
+    if (!view().contains(document.activeElement)) view().focus({ preventScroll: true });
+  }
 
   // Nettoyage de la page quittee (ex. couper la camera du scan en serie).
   let pageCleanup = null;
@@ -983,9 +1139,10 @@
         view().innerHTML = `<div class="empty">Ton compte n'a pas accès à cette page.<br><br><a class="btn" href="#/">Retour</a></div>`;
         return;
       }
-      view().innerHTML = '<p class="muted">Chargement…</p>';
+      view().innerHTML = '<p class="muted" role="status">Chargement…</p>';
       try {
         await fn(...m.slice(1));
+        announcePage();
       } catch (err) {
         view().innerHTML = `<div class="error-box">${esc(err.message)}</div><a class="btn" href="#/">Retour</a>`;
       }
@@ -3382,6 +3539,18 @@
       const isbn = await scanIsbn();
       if (isbn) { $('#isbn-search').value = isbn; lastLookup = isbn; lookup(isbn); }
     };
+    // Souhait ajoute a la bibliotheque : champs repris, son auteur coche comme lecteur.
+    const wish = !editing ? pendingWish : null;
+    pendingWish = null;
+    if (wish) {
+      ['isbn', 'title', 'subtitle', 'authors', 'publisher', 'year'].forEach((k) => { if (wish[k] && f[k]) f[k].value = wish[k]; });
+      if (wish.notes && f.notes) f.notes.value = wish.notes;
+      const reader = $(`[data-reader="${wish.owner.id}"]`, f);
+      if (reader) reader.checked = true;
+      if (wish.coverUrl && !wish.isbn) { form.cover.remoteUrl = wish.coverUrl; form.cover.url = wish.coverUrl; renderCover(); }
+      if (wish.isbn) pendingAddIsbn = wish.isbn;
+      $('#isbn-result').insertAdjacentHTML('beforebegin', `<div class="info-box" style="margin-top:8px">Souhait de <strong>${esc(wish.owner.username)}</strong> : il sera marqué comme acquis à l'enregistrement.</div>`);
+    }
     // ISBN scanne absent de la bibliotheque (bouton Scanner) : recherche lancee.
     if (!editing && pendingAddIsbn) {
       const isbn = pendingAddIsbn;
@@ -3418,6 +3587,10 @@
         else {
           const codes = saved.copies.filter((c) => c.format !== 'ebook').map((c) => c.code);
           toast(codes.length ? `Livre ajouté : ${codes.join(', ')}. Étiquette(s) en attente d'impression.` : 'Livre ajouté.');
+          if (wish) {
+            await gapi(`/api/wishes/${wish.id}`, { method: 'PUT', body: { status: 'acquired', library: LIBRARY.id, bookId: saved.id } })
+              .catch((err) => toast(`Souhait non mis à jour : ${err.message}`, 'error'));
+          }
         }
         if (fromIncomplete) sessionStorageTake('mll-after-edit');
         go(fromIncomplete || `#/book/${saved.id}`);
@@ -4299,9 +4472,12 @@
     };
     async function tabs() {
       const s = await api('/api/loans/summary');
+      const auto = s.reminder && s.reminder.mode === 'auto';
+      if (!auto && tab === 'remind') tab = 'open';
       $('#loan-tabs').innerHTML = [['open', `En cours (${s.open})`], ['overdue', `En retard (${s.overdue})`],
+        ...(auto ? [['remind', `À relancer (${s.toRemind})`]] : []),
         ['reservations', `Réservations (${s.reservations})`], ['returned', 'Historique']]
-        .map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? 'active' : ''}">${l}</button>`).join('');
+        .map(([k, l]) => `<button type="button" data-tab="${k}" class="${k === tab ? 'active' : ''}" aria-pressed="${k === tab}">${l}</button>`).join('');
       $$('#loan-tabs button').forEach((btn) => {
         btn.onclick = () => { tab = btn.dataset.tab; tabs(); load(); };
       });
@@ -4326,6 +4502,25 @@
         return;
       }
       const loans = await api(`/api/loans?status=${tab}`);
+      if (tab === 'remind') {
+        // Un message par emprunteur, avec tous ses livres a relancer.
+        const groups = new Map();
+        loans.forEach((l) => { if (!groups.has(l.borrower.id)) groups.set(l.borrower.id, []); groups.get(l.borrower.id).push(l); });
+        const list = [...groups.values()];
+        $('#loan-list').innerHTML = list.length ? list.map((ls, i) => `<section class="remind-group" aria-labelledby="rg-${i}">
+            <div class="remind-head"><h3 id="rg-${i}"><a href="#/borrower/${ls[0].borrower.id}">${esc(ls[0].borrower.name)}</a></h3>
+              <span class="small muted grow">${esc(ls[0].borrower.email || "pas d'e-mail")}</span>
+              <button class="btn btn-small btn-primary" type="button" data-remind-group="${i}">${icon('mail', 16)}Relancer (${ls.length} livre${ls.length > 1 ? 's' : ''})</button></div>
+            <div class="list">${ls.map((l) => loanItemHtml(l, true)).join('')}</div></section>`).join('')
+          : '<div class="empty">Aucun prêt à relancer.</div>';
+        $$('[data-remind-group]').forEach((btn) => {
+          btn.onclick = async () => {
+            const ls = list[Number(btn.dataset.remindGroup)];
+            try { if (await sendReminder(ls[0].borrower, ls)) { tabs(); load(); } } catch (err) { toast(err.message, 'error'); }
+          };
+        });
+        return;
+      }
       $('#loan-list').innerHTML = loans.length ? `<div class="list">${loans.map((l) => loanItemHtml(l)).join('')}</div>`
         : `<div class="empty">${{ open: 'Aucun prêt en cours.', overdue: 'Aucun prêt en retard.' }[tab] || 'Aucun prêt terminé.'}</div>`;
     }
@@ -4333,14 +4528,17 @@
   }
 
   function loanItemHtml(l, hideBorrower) {
+    loanCache.set(l.id, l);
     return `<div class="list-item">
       ${l.book.coverUrl ? `<img class="thumb" src="${esc(mediaSrc(l.book.coverUrl))}" alt="" loading="lazy">` : '<span class="thumb"></span>'}
       <div class="grow">
         <a href="#/book/${l.book.id}"><strong>${esc(l.book.title)}</strong></a>
         <div class="small muted"><span class="code">${esc(l.copy.code)}</span>${hideBorrower ? '' : ` · <a href="#/borrower/${l.borrower.id}">${esc(l.borrower.name)}</a>`}</div>
-        <div class="small muted">Prêté le ${fmtDate(l.loanedAt)}${l.returnedAt ? ` · rendu le ${fmtDate(l.returnedAt)}` : l.dueAt ? ` · ${dueHtml(l)}` : ''}${l.notes ? ' · ' + esc(l.notes) : ''}</div>
+        <div class="small muted">Prêté le ${fmtDate(l.loanedAt)}${l.returnedAt ? ` · rendu le ${fmtDate(l.returnedAt)}` : l.dueAt ? ` · ${dueHtml(l)}` : ''}${l.notes ? ' · ' + esc(l.notes) : ''}${!l.returnedAt && l.remindedAt ? ` · ${remindedHtml(l)}` : ''}</div>
       </div>
-      ${l.returnedAt ? '' : `<a class="btn btn-small btn-ok" href="#/c/${encodeURIComponent(l.copy.code)}" data-quick-return="${esc(l.copy.code)}">Retour</a>`}
+      ${l.returnedAt ? '' : `<div class="btn-row loan-actions">
+        <button class="btn btn-small" type="button" data-remind="${l.id}" aria-label="Relancer ${esc(l.borrower.name)} pour « ${esc(l.book.title)} »">${icon('mail', 16)}<span>Relancer</span></button>
+        <a class="btn btn-small btn-ok" href="#/c/${encodeURIComponent(l.copy.code)}" data-quick-return="${esc(l.copy.code)}" aria-label="Retour de « ${esc(l.book.title)} »">Retour</a></div>`}
     </div>`;
   }
 
@@ -4398,7 +4596,8 @@
     view().innerHTML = `
       <p><a href="#/borrowers">← Emprunteurs</a></p>
       <div class="page-head"><h1>${esc(b.name)}</h1>
-        <button class="btn btn-primary" type="button" id="lend">Prêter un livre</button></div>
+        <div class="btn-row">${open.length ? `<button class="btn" type="button" id="remind-all">${icon('mail', 16)}Relancer (${open.length} livre${open.length > 1 ? 's' : ''})</button>` : ''}
+        <button class="btn btn-primary" type="button" id="lend">Prêter un livre</button></div></div>
       <form class="card" id="borrower-form" style="margin-top:14px">
         <div class="grid-3">
           <div class="field"><label>Nom *</label><input name="name" required value="${esc(b.name)}"></div>
@@ -4423,6 +4622,9 @@
       <div class="card">${past.length ? `<div class="list">${past.map((l) => loanItemHtml(l, true)).join('')}</div>` : '<p class="muted">Aucun prêt terminé.</p>'}</div>`;
     // Emprunteur retenu pour les exemplaires scannes ensuite (voir loanFor).
     $('#lend').onclick = () => { loanFor = { id: b.id, name: b.name }; scanAndOpen('loan'); };
+    if ($('#remind-all')) $('#remind-all').onclick = async () => {
+      try { if (await sendReminder({ id: b.id, name: b.name, email: b.email }, open)) route(); } catch (err) { toast(err.message, 'error'); }
+    };
     $$('[data-del-res]').forEach((btn) => {
       btn.onclick = async () => {
         try { await api(`/api/reservations/${btn.dataset.delRes}`, { method: 'DELETE' }); route(); } catch (err) { toast(err.message, 'error'); }
@@ -4442,6 +4644,225 @@
       if (!confirm(`Supprimer ${b.name} ?`)) return;
       try { await api(`/api/borrowers/${id}`, { method: 'DELETE' }); go('#/borrowers'); } catch (err) { toast(err.message, 'error'); }
     };
+  }
+
+  // ================= Souhaits =================
+  // Liste de souhaits de chaque compte (hors bibliotheque, API globale /api/wishes).
+  // Onglets : sa liste, celles partagees avec soi et, pour un gestionnaire de la
+  // bibliotheque ouverte, celles de ses membres. Plusieurs listes peuvent etre
+  // selectionnees a la fois (affichage et export).
+  const wishState = { owners: null, status: 'wanted' };
+  const libParam = () => (LIBRARY && canConfigure() ? `library=${LIBRARY.id}` : '');
+
+  async function viewWishes() {
+    const { owners, manager } = await gapi(`/api/wishes/owners?${libParam()}`);
+    const me = state.user.id;
+    const ids = new Set(owners.map((o) => o.id));
+    let selected = (wishState.owners || [me]).filter((id) => ids.has(id));
+    if (!selected.length) selected = [me];
+    const VIA = { share: 'partagée', library: 'membre' };
+    view().innerHTML = `
+      <div class="page-head"><div><h1>Souhaits ${hint("Livres que tu aimerais lire ou voir acheter. Ta liste t'appartient (elle n'est dans aucune bibliothèque) ; tu peux la partager avec d'autres comptes. Les gestionnaires voient celles des membres de leur bibliothèque.")}</h1></div>
+        <div class="btn-row"><button class="btn btn-primary" type="button" id="wish-add">${icon('add', 16)}Ajouter un souhait</button></div></div>
+      ${owners.length > 1 ? `<div class="wish-owners" role="group" aria-label="Listes affichées">
+        ${owners.map((o) => `<button type="button" class="chip-toggle" data-owner="${o.id}" aria-pressed="${selected.includes(o.id)}">
+          <span class="tab-avatar" aria-hidden="true">${initials(o.username)}</span>${o.id === me ? 'Mes souhaits' : esc(o.username)}
+          <span class="count">${o.wanted}</span>${VIA[o.via] ? `<span class="sr-only"> (liste ${VIA[o.via]})</span>` : ''}</button>`).join('')}
+        <button type="button" class="btn btn-small" id="wish-all">${selected.length === owners.length ? 'Seulement moi' : 'Toutes'}</button>
+      </div>` : ''}
+      <div class="wish-toolbar">
+        <div class="tabs" role="group" aria-label="Statut">${[['wanted', 'À acquérir'], ['acquired', 'Acquis'], ['all', 'Tous']].map(([k, l]) =>
+          `<button type="button" data-status="${k}" class="${wishState.status === k ? 'active' : ''}" aria-pressed="${wishState.status === k}">${l}</button>`).join('')}</div>
+        <div class="btn-row"><span class="small muted">Exporter${selected.length > 1 ? ` les ${selected.length} listes` : ''} :</span>
+          <a class="btn btn-small" id="wish-xlsx" download>Excel</a><a class="btn btn-small" id="wish-csv" download>CSV</a></div>
+      </div>
+      <div class="card" id="wish-list" aria-live="polite"><p class="muted">Chargement…</p></div>
+      <details class="card wish-share" id="wish-share">
+        <summary>${icon('share', 16)}<strong>Partager ma liste</strong> <span class="small muted" id="share-sum"></span></summary>
+        <div id="share-body" style="margin-top:12px"></div>
+      </details>`;
+    const setSelected = (list) => { wishState.owners = list; viewWishes(); };
+    $$('[data-owner]').forEach((btn) => {
+      btn.onclick = () => {
+        const id = Number(btn.dataset.owner);
+        const next = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
+        setSelected(next.length ? next : [id]);
+      };
+    });
+    if ($('#wish-all')) $('#wish-all').onclick = () => setSelected(selected.length === owners.length ? [me] : owners.map((o) => o.id));
+    $$('[data-status]').forEach((btn) => { btn.onclick = () => { wishState.status = btn.dataset.status; viewWishes(); }; });
+    const q = `owners=${selected.join(',')}&status=${wishState.status}${libParam() ? '&' + libParam() : ''}`;
+    $('#wish-xlsx').href = `${ROOT}/api/wishes/export.xlsx?${q}`;
+    $('#wish-csv').href = `${ROOT}/api/wishes/export.csv?${q}`;
+    $('#wish-add').onclick = async () => { if (await wishDialog()) viewWishes(); };
+
+    const wishes = await gapi(`/api/wishes?${q}`);
+    const multi = selected.length > 1 || selected[0] !== me;
+    $('#wish-list').innerHTML = wishes.length ? `<ul class="list wish-list">${wishes.map((w) => wishItemHtml(w, { me, manager, multi })).join('')}</ul>`
+      : `<div class="empty">${wishState.status === 'acquired' ? 'Aucun souhait acquis.' : 'Aucun souhait pour le moment.'}${selected.includes(me) && wishState.status !== 'acquired' ? '<br><br>Ajoute un livre par son ISBN, en le scannant ou par son titre.' : ''}</div>`;
+    const byId = new Map(wishes.map((w) => [w.id, w]));
+    $$('[data-wish-act]', $('#wish-list')).forEach((btn) => {
+      btn.onclick = async () => {
+        const w = byId.get(Number(btn.dataset.wish));
+        const act = btn.dataset.wishAct;
+        try {
+          if (act === 'edit') { if (await wishDialog(w)) viewWishes(); return; }
+          if (act === 'delete') {
+            if (!confirm(`Supprimer « ${w.title} » de tes souhaits ?`)) return;
+            await gapi(`/api/wishes/${w.id}`, { method: 'DELETE' });
+            toast('Souhait supprimé.');
+          }
+          if (act === 'acquired' || act === 'wanted') {
+            await gapi(`/api/wishes/${w.id}`, { method: 'PUT', body: { status: act, library: LIBRARY && canConfigure() ? LIBRARY.id : undefined } });
+            toast(act === 'acquired' ? 'Souhait marqué comme acquis.' : 'Souhait remis à acquérir.');
+          }
+          if (act === 'add') { pendingWish = w; go('#/add'); return; }
+          viewWishes();
+        } catch (err) { toast(err.message, 'error'); }
+      };
+    });
+    shareSection();
+  }
+
+  function wishItemHtml(w, { me, manager, multi }) {
+    const own = w.owner.id === me;
+    const meta = [w.authors, [w.publisher, w.year].filter(Boolean).join(', '), w.isbn ? `ISBN ${w.isbn}` : ''].filter(Boolean).map(esc).join(' · ');
+    const acts = [];
+    if (manager && w.status === 'wanted' && !w.inLibrary) acts.push(`<button class="btn btn-small btn-primary" type="button" data-wish-act="add" data-wish="${w.id}">${icon('add', 16)}Ajouter à la bibliothèque</button>`);
+    if (own || manager) {
+      acts.push(w.status === 'wanted'
+        ? `<button class="btn btn-small" type="button" data-wish-act="acquired" data-wish="${w.id}">Marquer acquis</button>`
+        : `<button class="btn btn-small" type="button" data-wish-act="wanted" data-wish="${w.id}">Remettre à acquérir</button>`);
+    }
+    if (own) {
+      acts.push(`<button class="btn btn-small" type="button" data-wish-act="edit" data-wish="${w.id}" aria-label="Modifier « ${esc(w.title)} »">Modifier</button>`);
+      acts.push(`<button class="btn btn-small btn-danger" type="button" data-wish-act="delete" data-wish="${w.id}" aria-label="Supprimer « ${esc(w.title)} »">Supprimer</button>`);
+    }
+    return `<li class="list-item wish-item${w.status === 'acquired' ? ' is-acquired' : ''}">
+      ${w.coverUrl ? `<img class="thumb" src="${esc(w.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb" aria-hidden="true"></span>'}
+      <div class="grow">
+        <strong>${esc(w.title)}</strong>${w.subtitle ? ` <span class="muted">— ${esc(w.subtitle)}</span>` : ''}
+        ${meta ? `<div class="small muted">${meta}</div>` : ''}
+        ${w.notes ? `<div class="small wish-notes">${esc(w.notes)}</div>` : ''}
+        <div class="badges">
+          ${w.priority ? `<span class="badge badge-wish">${icon('wish', 12)}Très envie</span>` : ''}
+          ${multi ? `<span class="badge badge-muted">${own ? 'Moi' : esc(w.owner.username)}</span>` : ''}
+          ${w.inLibrary ? `<a class="badge badge-ok" href="#/book/${w.inLibrary.id}">Déjà dans la bibliothèque</a>` : ''}
+          ${w.status === 'acquired' ? `<span class="badge badge-ok">Acquis${w.acquiredLibrary ? ` · ${esc(w.acquiredLibrary.name)}` : ''} · ${fmtDate(w.acquiredAt)}</span>` : ''}
+        </div>
+      </div>
+      ${acts.length ? `<div class="btn-row wish-actions">${acts.join('')}</div>` : ''}
+    </li>`;
+  }
+
+  // Partage de sa liste avec d'autres comptes (cases a cocher, enregistre a chaque changement).
+  async function shareSection() {
+    const box = $('#share-body');
+    if (!box) return;
+    const { viewers, candidates } = await gapi('/api/wishes/shares');
+    const sum = () => { const n = $$('[data-viewer]:checked', box).length; $('#share-sum').textContent = n ? `avec ${n} compte${n > 1 ? 's' : ''}` : 'non partagée'; };
+    box.innerHTML = candidates.length ? `<fieldset class="plain"><legend class="small muted">Ces comptes pourront voir ta liste (sans la modifier) :</legend>
+        <div class="check-grid">${candidates.map((c) => `<label class="check"><input type="checkbox" data-viewer="${c.id}" ${viewers.includes(c.id) ? 'checked' : ''}> ${esc(c.username)}</label>`).join('')}</div></fieldset>`
+      : '<p class="small muted">Aucun autre compte dans tes bibliothèques.</p>';
+    sum();
+    box.onchange = async () => {
+      try {
+        await gapi('/api/wishes/shares', { method: 'PUT', body: { viewerIds: $$('[data-viewer]:checked', box).map((x) => Number(x.dataset.viewer)) } });
+        sum();
+        toast('Partage enregistré.');
+      } catch (err) { toast(err.message, 'error'); }
+    };
+  }
+
+  // Ajout ou modification d'un souhait. Recherche par ISBN (tape ou scanne) ou par
+  // titre (liste d'editions). Renvoie true si enregistre.
+  function wishDialog(w, preset) {
+    const editing = !!(w && w.id);
+    const v = w || { isbn: '', title: '', subtitle: '', authors: '', publisher: '', year: '', notes: '', priority: 0, coverUrl: '', ...(preset || {}) };
+    let cover = v.coverUrl || '';
+    return new Promise((resolve) => {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      backdrop.innerHTML = `<div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="wish-title">
+        <h2 id="wish-title">${editing ? 'Modifier le souhait' : 'Ajouter un souhait'}</h2>
+        <form id="wish-form">
+          <div class="field"><label for="wish-q">ISBN ou titre</label>
+            <div class="isbn-row">
+              <input id="wish-q" autocomplete="off" placeholder="ISBN, ou titre et auteur" value="${esc(v.isbn)}">
+              <button class="btn" type="button" id="wish-search">Rechercher</button>
+              <button class="btn" type="button" id="wish-scan">Scanner</button>
+            </div>
+            <div id="wish-found" class="small" role="status" aria-live="polite" style="margin-top:8px"></div>
+          </div>
+          <div class="wish-form-grid">
+            <div class="cover" id="wish-cover" aria-hidden="true"></div>
+            <div>
+              <div class="field"><label for="wf-title">Titre *</label><input id="wf-title" name="title" required value="${esc(v.title)}"></div>
+              <div class="field"><label for="wf-authors">Auteur(s)</label><input id="wf-authors" name="authors" value="${esc(v.authors)}"></div>
+              <div class="grid-3">
+                <div class="field"><label for="wf-publisher">Éditeur</label><input id="wf-publisher" name="publisher" value="${esc(v.publisher)}"></div>
+                <div class="field"><label for="wf-year">Année</label><input id="wf-year" name="year" inputmode="numeric" value="${esc(v.year || '')}"></div>
+                <div class="field"><label for="wf-isbn">ISBN</label><input id="wf-isbn" name="isbn" inputmode="numeric" value="${esc(v.isbn)}"></div>
+              </div>
+            </div>
+          </div>
+          <div class="field"><label for="wf-notes">Notes</label><textarea id="wf-notes" name="notes" style="min-height:60px" placeholder="Édition souhaitée, où l'acheter, pour qui…">${esc(v.notes)}</textarea></div>
+          <label class="check"><input type="checkbox" name="priority" ${v.priority ? 'checked' : ''}> Très envie</label>
+          <div id="wish-err" role="alert"></div>
+          <div class="btn-row" style="margin-top:14px"><button class="btn btn-primary" type="submit">Enregistrer</button><button class="btn" type="button" data-close>Annuler</button></div>
+        </form></div>`;
+      document.body.appendChild(backdrop);
+      const f = $('#wish-form', backdrop);
+      const close = (ok) => { backdrop.remove(); resolve(ok); };
+      backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(false); });
+      const renderCover = () => { $('#wish-cover', backdrop).innerHTML = cover ? `<img src="${esc(cover)}" alt="" referrerpolicy="no-referrer">` : '<span class="cover-fallback">Pas d\'image</span>'; };
+      renderCover();
+      const fill = (d) => {
+        ['title', 'subtitle', 'authors', 'publisher', 'year', 'isbn'].forEach((k) => { if (d[k] && f[k]) f[k].value = d[k]; });
+        if (d.coverUrl) { cover = d.coverUrl; renderCover(); }
+      };
+      const found = $('#wish-found', backdrop);
+      const search = async (text) => {
+        const t = String(text || '').trim();
+        if (!t) return;
+        const digits = t.replace(/[\s-]/g, '');
+        found.textContent = 'Recherche…';
+        try {
+          if (/^(97[89])?\d{9}[\dXx]$/.test(digits)) {
+            const r = await gapi(`/api/wishes/lookup/${encodeURIComponent(digits)}`);
+            f.isbn.value = r.isbn;
+            if (r.found) { fill({ ...r.found, isbn: r.isbn }); found.textContent = `Trouvé : ${r.found.title}`; } else found.textContent = 'ISBN inconnu : complète la fiche à la main.';
+            return;
+          }
+          const { editions } = await gapi(`/api/wishes/search?q=${encodeURIComponent(t)}`);
+          if (!editions.length) { found.textContent = 'Aucune édition trouvée.'; if (!f.title.value) f.title.value = t; return; }
+          found.innerHTML = `<div class="pick-list" role="list">${editions.map((ed, i) => `<button type="button" class="pick-row" data-ed="${i}">
+            <span class="pick-line">${ed.coverUrl ? `<img class="thumb" src="${esc(ed.coverUrl)}" alt="" referrerpolicy="no-referrer">` : '<span class="thumb"></span>'}
+            <span class="grow"><strong>${esc(ed.title || '')}</strong><span class="small muted">${esc([ed.authors, ed.publisher, ed.year, ed.isbn].filter(Boolean).join(' · '))}</span></span></span></button>`).join('')}</div>`;
+          $$('[data-ed]', found).forEach((btn) => {
+            btn.onclick = () => { const ed = editions[Number(btn.dataset.ed)]; fill(ed); found.textContent = `Édition choisie : ${ed.title || ''}`; f.title.focus(); };
+          });
+        } catch (err) { found.innerHTML = `<span class="error-text">${esc(err.message)}</span>`; }
+      };
+      $('#wish-search', backdrop).onclick = () => search($('#wish-q', backdrop).value);
+      $('#wish-q', backdrop).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(e.target.value); } });
+      $('#wish-scan', backdrop).onclick = async () => {
+        const isbn = await scanIsbn();
+        if (isbn) { $('#wish-q', backdrop).value = isbn; search(isbn); }
+      };
+      if (!editing && v.isbn && !v.title) search(v.isbn);
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const body = { title: f.title.value, authors: f.authors.value, publisher: f.publisher.value, year: f.year.value, isbn: f.isbn.value,
+          notes: f.notes.value, priority: f.priority.checked, coverUrl: cover };
+        try {
+          await gapi(editing ? `/api/wishes/${w.id}` : '/api/wishes', { method: editing ? 'PUT' : 'POST', body });
+          toast(editing ? 'Souhait enregistré.' : 'Ajouté à tes souhaits.');
+          close(true);
+        } catch (err) { $('#wish-err', backdrop).innerHTML = `<div class="error-box">${esc(err.message)}</div>`; }
+      };
+      (editing ? f.title : $('#wish-q', backdrop)).focus();
+    });
   }
 
   // ================= Etiquettes =================
@@ -5086,6 +5507,7 @@
   // ================= Reglages de la bibliotheque =================
   async function viewSettings() {
     const s = await api('/api/settings');
+    const rem = s.reminders || { mode: 'manual', offset: 0, subject: '', body: '' };
     // Options absentes : le serveur tourne encore une version precedente de l'app.
     const feat = s.features || null;
     const catalog = {
@@ -5173,6 +5595,23 @@
       <form class="card" id="loan-days-form">
         <div class="field" style="margin:0"><label for="loan-days">Jours avant la date de retour ${hint('Date de retour proposée au moment du prêt (modifiable). 0 : pas de date de retour.')}</label>
           <input id="loan-days" name="loanDays" type="number" min="0" max="365" value="${s.loanDays == null ? 21 : s.loanDays}" style="max-width:120px"></div>
+      </form>
+
+      <h2>Rappels de retour</h2>
+      <form class="card" id="reminder-form">
+        <fieldset class="plain">
+          <legend>Mode ${hint("Le rappel ouvre un e-mail prêt à envoyer dans ta messagerie (mailto) : rien n'est envoyé sans toi.")}</legend>
+          <div class="btn-row" style="margin-bottom:14px">
+            <label class="check"><input type="radio" name="mode" value="manual" ${rem.mode !== 'auto' ? 'checked' : ''}> Manuels (bouton « Relancer »)</label>
+            <label class="check"><input type="radio" name="mode" value="auto" ${rem.mode === 'auto' ? 'checked' : ''}> Programmés (onglet « À relancer »)</label>
+          </div>
+        </fieldset>
+        <div class="field" id="rem-offset-field" ${rem.mode === 'auto' ? '' : 'hidden'}><label for="rem-offset">Relancer à J + … jours de la date de retour ${hint('0 : le jour de la date de retour. Négatif : avant (-2 = deux jours avant). Ensuite, nouvelle relance tous les 7 jours tant que le livre est en retard.')}</label>
+          <input id="rem-offset" name="offset" type="number" min="-60" max="365" value="${rem.offset}" style="max-width:120px"></div>
+        <div class="field"><label for="rem-subject">Objet</label><input id="rem-subject" name="subject" value="${esc(rem.subject)}" placeholder="${esc(REMINDER_DEFAULT.subject)}"></div>
+        <div class="field"><label for="rem-body">Message ${hint("Remplacés à l'envoi : {nom}, {livres} (liste des livres et dates), {bibliotheque}, {date_retour}. Vide : modèle par défaut.")}</label>
+          <textarea id="rem-body" name="body" rows="8" placeholder="${esc(REMINDER_DEFAULT.body)}">${esc(rem.body)}</textarea></div>
+        <div class="btn-row"><button class="btn btn-primary" type="submit">Enregistrer le message</button><button class="btn" type="button" id="rem-reset">Modèle par défaut</button></div>
       </form>
 
       <h2>Bouton Scanner</h2>
@@ -5414,6 +5853,18 @@
       } catch (err) { toast(err.message, 'error'); }
     });
     $('#loan-days-form').addEventListener('submit', (e) => e.preventDefault());
+
+    // Rappels : mode et delai enregistres des qu'on change, message sur le bouton.
+    const remForm = $('#reminder-form');
+    const saveReminders = async (body, msg) => {
+      try { await api('/api/settings', { method: 'PUT', body: { reminders: body } }); toast(msg); refreshLoanBadge(); } catch (err) { toast(err.message, 'error'); }
+    };
+    remForm.addEventListener('change', (e) => {
+      if (e.target.name === 'mode') { $('#rem-offset-field').hidden = e.target.value !== 'auto'; saveReminders({ mode: e.target.value }, 'Mode des rappels enregistré.'); }
+      if (e.target.name === 'offset') saveReminders({ offset: Number(e.target.value) }, 'Délai des rappels enregistré.');
+    });
+    remForm.onsubmit = (e) => { e.preventDefault(); saveReminders({ subject: remForm.subject.value, body: remForm.body.value }, 'Message de rappel enregistré.'); };
+    $('#rem-reset').onclick = () => { remForm.subject.value = ''; remForm.body.value = ''; saveReminders({ subject: '', body: '' }, 'Modèle par défaut rétabli.'); };
 
     // Bouton Scanner : enregistre des qu'on change.
     $('#scan-form').addEventListener('change', async () => {

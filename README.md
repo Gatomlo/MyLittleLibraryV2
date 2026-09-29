@@ -133,7 +133,21 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **Dates de retour** : durée par défaut (Réglages > Exemplaires et prêts > Durée des prêts, 0 = aucune),
   modifiable au prêt, « Prolonger » sur la page de l'exemplaire ; onglet « En retard » de la page Prêts
   et pastille rouge sur le lien Prêts de l'en-tête.
-- **ISBN inconnu au scan** : proposition d'ajouter le livre, fiche pré-remplie par l'ISBN.
+- **Rappels de retour** (Réglages > Exemplaires et prêts > Rappels de retour) : bouton « Relancer » sur chaque
+  prêt en cours et sur la fiche d'un emprunteur (tous ses livres dans un message) ; il ouvre un e-mail prêt à
+  envoyer dans la messagerie de l'appareil (mailto, rien n'est envoyé sans toi), puis « Noter la relance ».
+  Mode « Programmés » : onglet « À relancer » de la page Prêts (un message par emprunteur) et pastille, à partir
+  de la date de retour + J jours (négatif = avant), puis tous les 7 jours tant que le livre est en retard.
+  Objet et message personnalisables ({nom}, {livres}, {bibliotheque}, {date_retour}). Sans e-mail : copie du message.
+- **ISBN inconnu au scan** : proposition d'ajouter le livre (fiche pré-remplie par l'ISBN) ou de l'ajouter à ses souhaits.
+- **Souhaits** (lien « Souhaits », tout compte connecté) : liste de livres souhaités propre à chaque compte
+  (hors bibliothèque) ; ajout par ISBN (tapé ou scanné) ou par titre (choix de l'édition), notes, « Très envie ».
+  Partage de sa liste avec d'autres comptes (lecture seule). Les gestionnaires d'une bibliothèque voient les
+  souhaits de ses membres, les ajoutent au catalogue en un clic (fiche pré-remplie, le membre coché comme
+  lecteur, souhait marqué « acquis ») et exportent en .xlsx / .csv les souhaits d'un ou plusieurs membres
+  (colonnes compatibles avec l'import). Badge « Déjà dans la bibliothèque » (même ISBN ou même titre).
+- **Accessibilité** : lien « Aller au contenu », focus clavier visible, fenêtres utilisables au clavier (Échap,
+  tabulation contenue, focus rendu), titre de l'onglet et focus mis à jour à chaque page, page active annoncée.
 - **Réservations** : un compte connecté réserve, au nom d'un emprunteur (choisi ou créé), un livre dont tous
   les exemplaires sont prêtés (fiche du livre) ; au retour d'un exemplaire, alerte « à mettre de côté pour … »
   avec « Prêter à … » ; le prêt à cet emprunteur retire sa réservation. Onglet « Réservations » de la page

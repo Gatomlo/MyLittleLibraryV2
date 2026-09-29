@@ -8,6 +8,7 @@ const {
 } = require('./lib/db');
 const auth = require('./lib/auth');
 const archives = require('./lib/archives');
+const { registerWishes } = require('./lib/wishes');
 const media = require('./lib/media');
 const { createLibraryRouter, findLibrary, mediaUrl, str, intOrNull } = require('./lib/library-api');
 
@@ -182,6 +183,9 @@ api.put('/me/default-library', h((req, res) => {
   db.prepare('UPDATE users SET default_library_id = ? WHERE id = ?').run(libId, req.user.id);
   res.json({ ok: true });
 }));
+
+// ---------- Listes de souhaits (par compte, voir lib/wishes.js) ----------
+registerWishes(api);
 
 // ---------- Administration ----------
 api.use('/admin', auth.requireAdmin);
@@ -413,7 +417,7 @@ const INDEX_TEMPLATE = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf
 const ASSET_VERSION = Date.now().toString(36);
 function renderIndex(req, library) {
   const root = auth.rootPath(req);
-  const config = JSON.stringify({ root, library: library ? { slug: library.slug, name: library.name, logoUrl: mediaUrl(library.logo) } : null })
+  const config = JSON.stringify({ root, library: library ? { id: library.id, slug: library.slug, name: library.name, logoUrl: mediaUrl(library.logo) } : null })
     .replace(/</g, '\\u003c');
   const title = library ? library.name.replace(/[<&"]/g, '') : 'Bibliothèques';
   return INDEX_TEMPLATE
