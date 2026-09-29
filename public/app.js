@@ -2510,8 +2510,8 @@
     else if (adminTab === 'google') await adminGoogleKey();
     else {
       $('#admin-body').innerHTML = `<div class="card">
-        <p>Copie complète de la base (toutes les bibliothèques, comptes, prêts). Les images (couvertures, logos) sont dans le dossier <span class="code">data/media</span> du serveur.</p>
-        <a class="btn" href="${ROOT}/api/admin/backup">Télécharger une sauvegarde de la base</a></div>`;
+        <p>Toutes les bases (.zip) : base centrale et base de chaque bibliothèque ${hint('Comptes et réglages dans central.db ; livres, prêts et statuts dans libraries/<n°>/library.db. Couvertures, logos et epub restent dans data/libraries/<n°>/ sur le serveur.')}</p>
+        <a class="btn" href="${ROOT}/api/admin/backup">Télécharger une sauvegarde des bases</a></div>`;
     }
   }
 

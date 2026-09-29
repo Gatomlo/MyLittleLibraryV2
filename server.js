@@ -2,10 +2,12 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { db, tx, getSetting, setSetting, isValidSlug, uniqueSlug, MEDIA_DIR } = require('./lib/db');
+const JSZip = require('jszip');
+const {
+  db, tx, getSetting, setSetting, isValidSlug, uniqueSlug, inLibrary, libraryDb, libraryDir, removeLibraryFiles, removeUserData, backupTo,
+} = require('./lib/db');
 const auth = require('./lib/auth');
 const media = require('./lib/media');
-const ebooks = require('./lib/ebooks');
 const { createLibraryRouter, findLibrary, mediaUrl, str, intOrNull } = require('./lib/library-api');
 
 // Filet de securite : une erreur imprevue ne doit jamais faire tomber tout le serveur.
@@ -28,7 +30,6 @@ app.use(express.json({ limit: '8mb' }));
 // Fichiers de l'interface toujours revalides par le navigateur (reponse 304 s'ils
 // n'ont pas change) : une mise a jour de l'app est visible sans vider le cache.
 app.use(express.static(PUBLIC_DIR, { index: false, setHeaders: (res) => res.set('Cache-Control', 'no-cache') }));
-app.use('/media', express.static(MEDIA_DIR, { maxAge: '30d', immutable: true }));
 
 // Scanner de codes-barres/QR servi en local : aucune dependance a un CDN externe.
 function nodeModuleFile(...parts) {
@@ -72,8 +73,9 @@ const api = express.Router();
 app.use('/api', api);
 api.use(auth.loadUser, jsonOnly);
 
+// Logo relatif a la racine de l'app (chaque bibliotheque sert ses images).
 function libraryInfo(l) {
-  return { id: l.id, slug: l.slug, name: l.name, logoUrl: mediaUrl(l.logo) };
+  return { id: l.id, slug: l.slug, name: l.name, logoUrl: l.logo ? `${l.slug}/${mediaUrl(l.logo)}` : null };
 }
 
 // Adresses des bibliotheques (sans leurs noms) : sert uniquement a rediriger les
@@ -134,6 +136,7 @@ api.post('/auth/setup', h((req, res) => {
     db.prepare('INSERT INTO user_libraries (user_id, library_id) VALUES (?, ?)').run(id, lib.id);
     return { id, lib };
   });
+  libraryDb(result.lib.id); // dossier et base de la bibliotheque
   auth.createSession(req, res, result.id);
   res.json({ user: { id: result.id, username, role: 'admin', defaultLibraryId: result.lib.id }, library: libraryInfo(result.lib) });
 }));
@@ -251,16 +254,18 @@ api.delete('/admin/users/:id', h((req, res) => {
   if (!user) throw httpError(404, 'Compte introuvable.');
   if (user.role === 'admin' && adminCount(id) === 0) throw httpError(409, 'Il doit rester au moins un administrateur.');
   db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  removeUserData(id);
   res.json({ ok: true });
 }));
 
 api.get('/admin/libraries', (req, res) => {
-  res.json(db.prepare(`SELECT l.*,
-      (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) AS books,
-      (SELECT COUNT(*) FROM copies c WHERE c.library_id = l.id) AS copies,
-      (SELECT COUNT(*) FROM user_libraries ul WHERE ul.library_id = l.id) AS users
+  res.json(db.prepare(`SELECT l.*, (SELECT COUNT(*) FROM user_libraries ul WHERE ul.library_id = l.id) AS users
     FROM libraries l ORDER BY l.name COLLATE NOCASE`).all()
-    .map((l) => ({ ...libraryInfo(l), books: l.books, copies: l.copies, users: l.users, createdAt: l.created_at })));
+    .map((l) => {
+      // Livres et exemplaires : dans la base de la bibliotheque.
+      const n = inLibrary(l.id, () => db.prepare('SELECT (SELECT COUNT(*) FROM books) AS books, (SELECT COUNT(*) FROM copies) AS copies').get());
+      return { ...libraryInfo(l), books: n.books, copies: n.copies, users: l.users, createdAt: l.created_at };
+    }));
 });
 
 // Adresse proposee pour un nom (apercu dans le formulaire de creation).
@@ -273,6 +278,7 @@ api.post('/admin/libraries', h((req, res) => {
     db.prepare('INSERT OR IGNORE INTO user_libraries (user_id, library_id) VALUES (?, ?)').run(req.user.id, created.id);
     return created;
   });
+  libraryDb(lib.id); // dossier et base de la bibliotheque
   res.json(libraryInfo(lib));
 }));
 
@@ -301,17 +307,12 @@ api.delete('/admin/libraries/:id', h((req, res) => {
   const lib = db.prepare('SELECT * FROM libraries WHERE id = ?').get(id);
   if (!lib) throw httpError(404, 'Bibliothèque introuvable.');
   if (str(req.query.confirm, 120) !== lib.name) throw httpError(400, 'Confirme en tapant exactement le nom de la bibliothèque.');
-  const covers = db.prepare('SELECT cover FROM books WHERE library_id = ? AND cover IS NOT NULL').all(id).map((r) => r.cover);
-  tx(() => {
-    db.prepare('DELETE FROM loans WHERE copy_id IN (SELECT id FROM copies WHERE library_id = ?)').run(id);
-    db.prepare('DELETE FROM libraries WHERE id = ?').run(id);
-  });
-  covers.concat(lib.logo || []).forEach((f) => media.remove(f));
-  ebooks.purgeOrphans();
+  db.prepare('DELETE FROM libraries WHERE id = ?').run(id);
+  // Base, couvertures, logo et epub : tout le dossier de la bibliotheque.
+  removeLibraryFiles(id);
   res.json({ ok: true });
 }));
 
-// Copie coherente de toute la base (toutes les bibliotheques) a telecharger.
 // Cle Google Books (gratuite) : jamais renvoyee en entier, verifiee aupres de Google avant enregistrement.
 function googleKeyInfo() {
   const saved = getSetting('googleBooksApiKey') || '';
@@ -342,11 +343,25 @@ api.put('/admin/google-key', h(async (req, res) => {
   res.json(googleKeyInfo());
 }));
 
-api.get('/admin/backup', h((req, res) => {
-  const file = path.join(os.tmpdir(), `mll-backup-${Date.now()}.db`);
-  db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
-  const stamp = new Date().toISOString().slice(0, 10);
-  res.download(file, `bibliotheques-${stamp}.db`, () => fs.rm(file, { force: true }, () => {}));
+// Copie coherente de toutes les bases (centrale + une par bibliotheque) a
+// telecharger, en zip (meme organisation que le dossier data, sans les fichiers).
+api.get('/admin/backup', h(async (req, res) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mll-backup-'));
+  try {
+    backupTo(dir);
+    const zip = new JSZip();
+    const add = (rel) => {
+      const full = path.join(dir, rel);
+      if (fs.statSync(full).isDirectory()) fs.readdirSync(full).forEach((n) => add(path.join(rel, n)));
+      else zip.file(rel.split(path.sep).join('/'), fs.readFileSync(full));
+    };
+    fs.readdirSync(dir).forEach(add);
+    const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.attachment(`bibliotheques-${stamp}.zip`).type('application/zip').send(buffer);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }));
 
 api.use((req, res) => res.status(404).json({ error: 'Route inconnue.' }));
@@ -396,7 +411,15 @@ app.get('/manifest.webmanifest', (req, res) => sendManifest(req, res, null));
 
 // ---------- Une bibliotheque ----------
 app.use('/:slug/api', auth.loadUser, jsonOnly, createLibraryRouter(), apiErrors);
-app.use('/:slug/media', express.static(MEDIA_DIR, { maxAge: '30d', immutable: true }));
+// Images (couvertures, logo) : dossier media de la bibliotheque.
+const mediaStatic = new Map();
+app.use('/:slug/media', (req, res, next) => {
+  const found = findLibrary(req.params.slug);
+  if (!found) return next();
+  const id = found.library.id;
+  if (!mediaStatic.has(id)) mediaStatic.set(id, express.static(libraryDir(id, 'media'), { maxAge: '30d', immutable: true }));
+  mediaStatic.get(id)(req, res, next);
+});
 // Toujours revalide par le navigateur : une mise a jour de l'app est prise en compte
 // tout de suite sur les sites qui integrent le catalogue (WordPress...).
 app.get('/:slug/embed.js', (req, res) => {

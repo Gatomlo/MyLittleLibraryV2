@@ -168,7 +168,7 @@ de session est limité à ce chemin.
 | Variable | Rôle |
 | --- | --- |
 | `PORT` | Port en mode autonome (3000 par défaut). |
-| `MLL_DATA_DIR` | Dossier des données (`data/` par défaut) : `library.db` + `media/` (couvertures, logo). |
+| `MLL_DATA_DIR` | Dossier des données (`data/` par défaut) : `central.db` + un dossier par bibliothèque dans `libraries/` (voir Données). |
 | `GOOGLE_BOOKS_API_KEY` | Clé Google Books (gratuite) : sans elle, le quota anonyme est souvent épuisé et seules BnF/Open Library répondent. Peut aussi être saisie dans **Administration › Google Books** (prioritaire, avec guide pas à pas). |
 
 ## Scan et https
@@ -197,6 +197,22 @@ l'API publique `/api/public/*` (lecture seule, CORS ouvert).
 ## Données
 
 Tout est dans `data/` (ignoré par git) : sauvegarder ce dossier, ou utiliser
-Administration > Sauvegarde. La base est migrée automatiquement au démarrage
-(les données d'une installation à une seule bibliothèque deviennent la première
-bibliothèque ; les anciens comptes deviennent administrateurs).
+Administration > Sauvegarde (zip de toutes les bases, sans les fichiers).
+
+```
+data/
+  central.db                  comptes, sessions, réglages globaux, bibliothèques et leurs réglages
+  libraries/<n°>/library.db   livres, exemplaires, prêts, emprunteurs, catégories, tags, statuts, liseuses
+  libraries/<n°>/media/       couvertures et logo
+  libraries/<n°>/ebooks/      fichiers epub
+  libraries/<n°>/backups/     sauvegardes faites avant un vidage
+  backups/                    sauvegarde de l'ancienne base unique
+```
+
+Le n° est l'identifiant de la bibliothèque (il ne change pas avec son adresse).
+Supprimer une bibliothèque supprime son dossier.
+
+Les bases sont migrées automatiquement au démarrage. Une ancienne base unique
+(`data/library.db`, images dans `data/media`, epub dans `data/ebooks`) est
+d'abord sauvegardée dans `data/backups/library-avant-separation-….db`, puis
+séparée en base centrale + un dossier par bibliothèque.
