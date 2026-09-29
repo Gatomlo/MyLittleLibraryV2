@@ -7,6 +7,7 @@ const {
   db, tx, getSetting, setSetting, isValidSlug, uniqueSlug, inLibrary, libraryDb, libraryDir, removeLibraryFiles, removeUserData, backupTo,
 } = require('./lib/db');
 const auth = require('./lib/auth');
+const archives = require('./lib/archives');
 const media = require('./lib/media');
 const { createLibraryRouter, findLibrary, mediaUrl, str, intOrNull } = require('./lib/library-api');
 
@@ -56,6 +57,8 @@ function jsonOnly(req, res, next) {
   if (req.method === 'PUT' && /\/copies\/\d+\/file$/.test(req.path) && req.is('application/epub+zip')) return next();
   if (req.method === 'POST' && /\/kobo\/scan$/.test(req.path) && req.is('application/x-sqlite3')) return next();
   if (req.method === 'POST' && /\/import\/epub$/.test(req.path) && req.is('application/epub+zip')) return next();
+  // Archive d'une bibliotheque a restaurer (POST /api/admin/archives).
+  if (req.method === 'POST' && req.path === '/admin/archives' && req.is('application/zip')) return next();
   res.status(415).json({ error: 'Requête JSON attendue.' });
 }
 
@@ -90,6 +93,8 @@ api.get('/auth/status', (req, res) => {
     user: req.user || null,
     needsSetup: !hasUser,
     libraries: auth.librariesOf(req.user).map(libraryInfo),
+    // Rappel mensuel de sauvegarde (administrateurs).
+    backupReminder: !!req.user && req.user.role === 'admin' && archives.reminderDue(),
   });
 });
 
@@ -358,11 +363,44 @@ api.get('/admin/backup', h(async (req, res) => {
     fs.readdirSync(dir).forEach(add);
     const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
     const stamp = new Date().toISOString().slice(0, 10);
+    setSetting('backupDoneMonth', stamp.slice(0, 7));
     res.attachment(`bibliotheques-${stamp}.zip`).type('application/zip').send(buffer);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }));
+
+// Archive d'une bibliotheque : mylittlelibrary-<nom>.zip avec les elements choisis
+// (?db=1&ebooks=1&covers=1).
+api.get('/admin/libraries/:id/archive', h((req, res) => {
+  const parts = Object.fromEntries(archives.PARTS.map((p) => [p, req.query[p] === '1']));
+  const { fileName, stream, cleanup } = archives.exportLibrary(intOrNull(req.params.id), parts);
+  res.attachment(fileName).type('application/zip');
+  res.on('close', cleanup);
+  stream.on('error', (err) => { console.error(err); res.destroy(err); });
+  stream.pipe(res);
+}));
+
+// Restauration en deux temps : envoi (lecture de l'archive, bibliotheque du meme nom
+// signalee), puis application (creation, ou remplacement confirme).
+api.post('/admin/archives', h(async (req, res) => {
+  if (!req.is('application/zip')) throw httpError(415, 'Archive .zip attendue.');
+  res.json(await archives.stageArchive(req));
+}));
+api.post('/admin/archives/:token/apply', h(async (req, res) => {
+  const r = await archives.applyArchive(String(req.params.token), { overwrite: req.body.overwrite === true, user: req.user });
+  res.json({ ...r, library: libraryInfo(r.library) });
+}));
+api.delete('/admin/archives/:token', (req, res) => {
+  archives.cancelArchive(String(req.params.token));
+  res.json({ ok: true });
+});
+
+// Rappel mensuel passe pour ce mois-ci.
+api.post('/admin/backup-reminder/skip', (req, res) => {
+  archives.skipReminder();
+  res.json({ ok: true });
+});
 
 api.use((req, res) => res.status(404).json({ error: 'Route inconnue.' }));
 api.use(apiErrors);

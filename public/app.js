@@ -1911,10 +1911,10 @@
   }
 
   // Envoi brut avec suivi de l'envoi (fetch ne le permet pas).
-  function sendRawProgress(path, body, type, headers, onProgress) {
+  function sendRawProgress(path, body, type, headers, onProgress, base = LIB) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', LIB + path);
+      xhr.open('POST', base + path);
       xhr.withCredentials = true;
       xhr.setRequestHeader('Content-Type', type);
       Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
@@ -2426,12 +2426,14 @@
       if (setup) body.libraryName = e.target.libraryName.value;
       try {
         await gapi(setup ? '/api/auth/setup' : '/api/auth/login', { method: 'POST', body });
+        try { sessionStorage.removeItem('mll-backup-snooze'); } catch (e2) { /* stockage indisponible */ }
         await loadStatus();
         // Connexion acceptee mais cookie refuse (cadre d'un autre site : Teams, Safari...)
         if (!state.user) throw new Error(window.top !== window.self
           ? 'Connexion refusée par le navigateur dans ce cadre (cookies bloqués). Ouvrez l’application dans un onglet du navigateur.'
           : 'Connexion impossible : le navigateur bloque les cookies de ce site.');
         toast(`Bienvenue ${state.user.username} !`);
+        setTimeout(showBackupReminder, 300);
         const after = sessionStorageTake('mll-after-login');
         if (LIBRARY) {
           renderHeader();
@@ -2508,11 +2510,128 @@
     if (adminTab === 'libraries') await adminLibraries();
     else if (adminTab === 'users') await adminUsers();
     else if (adminTab === 'google') await adminGoogleKey();
-    else {
-      $('#admin-body').innerHTML = `<div class="card">
-        <p>Toutes les bases (.zip) : base centrale et base de chaque bibliothèque ${hint('Comptes et réglages dans central.db ; livres, prêts et statuts dans libraries/<n°>/library.db. Couvertures, logos et epub restent dans data/libraries/<n°>/ sur le serveur.')}</p>
-        <a class="btn" href="${ROOT}/api/admin/backup">Télécharger une sauvegarde des bases</a></div>`;
-    }
+    else await adminBackup();
+  }
+
+  // Sauvegarde : une archive par bibliotheque (elements au choix), restauration
+  // d'une archive, et copie de toutes les bases.
+  const BACKUP_PARTS = [['db', 'Base (livres, prêts, statuts…)'], ['ebooks', 'Fichiers epub'], ['covers', 'Couvertures et logo']];
+  async function adminBackup() {
+    const libs = await gapi('/api/admin/libraries');
+    $('#admin-body').innerHTML = `
+      <form class="card" id="bk-form" style="margin-bottom:18px">
+        <h3 style="margin-top:0">Sauvegarder ${hint('Une archive par bibliothèque : mylittlelibrary-<nom>.zip.')}</h3>
+        <div class="field"><label>Bibliothèques</label>
+          <label class="check"><input type="checkbox" id="bk-all" checked> <strong>Toutes</strong></label>
+          ${libs.map((l) => `<label class="check"><input type="checkbox" data-lib="${l.id}" checked> ${esc(l.name)} <span class="small muted">${l.books} livre(s)</span></label>`).join('')}</div>
+        <div class="field"><label>Contenu</label>
+          ${BACKUP_PARTS.map(([k, label]) => `<label class="check"><input type="checkbox" data-part="${k}" checked> ${label}</label>`).join('')}</div>
+        <button class="btn btn-primary" type="submit">Télécharger</button>
+      </form>
+      <form class="card" id="rs-form" style="margin-bottom:18px">
+        <h3 style="margin-top:0">Restaurer ${hint('Archive mylittlelibrary-<nom>.zip. Bibliothèque recréée, ou remplacée (après confirmation) si une bibliothèque porte déjà ce nom : seuls les éléments présents dans l’archive sont remplacés.')}</h3>
+        <div class="field"><input type="file" name="file" accept=".zip,application/zip" required></div>
+        <button class="btn btn-primary" type="submit">Importer</button>
+      </form>
+      <div class="card">
+        <h3 style="margin-top:0">Toutes les bases ${hint('Base centrale (comptes, réglages) et base de chaque bibliothèque, sans epub ni couvertures.')}</h3>
+        <a class="btn" href="${ROOT}/api/admin/backup" id="bk-full">Télécharger</a></div>`;
+    const libBoxes = $$('[data-lib]');
+    $('#bk-all').onchange = (e) => libBoxes.forEach((b) => { b.checked = e.target.checked; });
+    libBoxes.forEach((b) => { b.onchange = () => { $('#bk-all').checked = libBoxes.every((x) => x.checked); }; });
+    $('#bk-full').onclick = () => backupDone();
+    $('#bk-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const ids = libBoxes.filter((b) => b.checked).map((b) => b.dataset.lib);
+      const parts = $$('[data-part]').filter((b) => b.checked).map((b) => b.dataset.part);
+      if (!ids.length) { toast('Choisis au moins une bibliothèque.', 'error'); return; }
+      if (!parts.length) { toast('Choisis au moins un élément à sauvegarder.', 'error'); return; }
+      const query = parts.map((p) => `${p}=1`).join('&');
+      // Un lien par archive (telechargement direct, sans passer par la memoire de la page).
+      for (let i = 0; i < ids.length; i++) {
+        const a = document.createElement('a');
+        a.href = `${ROOT}/api/admin/libraries/${ids[i]}/archive?${query}`;
+        a.download = '';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        if (i < ids.length - 1) await new Promise((r) => setTimeout(r, 1200));
+      }
+      backupDone();
+      toast(ids.length > 1 ? `${ids.length} archives en cours de téléchargement.` : 'Archive en cours de téléchargement.');
+    };
+    $('#rs-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const file = e.target.file.files[0];
+      if (!file) return;
+      if (file.size > 1024 * 1024 * 1024) { toast('Archive trop lourde (1 Go max).', 'error'); return; }
+      const box = progressBox('Restauration');
+      try {
+        box.step('Envoi de l’archive…', 0);
+        const info = await sendRawProgress('/api/admin/archives', file, 'application/zip', {},
+          (pct) => box.step(pct < 1 ? 'Envoi de l’archive…' : 'Lecture de l’archive…', pct < 1 ? Math.round(pct * 100) : null), ROOT);
+        const what = BACKUP_PARTS.filter(([k]) => info.contents[k]).map(([, label]) => label.replace(/ \(.*\)/, '').toLowerCase()).join(', ');
+        if (info.existing) {
+          box.close();
+          const ok = confirm(`La bibliothèque « ${info.existing.name} » existe déjà.\n\nRemplacer ses éléments par ceux de l’archive (${what}) ?\nLa base actuelle est copiée dans ses sauvegardes avant remplacement.`);
+          if (!ok) { gapi(`/api/admin/archives/${info.token}`, { method: 'DELETE' }).catch(() => {}); return; }
+        }
+        const pb = info.existing ? progressBox('Restauration') : box;
+        pb.step(`${info.existing ? 'Remplacement' : 'Création'} de « ${info.name} »…`);
+        try {
+          const r = await gapi(`/api/admin/archives/${info.token}/apply`, { method: 'POST', body: { overwrite: !!info.existing } });
+          toast(`« ${r.library.name} » ${r.created ? 'créée' : 'restaurée'} : ${r.books} livre(s).`);
+          await loadStatus();
+          renderHeader();
+          adminBackup();
+        } finally { pb.close(); }
+      } catch (err) {
+        box.close();
+        toast(err.message, 'error');
+      }
+    };
+  }
+
+  // Rappel mensuel de sauvegarde (administrateurs) : Sauvegarder, Reporter (jusqu'a
+  // la prochaine connexion ou ouverture de l'app), Passer (rien ce mois-ci).
+  function backupDone() {
+    state.backupReminder = false;
+    const el = $('#backup-reminder');
+    if (el) el.remove();
+  }
+  function showBackupReminder() {
+    if (!state.backupReminder || !isAdmin() || $('#backup-reminder')) return;
+    try { if (sessionStorage.getItem('mll-backup-snooze')) return; } catch (e) { /* stockage indisponible */ }
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.id = 'backup-reminder';
+    backdrop.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="br-title">
+        <h2 id="br-title">Sauvegarde du mois</h2>
+        <p>Aucune sauvegarde n’a encore été faite ce mois-ci.</p>
+        <div class="btn-row">
+          <button class="btn btn-primary" type="button" data-act="go">Sauvegarder</button>
+          <button class="btn" type="button" data-act="later">Reporter</button>
+          <button class="btn" type="button" data-act="skip">Passer ce mois-ci</button>
+        </div>
+      </div>`;
+    document.body.appendChild(backdrop);
+    $('[data-act=go]', backdrop).onclick = () => {
+      backdrop.remove();
+      adminTab = 'data';
+      if (/^#\/admin$/.test(location.hash)) viewAdmin();
+      else go('#/admin');
+    };
+    $('[data-act=later]', backdrop).onclick = () => {
+      sessionStorageSet('mll-backup-snooze', '1');
+      backdrop.remove();
+    };
+    $('[data-act=skip]', backdrop).onclick = async () => {
+      try {
+        await gapi('/api/admin/backup-reminder/skip', { method: 'POST', body: {} });
+        backupDone();
+      } catch (err) { toast(err.message, 'error'); }
+    };
   }
 
   // Cle Google Books (gratuite) : fiabilise la recherche par ISBN et la recherche de couvertures.
@@ -5161,6 +5280,7 @@
       state.user = s.user;
       state.needsSetup = s.needsSetup;
       state.libraries = s.libraries || [];
+      state.backupReminder = !!s.backupReminder;
     } catch (e) { /* hors ligne */ }
   }
 
@@ -5176,5 +5296,6 @@
     window.addEventListener('hashchange', route);
     route();
     koboRestore();
+    showBackupReminder();
   })();
 })();

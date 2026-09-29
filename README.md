@@ -197,7 +197,19 @@ l'API publique `/api/public/*` (lecture seule, CORS ouvert).
 ## Données
 
 Tout est dans `data/` (ignoré par git) : sauvegarder ce dossier, ou utiliser
-Administration > Sauvegarde (zip de toutes les bases, sans les fichiers).
+**Administration › Sauvegarde** :
+- une archive `mylittlelibrary-<nom>.zip` par bibliothèque choisie, avec au choix
+  la base, les fichiers epub et les couvertures (et le logo) ;
+- restauration d'une archive : bibliothèque recréée, ou remplacée après
+  confirmation si une bibliothèque porte déjà ce nom (seuls les éléments présents
+  dans l'archive sont remplacés ; copie de la base actuelle dans
+  `libraries/<n°>/backups/library-avant-import-….db`). Les comptes sont retrouvés
+  par leur identifiant ; statuts et lecteurs d'un compte absent sont retirés ;
+- zip de toutes les bases (centrale + bibliothèques, sans les fichiers).
+
+Chaque mois, tant qu'aucune sauvegarde n'a été faite, les administrateurs voient un
+rappel : **Sauvegarder** (ouvre l'onglet), **Reporter** (reproposé à la prochaine
+connexion ou ouverture de l'app) ou **Passer ce mois-ci**.
 
 ```
 data/
@@ -205,7 +217,7 @@ data/
   libraries/<n°>/library.db   livres, exemplaires, prêts, emprunteurs, catégories, tags, statuts, liseuses
   libraries/<n°>/media/       couvertures et logo
   libraries/<n°>/ebooks/      fichiers epub
-  libraries/<n°>/backups/     sauvegardes faites avant un vidage
+  libraries/<n°>/backups/     sauvegardes faites avant un vidage ou une restauration
   backups/                    sauvegarde de l'ancienne base unique
 ```
 
