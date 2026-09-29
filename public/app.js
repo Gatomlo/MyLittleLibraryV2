@@ -907,6 +907,11 @@
     todo: '<path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
     goal: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
     search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
+    bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
+    star: '<path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>',
+    idea: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/>',
+    trophy: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>',
     share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"/>',
   };
   function icon(name, size = 18) {
@@ -3556,11 +3561,11 @@
     if (wish) {
       ['isbn', 'title', 'subtitle', 'authors', 'publisher', 'year'].forEach((k) => { if (wish[k] && f[k]) f[k].value = wish[k]; });
       if (wish.notes && f.notes) f.notes.value = wish.notes;
-      const reader = $(`[data-reader="${wish.owner.id}"]`, f);
-      if (reader) reader.checked = true;
+      const owners = wish.owners || [wish.owner];
+      owners.forEach((o) => { const reader = $(`[data-reader="${o.id}"]`, f); if (reader) reader.checked = true; });
       if (wish.coverUrl && !wish.isbn) { form.cover.remoteUrl = wish.coverUrl; form.cover.url = wish.coverUrl; renderCover(); }
       if (wish.isbn) pendingAddIsbn = wish.isbn;
-      $('#isbn-result').insertAdjacentHTML('beforebegin', `<div class="info-box" style="margin-top:8px">Souhait de <strong>${esc(wish.owner.username)}</strong> : il sera retiré de ses souhaits à l'enregistrement.</div>`);
+      $('#isbn-result').insertAdjacentHTML('beforebegin', `<div class="info-box" style="margin-top:8px">${owners.length > 1 ? 'Souhaité par' : 'Souhait de'} <strong>${owners.map((o) => esc(o.username)).join(', ')}</strong> : retiré de ${owners.length > 1 ? 'leurs' : 'ses'} souhaits à l'enregistrement.</div>`);
     }
     // ISBN scanne absent de la bibliotheque (bouton Scanner) : recherche lancee.
     if (!editing && pendingAddIsbn) {
@@ -3599,8 +3604,10 @@
           const codes = saved.copies.filter((c) => c.format !== 'ebook').map((c) => c.code);
           toast(codes.length ? `Livre ajouté : ${codes.join(', ')}. Étiquette(s) en attente d'impression.` : 'Livre ajouté.');
           if (wish) {
-            await gapi(`/api/wishes/${wish.id}/added`, { method: 'POST', body: { library: LIBRARY.id, bookId: saved.id } })
-              .catch((err) => toast(`Souhait non retiré : ${err.message}`, 'error'));
+            for (const wid of wish.ids || [wish.id]) {
+              await gapi(`/api/wishes/${wid}/added`, { method: 'POST', body: { library: LIBRARY.id, bookId: saved.id } })
+                .catch((err) => toast(`Souhait non retiré : ${err.message}`, 'error'));
+            }
           }
         }
         if (fromIncomplete) sessionStorageTake('mll-after-edit');
@@ -4671,6 +4678,13 @@
     wishes: { icon: 'wish', color: 'rose' },
     news: { icon: 'add', color: 'accent' },
     goal: { icon: 'goal', color: 'grape' },
+    series: { icon: 'layers', color: 'grape' },
+    toread: { icon: 'bookmark', color: 'sun' },
+    rate: { icon: 'star', color: 'sun' },
+    idea: { icon: 'idea', color: 'accent' },
+    topwishes: { icon: 'trophy', color: 'rose' },
+    activity: { icon: 'stats', color: 'sky' },
+    kobo: { icon: 'kobo', color: 'grape' },
   };
   // Onglet ouvert par la page Prets quand on y arrive depuis l'accueil.
   let loansTabNext = null;
@@ -4711,6 +4725,15 @@
       case 'goal': return x.goal
         ? { value: `${x.read}/${x.goal}`, lines: [x.ahead >= 0 ? `▲ ${plural(x.ahead, 'livre', 'livres')} d'avance` : `▼ ${plural(-x.ahead, 'livre', 'livres')} de retard`, `${x.pages.toLocaleString('fr-BE')} pages en ${x.year}`], go: '#/stats' }
         : { value: String(x.read), sub: `lu${x.read > 1 ? 's' : ''} en ${x.year}`, lines: ['Aucun objectif défini'], go: '#/stats' };
+      case 'series': return { value: String(x.length), lines: x.length ? x.map((b) => `${b.title} · tome ${b.number}`) : ['Aucun tome suivant'], go: x[0] ? `#/book/${x[0].id}` : '#/' };
+      case 'toread': return { value: String(x.length), sub: x.filter((b) => b.free).length ? `dont ${x.filter((b) => b.free).length} dispo` : '', lines: x.length ? x.map((b) => b.title) : ['Pile vide'], go: 'toread' };
+      case 'rate': return { value: String(x.length), lines: x.length ? x.map((b) => b.title) : ['Tout est noté'], go: x[0] ? `#/book/${x[0].id}` : '#/' };
+      case 'idea': return x ? { value: '', lines: [x.title, x.authors].filter(Boolean), go: `#/book/${x.id}` } : { value: '', lines: ['Aucune idée pour le moment'], go: '#/' };
+      case 'topwishes': return { value: String(x.length), lines: x.length ? x.map((g) => `${g.title} · ${plural(g.count, 'membre', 'membres')}`) : ['Aucun souhait'], go: '#/wishes' };
+      case 'activity': return { value: String(x.loans.now), sub: 'prêts en 7 j', lines: [`${x.returns.now} retours`, `${plural(x.books.now, 'livre ajouté', 'livres ajoutés')}`, `${plural(x.borrowers.now, 'nouvel emprunteur', 'nouveaux emprunteurs')}`], go: 'open' };
+      case 'kobo': return x.length
+        ? { value: String(x[0].books), sub: 'livres', lines: [x[0].name, x[0].lastScanAt ? `scan du ${fmtDate(x[0].lastScanAt)}` : 'jamais scannée', ...(x[0].pending ? [`${x[0].pending} en attente`] : [])], go: `#/kobo/${x[0].id}` }
+        : { value: '', lines: ['Aucune liseuse à ton nom'], go: '#/kobo' };
       default: return { value: '', lines: [], go: '#/' };
     }
   }
@@ -4721,12 +4744,14 @@
     if (target.startsWith('#/')) { if (target === '#/wishes') wishState.owners = 'all'; return go(target); }
     if (target === 'reading') return openCatalog({ reading: 'reading', statusUser: String(state.user.id) });
     if (target === 'recent') return openCatalog({ sort: 'recent' });
+    if (target === 'toread') return openCatalog({ reading: 'to_read', statusUser: String(state.user.id) });
     loansTabNext = target;
     go('#/loans');
   }
 
-  const shelfHtml = (books, empty) => (books.length ? `<ul class="home-shelf" role="list">${books.map((b) => `<li><a class="home-book" href="#/book/${b.id}">
-      ${coverHtml(b, b.mine ? 'Pour toi' : '')}<span class="t">${esc(b.title)}</span><span class="a">${esc(b.authors)}</span>
+  const shelfHtml = (books, empty, opts = {}) => (books.length ? `<ul class="home-shelf" role="list">${books.map((b) => `<li><a class="home-book" href="#/book/${b.id}">
+      ${coverHtml(b, b.mine ? 'Pour toi' : '')}<span class="t">${esc(b.title)}</span><span class="a">${esc(opts.sub ? opts.sub(b) : b.authors)}</span>
+      ${opts.avail ? availabilityBadge(b) : ''}
       ${b.percent != null && b.percent !== undefined ? `<span class="bar" role="img" aria-label="${b.percent} % lus"><span style="width:${b.percent}%"></span></span>` : ''}</a></li>`).join('')}</ul>`
     : `<p class="muted">${empty}</p>`);
 
@@ -4766,10 +4791,86 @@
             <p class="${x.ahead >= 0 ? 'good' : 'bad'}">${x.ahead >= 0 ? `▲ ${plural(x.ahead, 'livre', 'livres')} d'avance` : `▼ ${plural(-x.ahead, 'livre', 'livres')} de retard`}</p>
             <p class="small muted">${x.pages.toLocaleString('fr-BE')} pages en ${x.year}</p></div></div>`;
       }
+      case 'series': return shelfHtml(x, 'Aucun tome suivant : les séries que tu lis ou as lues apparaîtront ici quand leur tome suivant est dans la bibliothèque.',
+        { avail: true, sub: (b) => `${b.series} · tome ${b.number}` });
+      case 'toread': return shelfHtml(x, 'Ta pile à lire est vide. Choisis « À lire » sur la fiche d\'un livre.', { avail: true });
+      case 'rate': return x.length ? `<ul class="list">${x.map((b) => `<li class="list-item" data-rate-row="${b.id}">
+          ${b.coverUrl ? `<img class="thumb" src="${esc(mediaSrc(b.coverUrl))}" alt="" loading="lazy">` : '<span class="thumb" aria-hidden="true"></span>'}
+          <div class="grow"><a href="#/book/${b.id}"><strong>${esc(b.title)}</strong></a><div class="small muted">Lu${b.finishedAt ? ` le ${fmtDate(b.finishedAt)}` : ''}</div></div>
+          <span class="home-stars" role="group" aria-label="Noter « ${esc(b.title)} »">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="star" data-rate-book="${b.id}" data-rating="${n}" aria-label="${n} étoile${n > 1 ? 's' : ''}">★</button>`).join('')}</span>
+        </li>`).join('')}</ul>` : '<p class="muted">Tous tes livres lus récemment ont une note.</p>';
+      case 'idea': return `<div id="home-idea">${ideaHtml(x)}</div>`;
+      case 'topwishes': return x.length ? `<ul class="list">${x.map((g, i) => `<li class="list-item">
+          ${g.coverUrl ? `<img class="thumb" src="${esc(g.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb" aria-hidden="true"></span>'}
+          <div class="grow"><strong>${esc(g.title)}</strong>${g.authors ? `<div class="small muted">${esc(g.authors)}</div>` : ''}
+            <div class="small">${plural(g.count, 'membre', 'membres')} : ${g.owners.map((o) => esc(o.username)).join(', ')}${g.priority ? ` <span class="badge badge-wish">${icon('wish', 12)}${g.priority} très envie</span>` : ''}</div></div>
+          <button class="btn btn-small btn-primary" type="button" data-top-add="${i}">${icon('add', 16)}<span class="hide-mobile">Ajouter</span></button></li>`).join('')}</ul>`
+        : '<p class="muted">Aucun souhait des membres en attente.</p>';
+      case 'activity': return `<div class="home-kpis">${[['loans', 'Prêts'], ['returns', 'Retours'], ['books', 'Livres ajoutés'], ['borrowers', 'Nouveaux emprunteurs']].map(([k, l]) => {
+          const diff = x[k].now - x[k].before;
+          return `<div class="home-kpi"><span class="n">${x[k].now}</span><span class="l">${l}</span>
+            <span class="small ${diff > 0 ? 'good' : diff < 0 ? 'bad' : 'muted'}">${diff > 0 ? `▲ +${diff}` : diff < 0 ? `▼ ${diff}` : '='} <span class="muted">vs 7 j avant (${x[k].before})</span></span></div>`;
+        }).join('')}</div><p class="small muted" style="margin:8px 0 0">7 derniers jours.</p>`;
+      case 'kobo': return x.length ? `<ul class="list">${x.map((k) => `<li class="list-item"><div class="grow">
+          <a href="#/kobo/${k.id}"><strong>${esc(k.name)}</strong></a>
+          <div class="small muted">${k.lastScanAt ? `Dernier scan le ${fmtDate(k.lastScanAt, true)}` : 'Jamais scannée'} · ${plural(k.books, 'livre', 'livres')}</div>
+          <div class="badges">${k.pending ? `<span class="badge badge-warn">${k.pending} envoyé${k.pending > 1 ? 's' : ''}, en attente d'un scan</span>` : ''}${k.unmatched ? `<span class="badge badge-muted">${k.unmatched} non relié${k.unmatched > 1 ? 's' : ''} à une fiche</span>` : ''}</div>
+        </div></li>`).join('')}</ul>`
+        : '<p class="muted">Aucune liseuse à ton nom. Branche ta Kobo depuis le menu du compte (« Brancher une liseuse »).</p>';
       default: return '';
     }
   }
-  const HOME_LINKS = { reading: ['reading', 'Tout voir'], due: ['open', 'Page Prêts'], wishes: ['#/wishes', 'Tout voir'], news: ['recent', 'Catalogue'], goal: ['#/stats', 'Statistiques'] };
+  function ideaHtml(b) {
+    if (!b) return '<p class="muted">Aucun livre disponible que tu n\'aies pas déjà lu.</p>';
+    return `<div class="home-idea"><a href="#/book/${b.id}" class="home-idea-cover">${coverHtml(b)}</a>
+      <div class="grow"><a href="#/book/${b.id}"><strong>${esc(b.title)}</strong></a>${b.authors ? `<div class="small muted">${esc(b.authors)}</div>` : ''}
+        <div class="badges" style="margin:4px 0">${availabilityBadge(b)}${b.categories.map((c) => `<span class="badge badge-muted">${esc(c)}</span>`).join('')}</div>
+        ${b.summary ? `<p class="small">${esc(b.summary)}</p>` : ''}
+        <p class="small muted">${esc(b.reason)}</p>
+        <button class="btn btn-small" type="button" id="home-idea-next" data-current="${b.id}">${icon('idea', 16)}Autre idée</button></div></div>`;
+  }
+  // Actions des cartes : notation, autre idee, ajout d'un souhait demande.
+  function bindHomeCards(d) {
+    $$('[data-rate-book]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = Number(btn.dataset.rateBook);
+        const b = (d.rate || []).find((x) => x.id === id);
+        try {
+          await api(`/api/books/${id}/status`, { method: 'PUT', body: { reading: 'read', opinion: b ? b.opinion : null, rating: Number(btn.dataset.rating) } });
+          toast(`« ${b ? b.title : 'Livre'} » : ${btn.dataset.rating} / 5`);
+          const row = $(`[data-rate-row="${id}"]`);
+          if (row) row.remove();
+          d.rate = (d.rate || []).filter((x) => x.id !== id);
+          if (!d.rate.length) viewDashboard();
+        } catch (err) { toast(err.message, 'error'); }
+      };
+    });
+    const bindIdea = () => {
+      const next = $('#home-idea-next');
+      if (!next) return;
+      next.onclick = async () => {
+        next.disabled = true;
+        try {
+          const b = await api(`/api/home/idea?exclude=${next.dataset.current}`);
+          d.idea = b;
+          $('#home-idea').innerHTML = ideaHtml(b);
+          bindIdea();
+          const n = $('#home-idea-next');
+          if (n) n.focus();
+        } catch (err) { toast(err.message, 'error'); next.disabled = false; }
+      };
+    };
+    bindIdea();
+    $$('[data-top-add]').forEach((btn) => {
+      btn.onclick = () => {
+        const g = d.topwishes[Number(btn.dataset.topAdd)];
+        pendingWish = { ...g, id: g.ids[0], owner: g.owners[0] };
+        go('#/add');
+      };
+    });
+  }
+  const HOME_LINKS = { reading: ['reading', 'Tout voir'], due: ['open', 'Page Prêts'], wishes: ['#/wishes', 'Tout voir'], news: ['recent', 'Catalogue'], goal: ['#/stats', 'Statistiques'],
+    toread: ['toread', 'Tout voir'], topwishes: ['#/wishes', 'Tous les souhaits'], activity: ['open', 'Page Prêts'], kobo: ['#/kobo', 'Toutes les liseuses'] };
 
   async function viewDashboard() {
     const home = await api('/api/home');
@@ -4805,6 +4906,7 @@
     if ($('#home-custom-2')) $('#home-custom-2').onclick = openHomeCustomize;
     $$('[data-home-go]').forEach((b) => { b.onclick = () => homeGo(b.dataset.homeGo); });
     if ($('#home-wish-add')) $('#home-wish-add').onclick = async () => { if (await wishDialog()) viewDashboard(); };
+    bindHomeCards(d);
     fitHome();
     // Apres la pastille du titre (ajoutee juste apres) : nouvelle mesure.
     requestAnimationFrame(fitHome);
@@ -4825,6 +4927,15 @@
     tiles.classList.toggle('odd', cols === 2 && n % 2 === 1);
     const h = (window.visualViewport ? window.visualViewport.height : window.innerHeight) - tiles.getBoundingClientRect().top - 12;
     tiles.style.height = `${Math.max(120, Math.floor(h))}px`;
+    // Petites tuiles : chiffre a cote du titre, pour garder des lignes de detail.
+    tiles.classList.remove('compact');
+    if (tiles.firstElementChild && tiles.firstElementChild.getBoundingClientRect().height < 104) tiles.classList.add('compact');
+    // Lignes de detail : seulement des lignes entieres (jamais une ligne coupee).
+    $$('.tile-lines', tiles).forEach((el) => {
+      el.style.maxHeight = '';
+      const lh = parseFloat(getComputedStyle(el).lineHeight) || 16;
+      el.style.maxHeight = `${Math.floor(el.getBoundingClientRect().height / lh) * lh}px`;
+    });
   }
   const refitHome = () => { if ($('#home-tiles')) fitHome(); };
   window.addEventListener('resize', refitHome);

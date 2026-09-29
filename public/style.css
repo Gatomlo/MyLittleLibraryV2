@@ -911,6 +911,18 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
 .good { color: var(--ok); font-weight: 700; }
 .bad { color: var(--danger); font-weight: 700; }
 .home-tiles { display: none; }
+.home-book .badge { align-self: flex-start; }
+.home-stars { display: inline-flex; flex-shrink: 0; }
+.home-stars:hover .star { color: #d9a21b; }
+.home-stars .star:hover ~ .star { color: var(--muted); }
+.home-idea { display: flex; gap: 14px; align-items: flex-start; }
+.home-idea-cover { flex: 0 0 96px; }
+.home-idea-cover .cover { border-radius: 8px; box-shadow: var(--shadow); }
+.home-idea p { margin: 4px 0; }
+.home-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.home-kpi { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); }
+.home-kpi .n { font-size: 24px; font-weight: 800; line-height: 1.1; color: var(--sky); font-variant-numeric: tabular-nums; }
+.home-kpi .l { font-size: 13px; font-weight: 700; }
 .home-order { list-style: none; margin: 0; padding: 0; }
 .home-order-row { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .home-order-row:last-child { border-bottom: 0; }
@@ -939,6 +951,11 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
   .home-tile .tile-value small { font-size: 12px; font-weight: 700; color: var(--muted); }
   .home-tile .tile-lines { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; font-size: 12px; color: var(--muted); line-height: 1.35; }
   .home-tile .tile-lines span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+  .home-tiles.compact .home-tile { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr); column-gap: 6px; row-gap: 4px; align-content: start; }
+  .home-tiles.compact .tile-head { grid-column: 1; }
+  .home-tiles.compact .tile-value { grid-column: 2; font-size: 18px; align-self: center; }
+  .home-tiles.compact .tile-value small { display: none; }
+  .home-tiles.compact .tile-lines { grid-column: 1 / -1; }
 }
 @media (max-height: 520px) and (orientation: landscape) and (pointer: coarse) {
   .home-hello { flex-basis: auto; }

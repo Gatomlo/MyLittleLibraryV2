@@ -144,7 +144,12 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   cartes À faire (prêts à relancer ou en retard, retours de la semaine, réservations prêtes, souhaits des
   membres, étiquettes, fiches incomplètes), Mes lectures en cours (progression Kobo), Pour moi (livres ajoutés
   ces 30 jours dont on est lecteur, par exemple ses souhaits, et ceux redevenus disponibles), Échéances des prêts, Mes souhaits, Nouveautés, Objectif
-  de lecture. Chaque compte choisit ses cartes et leur ordre (menu du compte > « Personnaliser l'accueil », par bibliothèque). Sur
+  de lecture, Suite de mes séries (tome suivant présent et pas encore lu), Ma pile à lire (disponibles d'abord),
+  À noter (lus sans note, étoiles cliquables), Une idée de lecture (livre disponible non lu, de préférence dans ses
+  catégories préférées, bouton « Autre idée »), Ma liseuse Kobo (dernier scan, envois en attente, livres non reliés) ;
+  gestionnaires : Souhaits les plus demandés (regroupés par livre, « Très envie » d'abord, ajout au catalogue en un
+  clic pour tous les membres concernés) et Activité de la semaine (prêts, retours, ajouts, emprunteurs vs semaine
+  précédente). Chaque compte choisit ses cartes et leur ordre (menu du compte > « Personnaliser l'accueil », par bibliothèque). Sur
   smartphone : tuiles résumées qui tiennent dans l'écran, sans aucun défilement ; une tuile ouvre la page.
 - **Souhaits** (lien « Souhaits », tout compte connecté) : liste de livres souhaités propre à chaque compte
   (hors bibliothèque) ; ajout par ISBN (tapé ou scanné) ou par titre (choix de l'édition), notes, « Très envie » (cœur cliquable dans la liste,
