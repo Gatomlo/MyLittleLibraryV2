@@ -124,6 +124,10 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   emplacement et son étiquette.
 - **Prêts** : scan du QR de l'étiquette → prêter (emprunteur choisi ou créé à la
   volée) ou enregistrer le retour. Historique par livre et par emprunteur.
+- **Bouton Scanner** (en-tête ; Réglages > Exemplaires et prêts > Bouton Scanner) : lit le QR de
+  l'étiquette, le code-barres ISBN ou les deux, et ouvre au choix le prêt de l'exemplaire ou la
+  fiche du livre. ISBN + prêt : exemplaire unique ouvert directement, sinon choix parmi les
+  exemplaires papier (disponibles en premier).
 - **Emprunteurs** : formulaire de création ouvert à la demande, champ libre « Informations ».
 - **Téléphone** : Sélectionner, Ajout multiple et Ajouter un livre masqués dans le catalogue
   (ajout via le menu, sélection par appui long).

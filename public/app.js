@@ -522,6 +522,88 @@
     });
   }
 
+  // Bouton Scanner (en-tete, page Prets) : codes lus et page ouverte selon les
+  // reglages de la bibliotheque (Reglages › Exemplaires et prets).
+  const scanConf = () => (state.settings && state.settings.scan) || { codes: 'copy', action: 'loan' };
+  const SCAN_TITLES = { copy: 'Scanner une étiquette', isbn: 'Scanner un ISBN', both: 'Scanner une étiquette ou un ISBN' };
+
+  // Renvoie { copy } ou { isbn }, ou null si la fenetre est fermee.
+  async function scanCopyOrIsbn() {
+    const { codes } = scanConf();
+    if (codes === 'copy') { const copy = await scanCopy(); return copy && { copy }; }
+    if (codes === 'isbn') { const isbn = await scanIsbn(); return isbn && { isbn }; }
+    const v = await openScanner({
+      title: 'Scanner un livre',
+      hint: "Vise le QR code de l'étiquette ou le code-barres ISBN.",
+      formats: ['qr_code', 'ean_13'],
+      accept: (raw) => {
+        const copy = copyCodeFromScan(raw);
+        // Adresse du QR ou code avec des lettres : etiquette ; sinon ISBN d'abord.
+        if (copy && (raw.includes('#/c/') || /[A-WYZa-wyz]/.test(raw))) return 'c:' + copy;
+        const isbn = isbnFromScan(raw);
+        return isbn ? 'i:' + isbn : copy ? 'c:' + copy : null;
+      },
+      manualLabel: "ou tape le code ou l'ISBN",
+    });
+    return v && (v.startsWith('i:') ? { isbn: v.slice(2) } : { copy: v.slice(2) });
+  }
+
+  // Liste de choix (exemplaire ou livre) ; renvoie la valeur choisie ou null.
+  function pickDialog(title, subtitle, rows) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      backdrop.innerHTML = `
+        <div class="modal" role="dialog" aria-modal="true">
+          <h2>${esc(title)}</h2>
+          ${subtitle ? `<p class="small muted">${esc(subtitle)}</p>` : ''}
+          <div class="pick-list">${rows.map((r, i) => `<button type="button" class="pick-row" data-pick="${i}">${r.html}</button>`).join('')}</div>
+          <div class="btn-row"><button class="btn" type="button" data-close>Annuler</button></div>
+        </div>`;
+      document.body.appendChild(backdrop);
+      const close = (v) => { backdrop.remove(); resolve(v); };
+      backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(null); });
+      $$('[data-pick]', backdrop).forEach((btn) => { btn.onclick = () => close(rows[Number(btn.dataset.pick)].value); });
+    });
+  }
+
+  // Scan puis ouverture du pret de l'exemplaire ou de la fiche du livre.
+  // ISBN + pret : exemplaire papier unique ouvert directement, sinon choix.
+  async function scanAndOpen(action = scanConf().action) {
+    const r = await scanCopyOrIsbn();
+    if (!r) return;
+    try {
+      if (r.copy) {
+        if (action === 'loan') return go(`#/c/${encodeURIComponent(r.copy)}`);
+        const c = await api(`/api/public/copies/${encodeURIComponent(r.copy)}`);
+        return go(`#/book/${c.bookId}`);
+      }
+      const { books } = await api(`/api/copies/by-isbn/${encodeURIComponent(r.isbn)}`);
+      if (!books.length) return toast(`Aucun livre avec l'ISBN ${r.isbn} dans cette bibliothèque.`, 'error');
+      if (action === 'book') {
+        const id = books.length === 1 ? books[0].id
+          : await pickDialog('Choisir le livre', `ISBN ${r.isbn}`, books.map((b) => ({
+            value: b.id, html: `<strong>${esc(b.title)}</strong><span class="small muted">${esc(b.authors || '')}</span>` })));
+        if (id) go(`#/book/${id}`);
+        return;
+      }
+      // Exemplaires disponibles en premier.
+      const copies = books.flatMap((b) => b.copies.map((c) => ({ ...c, book: b }))).sort((a, b) => !!a.loan - !!b.loan);
+      if (!copies.length) {
+        toast("Ce livre n'a aucun exemplaire papier à prêter.", 'error');
+        if (books.length === 1) go(`#/book/${books[0].id}`);
+        return;
+      }
+      const code = copies.length === 1 ? copies[0].code
+        : await pickDialog("Choisir l'exemplaire", books.length === 1 ? books[0].title : `ISBN ${r.isbn}`, copies.map((c) => ({
+          value: c.code,
+          html: `<span><strong class="code">${esc(c.code)}</strong> ${c.loan ? `<span class="badge badge-warn">Prêté à ${esc(c.loan.borrower.name)}</span>` : '<span class="badge badge-ok">Disponible</span>'}</span>
+            <span class="small muted">${[books.length > 1 ? c.book.title : '', c.location].filter(Boolean).map(esc).join(' · ')}</span>`,
+        })));
+      if (code) go(`#/c/${encodeURIComponent(code)}`);
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
   // ================= En-tete : marque, navigation, menu du compte =================
   function renderBrand() {
     const s = state.settings;
@@ -614,6 +696,7 @@
     const activeLink = $('#nav a.active');
     $('#menu-btn').title = activeLink ? activeLink.textContent : 'Menu';
     $('#scan-btn').hidden = !canManage();
+    $('#scan-btn').title = SCAN_TITLES[scanConf().codes];
   }
 
   const USER_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
@@ -2390,7 +2473,7 @@
           </form>`}
       </div>
       <div class="btn-row" style="margin-top:14px"><button class="btn" id="scan-next">Scanner un autre livre</button></div>`;
-    $('#scan-next').onclick = async () => { const c = await scanCopy(); if (c) go(`#/c/${encodeURIComponent(c)}`); };
+    $('#scan-next').onclick = () => scanAndOpen('loan');
     if (copy.loan) {
       $('#return').onclick = async () => {
         try {
@@ -4011,7 +4094,7 @@
       </div>
       <div class="tabs"><button data-tab="open" class="active">En cours</button><button data-tab="returned">Historique</button></div>
       <div class="card" id="loan-list"></div>`;
-    $('#scan').onclick = async () => { const c = await scanCopy(); if (c) go(`#/c/${encodeURIComponent(c)}`); };
+    $('#scan').onclick = () => scanAndOpen('loan');
     $('#code-form').onsubmit = (e) => {
       e.preventDefault();
       const code = copyCodeFromScan(e.target.code.value.trim());
@@ -4829,6 +4912,7 @@
         <p class="small muted">Pouvoir lire ou télécharger rend aussi le fichier visible.</p>
       </form>` : ''}
 
+      <p class="settings-group">Exemplaires et prêts</p>
       <h2>Codes des exemplaires</h2>
       <form class="card" id="code-form">
         <p class="muted small">Prochain code attribué : <span class="code">${esc(s.codePrefix)}-${String(s.nextCodeNumber).padStart(5, '0')}</span></p>
@@ -4851,6 +4935,20 @@
             <button class="btn btn-danger" type="button" id="renumber-go">Régénérer maintenant</button>
             <button class="btn" type="button" id="renumber-cancel">Annuler</button>
           </div>
+        </div>
+      </form>
+
+      <h2>Bouton Scanner</h2>
+      <form class="card" id="scan-form">
+        <label>Codes lus</label>
+        <div class="btn-row" style="margin-bottom:14px">
+          ${[['copy', "QR code de l'étiquette"], ['isbn', 'Code-barres ISBN'], ['both', 'Les deux']].map(([v, l]) => `
+            <label class="check"><input type="radio" name="codes" value="${v}" ${scanConf().codes === v ? 'checked' : ''}> ${l}</label>`).join('')}
+        </div>
+        <label>Page ouverte ${hint("Prêt avec un ISBN : l'exemplaire s'ouvre directement s'il est seul, sinon tu choisis parmi les exemplaires.")}</label>
+        <div class="btn-row">
+          ${[['loan', "Prêt / retour de l'exemplaire"], ['book', 'Fiche du livre']].map(([v, l]) => `
+            <label class="check"><input type="radio" name="action" value="${v}" ${scanConf().action === v ? 'checked' : ''}> ${l}</label>`).join('')}
         </div>
       </form>
 
@@ -5069,6 +5167,18 @@
           toast('En-tête mis à jour.');
         } catch (err) { toast(err.message, 'error'); }
       };
+    });
+
+    // Bouton Scanner : enregistre des qu'on change.
+    $('#scan-form').addEventListener('change', async () => {
+      const codes = ($('#scan-form [name=codes]:checked') || {}).value;
+      const action = ($('#scan-form [name=action]:checked') || {}).value;
+      try {
+        await api('/api/settings', { method: 'PUT', body: { scan: { codes, action } } });
+        await loadSettings();
+        renderHeader();
+        toast('Bouton Scanner mis à jour.');
+      } catch (err) { toast(err.message, 'error'); }
     });
 
     // Catalogue : filtres affiches et position, enregistres des qu'on change.
@@ -5298,10 +5408,7 @@
   }
 
   $('#install-btn').onclick = () => installApp();
-  $('#scan-btn').onclick = async () => {
-    const code = await scanCopy();
-    if (code) go(`#/c/${encodeURIComponent(code)}`);
-  };
+  $('#scan-btn').onclick = () => scanAndOpen();
 
   (async function init() {
     await Promise.all([loadSettings(), loadStatus()]);
