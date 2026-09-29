@@ -128,7 +128,17 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   l'étiquette, le code-barres ISBN ou les deux, et ouvre au choix le prêt de l'exemplaire ou la
   fiche du livre. ISBN + prêt : exemplaire unique ouvert directement, sinon choix parmi les
   exemplaires papier (disponibles en premier).
-- **Emprunteurs** : formulaire de création ouvert à la demande, champ libre « Informations ».
+- **Retour express** : un exemplaire prêté scanné (ou « Retour » dans les listes) ouvre une fenêtre
+  « Enregistrer le retour » / « Retour + scanner le suivant » pour enchaîner les retours.
+- **Dates de retour** : durée par défaut (Réglages > Exemplaires et prêts > Durée des prêts, 0 = aucune),
+  modifiable au prêt, « Prolonger » sur la page de l'exemplaire ; onglet « En retard » de la page Prêts
+  et pastille rouge sur le lien Prêts de l'en-tête.
+- **ISBN inconnu au scan** : proposition d'ajouter le livre, fiche pré-remplie par l'ISBN.
+- **Réservations** : un compte membre réserve un livre dont tous les exemplaires sont prêtés (fiche du
+  livre) ; au retour d'un exemplaire, alerte « à mettre de côté pour … » ; onglet « Réservations » de la page Prêts.
+- **Emprunteurs** : formulaire de création ouvert à la demande, champ libre « Informations ». Fiche d'un
+  emprunteur : prêts en cours (retards), historique, « Prêter un livre » (scanner avec l'emprunteur pré-rempli,
+  « Prêter un autre livre à … » pour enchaîner).
 - **Téléphone** : Sélectionner, Ajout multiple et Ajouter un livre masqués dans le catalogue
   (ajout via le menu, sélection par appui long).
 - **Étiquettes** (menu du compte) : planches A4 (Avery L7160, L7159, L7163, L7651, 70×37…, ou format

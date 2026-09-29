@@ -118,6 +118,29 @@
     setTimeout(() => el.remove(), type === 'error' ? 6000 : 3500);
   }
 
+  // Date sans heure ('YYYY-MM-DD') : date de retour prevue d'un pret.
+  const fmtDay = (s) => (s ? s.split('-').reverse().join('/') : '');
+  // Echeance d'un pret en cours ("a rendre le ...", badge rouge si depassee).
+  const dueHtml = (l) => (!l.dueAt ? '' : l.overdue ? `<span class="badge badge-late">En retard · ${fmtDay(l.dueAt)}</span>` : `à rendre le ${fmtDay(l.dueAt)}`);
+
+  // Fenetre simple : renvoie la valeur data-v du bouton touche, ou null.
+  function dialog(html) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      backdrop.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${html}</div>`;
+      document.body.appendChild(backdrop);
+      const close = (v) => { backdrop.remove(); resolve(v); };
+      backdrop.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-v]');
+        if (btn) close(btn.dataset.v);
+        else if (e.target === backdrop || e.target.hasAttribute('data-close')) close(null);
+      });
+      const first = $('[data-v]', backdrop);
+      if (first) first.focus();
+    });
+  }
+
   function go(hash) {
     if (location.hash === hash) route();
     else location.hash = hash;
@@ -567,6 +590,16 @@
     });
   }
 
+  // Emprunteur choisi depuis sa fiche (« Prêter un livre ») : pre-rempli sur la page
+  // de pret des exemplaires scannes ensuite ; oublie en quittant ces pages (route).
+  let loanFor = null;
+  // ISBN scanne absent de la bibliotheque : pre-rempli sur la page Ajouter.
+  let pendingAddIsbn = null;
+
+  // Ligne d'une liste de choix : couverture, texte principal, detail.
+  const pickLine = (coverUrl, main, sub) => `<span class="pick-line">${coverUrl ? `<img class="thumb" src="${esc(mediaSrc(coverUrl))}" alt="">` : '<span class="thumb"></span>'}
+    <span class="grow">${main}${sub ? `<span class="small muted">${sub}</span>` : ''}</span></span>`;
+
   // Scan puis ouverture du pret de l'exemplaire ou de la fiche du livre.
   // ISBN + pret : exemplaire papier unique ouvert directement, sinon choix.
   async function scanAndOpen(action = scanConf().action) {
@@ -574,16 +607,22 @@
     if (!r) return;
     try {
       if (r.copy) {
-        if (action === 'loan') return go(`#/c/${encodeURIComponent(r.copy)}`);
+        if (action === 'loan') return await openCopy(r.copy);
         const c = await api(`/api/public/copies/${encodeURIComponent(r.copy)}`);
         return go(`#/book/${c.bookId}`);
       }
       const { books } = await api(`/api/copies/by-isbn/${encodeURIComponent(r.isbn)}`);
-      if (!books.length) return toast(`Aucun livre avec l'ISBN ${r.isbn} dans cette bibliothèque.`, 'error');
+      if (!books.length) {
+        if (confirm(`Aucun livre avec l'ISBN ${r.isbn} dans cette bibliothèque. L'ajouter ?`)) {
+          pendingAddIsbn = r.isbn;
+          go('#/add');
+        }
+        return;
+      }
       if (action === 'book') {
         const id = books.length === 1 ? books[0].id
           : await pickDialog('Choisir le livre', `ISBN ${r.isbn}`, books.map((b) => ({
-            value: b.id, html: `<strong>${esc(b.title)}</strong><span class="small muted">${esc(b.authors || '')}</span>` })));
+            value: b.id, html: pickLine(b.coverUrl, `<strong>${esc(b.title)}</strong>`, esc(b.authors || '')) })));
         if (id) go(`#/book/${id}`);
         return;
       }
@@ -597,11 +636,81 @@
       const code = copies.length === 1 ? copies[0].code
         : await pickDialog("Choisir l'exemplaire", books.length === 1 ? books[0].title : `ISBN ${r.isbn}`, copies.map((c) => ({
           value: c.code,
-          html: `<span><strong class="code">${esc(c.code)}</strong> ${c.loan ? `<span class="badge badge-warn">Prêté à ${esc(c.loan.borrower.name)}</span>` : '<span class="badge badge-ok">Disponible</span>'}</span>
-            <span class="small muted">${[books.length > 1 ? c.book.title : '', c.location].filter(Boolean).map(esc).join(' · ')}</span>`,
+          html: pickLine(c.book.coverUrl,
+            `<span><strong class="code">${esc(c.code)}</strong> ${c.loan ? (c.loan.overdue ? '<span class="badge badge-late">En retard</span>' : '<span class="badge badge-warn">Prêté</span>') : '<span class="badge badge-ok">Disponible</span>'}</span>`,
+            [books.length > 1 ? esc(c.book.title) : '', c.loan ? `${esc(c.loan.borrower.name)} depuis le ${fmtDate(c.loan.loanedAt)}${c.loan.dueAt ? `, à rendre le ${fmtDay(c.loan.dueAt)}` : ''}` : '', esc(c.location)]
+              .filter(Boolean).join(' · ')),
         })));
-      if (code) go(`#/c/${encodeURIComponent(code)}`);
+      if (code) await openCopy(code);
     } catch (err) { toast(err.message, 'error'); }
+  }
+
+  // Exemplaire scanne : page de pret, ou retour express s'il est prete (sans quitter
+  // la page ; « Retour + suivant » relance le scanner pour enchainer les retours).
+  async function openCopy(code) {
+    const { copy, book } = await api(`/api/copies/by-code/${encodeURIComponent(code)}`);
+    if (!copy.loan) return go(`#/c/${encodeURIComponent(copy.code)}`);
+    const choice = await dialog(`
+      <h2>Retour</h2>
+      <div class="list-item" style="border:0;padding-top:0">
+        ${book.coverUrl ? `<img class="thumb" src="${esc(mediaSrc(book.coverUrl))}" alt="">` : ''}
+        <div class="grow">
+          <div class="code">${esc(copy.code)}</div>
+          <strong>${esc(book.title)}</strong>
+          <div class="small muted">Prêté à ${esc(copy.loan.borrower.name)} depuis le ${fmtDate(copy.loan.loanedAt)}</div>
+          ${copy.loan.dueAt ? `<div class="small muted">${dueHtml(copy.loan)}</div>` : ''}
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ok" type="button" data-v="return">Enregistrer le retour</button>
+        <button class="btn btn-primary" type="button" data-v="next">Retour + scanner le suivant</button>
+      </div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn" type="button" data-v="open">Voir le prêt</button>
+        <button class="btn" type="button" data-close style="margin-left:auto">Annuler</button>
+      </div>`);
+    if (choice === 'open') return go(`#/c/${encodeURIComponent(copy.code)}`);
+    if (choice !== 'return' && choice !== 'next') return;
+    await returnLoan(copy.loan.id, copy.code);
+    route();
+    if (choice === 'next') await scanAndOpen('loan');
+  }
+
+  // Retour d'un pret, puis alerte si le livre est reserve.
+  async function returnLoan(loanId, code) {
+    const r = await api(`/api/loans/${loanId}/return`, { method: 'POST', body: {} });
+    toast(`Retour de ${code} enregistré.`);
+    if (!r.reservations || !r.reservations.length) return;
+    const [first, ...others] = r.reservations;
+    const v = await dialog(`
+      <h2>Livre réservé</h2>
+      <div class="warn-box">Mets « ${esc(r.book.title)} » de côté pour <strong>${esc(first.user.username)}</strong> (réservé le ${fmtDate(first.createdAt)}).</div>
+      ${others.length ? `<p class="small muted">Ensuite : ${others.map((x) => esc(x.user.username)).join(', ')}</p>` : ''}
+      <div class="btn-row">
+        <button class="btn btn-primary" type="button" data-v="ok">OK</button>
+        ${first.user.id === state.user.id || canConfigure() ? `<button class="btn" type="button" data-v="done">Retirer sa réservation</button>` : ''}
+      </div>`);
+    if (v === 'done') await api(`/api/reservations/${first.id}`, { method: 'DELETE' }).catch((err) => toast(err.message, 'error'));
+  }
+
+  // Bouton « Retour » des listes de prets : retour express.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-quick-return]');
+    if (!btn) return;
+    e.preventDefault();
+    openCopy(btn.dataset.quickReturn).catch((err) => toast(err.message, 'error'));
+  });
+
+  // Pastille des prets en retard sur le lien Prets (et le bouton menu sur telephone).
+  function refreshLoanBadge() {
+    const link = $('#nav a[href="#/loans"]');
+    if (!link || !canManage()) { $('#menu-btn').classList.remove('has-alert'); return; }
+    api('/api/loans/summary').then((s) => {
+      const old = $('.nav-badge', link);
+      if (old) old.remove();
+      if (s.overdue) link.insertAdjacentHTML('beforeend', `<span class="nav-badge" title="Prêts en retard">${s.overdue}</span>`);
+      $('#menu-btn').classList.toggle('has-alert', s.overdue > 0);
+    }).catch(() => {});
   }
 
   // ================= En-tete : marque, navigation, menu du compte =================
@@ -669,6 +778,7 @@
     const h1 = view().querySelector('h1');
     if (!h1 || h1.querySelector('.h-icon')) return;
     const path = decodeURIComponent(location.hash.replace(/^#/, '')) || '/';
+    if (loanFor && !path.startsWith('/c/') && path !== `/borrower/${loanFor.id}`) loanFor = null;
     let name = /^\/?$/.test(path) ? (LIBRARY ? 'catalog' : 'library') : null;
     for (const [re, n] of TITLE_ICONS) if (re.test(path)) { name = n; break; }
     if (!name) return;
@@ -697,6 +807,7 @@
     $('#menu-btn').title = activeLink ? activeLink.textContent : 'Menu';
     $('#scan-btn').hidden = !canManage();
     $('#scan-btn').title = SCAN_TITLES[scanConf().codes];
+    refreshLoanBadge();
   }
 
   const USER_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
@@ -1544,8 +1655,9 @@
       </div>
       <h2>Exemplaires</h2>
       <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
+      ${manage ? `<div id="reservations">${reservationsHtml(book)}</div>` : ''}
       ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}`;
-    if (manage) bindAdminBook(book);
+    if (manage) { bindAdminBook(book); bindReservations(book); }
     const push = $('#push-kobo');
     if (push) push.onclick = busy(() => pushToKobo(book.id));
     if (manage) bindReaders(book);
@@ -1572,6 +1684,41 @@
   // Lecteurs du livre (comptes membres) avec leur statut de lecture. Sur la fiche :
   // bouton "Interesse" pour soi ; les autres lecteurs se choisissent dans "Modifier".
   // Le statut de lecture n'y touche jamais.
+  // Reservations d'un livre par les comptes membres : possible quand tous les
+  // exemplaires papier sont pretes ; alerte au retour d'un exemplaire.
+  function reservationsHtml(book) {
+    const list = book.reservations || [];
+    const physical = book.copies.filter((c) => c.format !== 'ebook');
+    const mine = list.some((r) => r.user.id === state.user.id);
+    const canReserve = !mine && physical.length > 0 && physical.every((c) => c.loan);
+    if (!list.length && !canReserve) return '';
+    return `<div class="card" style="margin-top:12px">
+      <div class="btn-row" style="justify-content:space-between">
+        <strong>Réservations ${hint('Quand un exemplaire revient, une alerte rappelle de le mettre de côté pour la première personne de la liste.')}</strong>
+        ${canReserve ? '<button class="btn btn-small btn-primary" type="button" id="reserve">Réserver</button>' : ''}
+      </div>
+      ${list.length ? `<div class="list">${list.map((r, i) => `<div class="list-item">
+        <div class="grow">${i + 1}. <strong>${r.user.id === state.user.id ? 'Moi' : esc(r.user.username)}</strong> <span class="small muted">le ${fmtDate(r.createdAt)}</span></div>
+        ${r.user.id === state.user.id || canConfigure() ? `<button class="btn btn-small" type="button" data-del-res="${r.id}">Retirer</button>` : ''}
+      </div>`).join('')}</div>` : ''}
+    </div>`;
+  }
+
+  function bindReservations(book) {
+    const box = $('#reservations');
+    if (!box) return;
+    const update = (list) => { book.reservations = list; box.innerHTML = reservationsHtml(book); bindReservations(book); };
+    const reserve = $('#reserve', box);
+    if (reserve) reserve.onclick = async () => {
+      try { update(await api(`/api/books/${book.id}/reservations`, { method: 'POST', body: {} })); toast('Livre réservé.'); } catch (err) { toast(err.message, 'error'); }
+    };
+    $$('[data-del-res]', box).forEach((btn) => {
+      btn.onclick = async () => {
+        try { update(await api(`/api/reservations/${btn.dataset.delRes}`, { method: 'DELETE' })); } catch (err) { toast(err.message, 'error'); }
+      };
+    });
+  }
+
   function readersHtml(book) {
     const readers = book.readers || [];
     const statusOf = (u) => {
@@ -2440,14 +2587,16 @@
       location.replace(`#/book/${r.bookId}`);
       return;
     }
-    const { copy, book, oldCode } = await api(`/api/copies/by-code/${encodeURIComponent(code)}`);
+    const { copy, book, oldCode, defaultDueAt } = await api(`/api/copies/by-code/${encodeURIComponent(code)}`);
     if (oldCode) {
       history.replaceState(null, '', `#/c/${encodeURIComponent(copy.code)}`);
       toast(`Ancienne étiquette ${oldCode} : cet exemplaire s'appelle maintenant ${copy.code}. Pense à réimprimer son étiquette.`);
     }
     const borrowers = copy.loan ? [] : await api('/api/borrowers');
+    const reservations = book.reservations || [];
+    const who = loanFor;
     view().innerHTML = `
-      <p><a href="#/loans">← Prêts</a></p>
+      <p>${who ? `<a href="#/borrower/${who.id}">← ${esc(who.name)}</a>` : '<a href="#/loans">← Prêts</a>'}</p>
       <div class="card">
         <div class="list-item" style="border:0;padding-top:0">
           ${book.coverUrl ? `<img class="thumb" src="${esc(mediaSrc(book.coverUrl))}" alt="">` : ''}
@@ -2457,39 +2606,58 @@
             <div class="small muted">${esc(book.authors)}${copy.location ? ' · ' + esc(copy.location) : ''}</div>
           </div>
         </div>
+        ${reservations.length ? `<div class="warn-box">Réservé par ${reservations.map((r) => `<strong>${esc(r.user.username)}</strong>`).join(', ')}</div>` : ''}
         ${copy.loan ? `
-          <div class="info-box">Prêté à <strong>${esc(copy.loan.borrower.name)}</strong> depuis le ${fmtDate(copy.loan.loanedAt)}.</div>
+          <div class="info-box">Prêté à <a href="#/borrower/${copy.loan.borrower.id}"><strong>${esc(copy.loan.borrower.name)}</strong></a> depuis le ${fmtDate(copy.loan.loanedAt)}${copy.loan.dueAt ? ` · ${dueHtml(copy.loan)}` : ''}.</div>
           <button class="btn btn-ok btn-block" id="return">Enregistrer le retour</button>
+          <form class="field isbn-row" id="due-form" style="margin-top:14px">
+            <input type="date" name="due" value="${esc(copy.loan.dueAt || '')}" aria-label="Date de retour">
+            <button class="btn" type="submit">${copy.loan.dueAt ? 'Prolonger' : 'Fixer la date de retour'}</button>
+          </form>
         ` : `
           <div class="info-box"><span class="badge badge-ok">Disponible</span></div>
           <form id="loan-form">
             <div class="field">
               <label for="borrower">Emprunteur</label>
-              <input id="borrower" name="borrower" list="borrower-list" placeholder="Nom (nouvel emprunteur créé automatiquement)" autocomplete="off" required>
+              <input id="borrower" name="borrower" list="borrower-list" placeholder="Nom (nouvel emprunteur créé automatiquement)" autocomplete="off" required value="${who ? esc(who.name) : ''}">
               <datalist id="borrower-list">${borrowers.map((b) => `<option value="${esc(b.name)}">`).join('')}</datalist>
             </div>
-            <div class="field"><label for="notes">Remarque (facultatif)</label><input id="notes" name="notes"></div>
+            <div class="grid-2">
+              <div class="field"><label for="due">À rendre le ${hint('Durée par défaut dans les Réglages (Exemplaires et prêts). Vide : pas de date de retour.')}</label><input id="due" name="due" type="date" value="${esc(defaultDueAt || '')}"></div>
+              <div class="field"><label for="notes">Remarque (facultatif)</label><input id="notes" name="notes"></div>
+            </div>
             <button class="btn btn-primary btn-block" type="submit">Prêter</button>
           </form>`}
       </div>
-      <div class="btn-row" style="margin-top:14px"><button class="btn" id="scan-next">Scanner un autre livre</button></div>`;
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn" id="scan-next">${who ? `Prêter un autre livre à ${esc(who.name)}` : 'Scanner un autre livre'}</button>
+        ${who ? '<button class="btn" id="loan-for-stop">Terminer</button>' : ''}
+      </div>`;
     $('#scan-next').onclick = () => scanAndOpen('loan');
+    if (who) $('#loan-for-stop').onclick = () => { loanFor = null; go(`#/borrower/${who.id}`); };
     if (copy.loan) {
       $('#return').onclick = async () => {
         try {
-          await api(`/api/loans/${copy.loan.id}/return`, { method: 'POST', body: {} });
-          toast(`Retour de ${copy.code} enregistré.`);
+          await returnLoan(copy.loan.id, copy.code);
+          route();
+        } catch (err) { toast(err.message, 'error'); }
+      };
+      $('#due-form').onsubmit = async (e) => {
+        e.preventDefault();
+        try {
+          await api(`/api/loans/${copy.loan.id}`, { method: 'PUT', body: { dueAt: e.target.due.value } });
+          toast(e.target.due.value ? `À rendre le ${fmtDay(e.target.due.value)}.` : 'Date de retour retirée.');
           route();
         } catch (err) { toast(err.message, 'error'); }
       };
     } else {
-      $('#borrower').focus();
+      if (!who) $('#borrower').focus();
       $('#loan-form').onsubmit = async (e) => {
         e.preventDefault();
         const name = e.target.borrower.value.trim();
         const match = borrowers.find((b) => b.name.toLowerCase() === name.toLowerCase());
         try {
-          await api('/api/loans', { method: 'POST', body: { code: copy.code, borrowerId: match ? match.id : null, borrowerName: name, notes: e.target.notes.value } });
+          await api('/api/loans', { method: 'POST', body: { code: copy.code, borrowerId: match ? match.id : null, borrowerName: name, notes: e.target.notes.value, dueAt: e.target.due.value } });
           toast(`${copy.code} prêté à ${name}.`);
           route();
         } catch (err) { toast(err.message, 'error'); }
@@ -3194,6 +3362,14 @@
       const isbn = await scanIsbn();
       if (isbn) { $('#isbn-search').value = isbn; lastLookup = isbn; lookup(isbn); }
     };
+    // ISBN scanne absent de la bibliotheque (bouton Scanner) : recherche lancee.
+    if (!editing && pendingAddIsbn) {
+      const isbn = pendingAddIsbn;
+      pendingAddIsbn = null;
+      $('#isbn-search').value = isbn;
+      lastLookup = isbn;
+      lookup(isbn);
+    }
 
     f.onsubmit = async (e) => {
       e.preventDefault();
@@ -4092,7 +4268,7 @@
           <button class="btn btn-primary" type="button" id="scan">Scanner</button>
         </form>
       </div>
-      <div class="tabs"><button data-tab="open" class="active">En cours</button><button data-tab="returned">Historique</button></div>
+      <div class="tabs" id="loan-tabs"></div>
       <div class="card" id="loan-list"></div>`;
     $('#scan').onclick = () => scanAndOpen('loan');
     $('#code-form').onsubmit = (e) => {
@@ -4101,19 +4277,39 @@
       if (code) go(`#/c/${encodeURIComponent(code)}`);
       else toast('Code non reconnu.', 'error');
     };
+    async function tabs() {
+      const s = await api('/api/loans/summary');
+      $('#loan-tabs').innerHTML = [['open', `En cours (${s.open})`], ['overdue', `En retard (${s.overdue})`],
+        ['reservations', `Réservations (${s.reservations})`], ['returned', 'Historique']]
+        .map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? 'active' : ''}">${l}</button>`).join('');
+      $$('#loan-tabs button').forEach((btn) => {
+        btn.onclick = () => { tab = btn.dataset.tab; tabs(); load(); };
+      });
+    }
     async function load() {
+      if (tab === 'reservations') {
+        const list = await api('/api/reservations');
+        $('#loan-list').innerHTML = list.length ? `<div class="list">${list.map((r) => `<div class="list-item">
+            ${r.book.coverUrl ? `<img class="thumb" src="${esc(mediaSrc(r.book.coverUrl))}" alt="" loading="lazy">` : '<span class="thumb"></span>'}
+            <div class="grow">
+              <a href="#/book/${r.book.id}"><strong>${esc(r.book.title)}</strong></a>
+              <div class="small muted">Réservé par ${r.user.id === state.user.id ? 'moi' : esc(r.user.username)} le ${fmtDate(r.createdAt)}</div>
+              <div>${r.available ? '<span class="badge badge-ok">Exemplaire disponible</span>' : '<span class="badge badge-muted">Tous prêtés</span>'}</div>
+            </div>
+            ${r.user.id === state.user.id || canConfigure() ? `<button class="btn btn-small" type="button" data-del-res="${r.id}">Retirer</button>` : ''}
+          </div>`).join('')}</div>` : '<div class="empty">Aucune réservation.</div>';
+        $$('[data-del-res]', $('#loan-list')).forEach((btn) => {
+          btn.onclick = async () => {
+            try { await api(`/api/reservations/${btn.dataset.delRes}`, { method: 'DELETE' }); tabs(); load(); } catch (err) { toast(err.message, 'error'); }
+          };
+        });
+        return;
+      }
       const loans = await api(`/api/loans?status=${tab}`);
       $('#loan-list').innerHTML = loans.length ? `<div class="list">${loans.map((l) => loanItemHtml(l)).join('')}</div>`
-        : `<div class="empty">${tab === 'open' ? 'Aucun prêt en cours.' : 'Aucun prêt terminé.'}</div>`;
+        : `<div class="empty">${{ open: 'Aucun prêt en cours.', overdue: 'Aucun prêt en retard.' }[tab] || 'Aucun prêt terminé.'}</div>`;
     }
-    $$('.tabs button').forEach((btn) => {
-      btn.onclick = () => {
-        tab = btn.dataset.tab;
-        $$('.tabs button').forEach((x) => x.classList.toggle('active', x === btn));
-        load();
-      };
-    });
-    await load();
+    await Promise.all([tabs(), load()]);
   }
 
   function loanItemHtml(l, hideBorrower) {
@@ -4122,9 +4318,9 @@
       <div class="grow">
         <a href="#/book/${l.book.id}"><strong>${esc(l.book.title)}</strong></a>
         <div class="small muted"><span class="code">${esc(l.copy.code)}</span>${hideBorrower ? '' : ` · <a href="#/borrower/${l.borrower.id}">${esc(l.borrower.name)}</a>`}</div>
-        <div class="small muted">Prêté le ${fmtDate(l.loanedAt)}${l.returnedAt ? ` · rendu le ${fmtDate(l.returnedAt)}` : ''}${l.notes ? ' · ' + esc(l.notes) : ''}</div>
+        <div class="small muted">Prêté le ${fmtDate(l.loanedAt)}${l.returnedAt ? ` · rendu le ${fmtDate(l.returnedAt)}` : l.dueAt ? ` · ${dueHtml(l)}` : ''}${l.notes ? ' · ' + esc(l.notes) : ''}</div>
       </div>
-      ${l.returnedAt ? '' : `<a class="btn btn-small btn-ok" href="#/c/${encodeURIComponent(l.copy.code)}">Retour</a>`}
+      ${l.returnedAt ? '' : `<a class="btn btn-small btn-ok" href="#/c/${encodeURIComponent(l.copy.code)}" data-quick-return="${esc(l.copy.code)}">Retour</a>`}
     </div>`;
   }
 
@@ -4178,9 +4374,11 @@
     const b = await api(`/api/borrowers/${id}`);
     const open = b.loans.filter((l) => !l.returnedAt);
     const past = b.loans.filter((l) => l.returnedAt);
+    const late = open.filter((l) => l.overdue).length;
     view().innerHTML = `
       <p><a href="#/borrowers">← Emprunteurs</a></p>
-      <h1>${esc(b.name)}</h1>
+      <div class="page-head"><h1>${esc(b.name)}</h1>
+        <button class="btn btn-primary" type="button" id="lend">Prêter un livre</button></div>
       <form class="card" id="borrower-form" style="margin-top:14px">
         <div class="grid-3">
           <div class="field"><label>Nom *</label><input name="name" required value="${esc(b.name)}"></div>
@@ -4193,10 +4391,12 @@
           ${b.loans.length ? '' : '<button class="btn btn-danger" type="button" id="del">Supprimer</button>'}
         </div>
       </form>
-      <h2>En cours (${open.length})</h2>
+      <h2>En cours (${open.length})${late ? ` <span class="badge badge-late">${late} en retard</span>` : ''}</h2>
       <div class="card">${open.length ? `<div class="list">${open.map((l) => loanItemHtml(l, true)).join('')}</div>` : '<p class="muted">Aucun livre emprunté.</p>'}</div>
       <h2>Historique (${past.length})</h2>
       <div class="card">${past.length ? `<div class="list">${past.map((l) => loanItemHtml(l, true)).join('')}</div>` : '<p class="muted">Aucun prêt terminé.</p>'}</div>`;
+    // Emprunteur retenu pour les exemplaires scannes ensuite (voir loanFor).
+    $('#lend').onclick = () => { loanFor = { id: b.id, name: b.name }; scanAndOpen('loan'); };
     $('#borrower-form').onsubmit = async (e) => {
       e.preventDefault();
       const t = e.target;
@@ -4938,6 +5138,12 @@
         </div>
       </form>
 
+      <h2>Durée des prêts</h2>
+      <form class="card" id="loan-days-form">
+        <div class="field" style="margin:0"><label for="loan-days">Jours avant la date de retour ${hint('Date de retour proposée au moment du prêt (modifiable). 0 : pas de date de retour.')}</label>
+          <input id="loan-days" name="loanDays" type="number" min="0" max="365" value="${s.loanDays == null ? 21 : s.loanDays}" style="max-width:120px"></div>
+      </form>
+
       <h2>Bouton Scanner</h2>
       <form class="card" id="scan-form">
         <label>Codes lus</label>
@@ -5168,6 +5374,15 @@
         } catch (err) { toast(err.message, 'error'); }
       };
     });
+
+    // Duree des prets : enregistree des qu'on change.
+    $('#loan-days-form').addEventListener('change', async (e) => {
+      try {
+        await api('/api/settings', { method: 'PUT', body: { loanDays: Number(e.target.value) } });
+        toast('Durée des prêts mise à jour.');
+      } catch (err) { toast(err.message, 'error'); }
+    });
+    $('#loan-days-form').addEventListener('submit', (e) => e.preventDefault());
 
     // Bouton Scanner : enregistre des qu'on change.
     $('#scan-form').addEventListener('change', async () => {
