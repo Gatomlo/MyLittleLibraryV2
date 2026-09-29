@@ -291,7 +291,7 @@
     if (!withEbook && !b.totalCopies && b.ebookCopies > 0) return '';
     if (!b.totalCopies) return ebook || '<span class="badge badge-muted">Aucun exemplaire</span>';
     let paper;
-    if (b.availableCopies === 0) paper = '<span class="badge badge-warn">Emprunté</span>';
+    if (b.availableCopies === 0) paper = b.reservedCopies > 0 ? '<span class="badge badge-reserved">Réservé</span>' : '<span class="badge badge-warn">Emprunté</span>';
     else if (b.totalCopies > 1) paper = `<span class="badge badge-ok">${b.availableCopies}/${b.totalCopies} disponibles</span>`;
     else paper = '<span class="badge badge-ok">Disponible</span>';
     return ebook ? `<span class="badges">${paper}${ebook}</span>` : paper;
@@ -770,8 +770,8 @@
         : await pickDialog("Choisir l'exemplaire", books.length === 1 ? books[0].title : `ISBN ${r.isbn}`, copies.map((c) => ({
           value: c.code,
           html: pickLine(c.book.coverUrl,
-            `<span><strong class="code">${esc(c.code)}</strong> ${c.loan ? (c.loan.overdue ? '<span class="badge badge-late">En retard</span>' : '<span class="badge badge-warn">Prêté</span>') : '<span class="badge badge-ok">Disponible</span>'}</span>`,
-            [books.length > 1 ? esc(c.book.title) : '', c.loan ? `${esc(c.loan.borrower.name)} depuis le ${fmtDate(c.loan.loanedAt)}${c.loan.dueAt ? `, à rendre le ${fmtDay(c.loan.dueAt)}` : ''}` : '', esc(c.location)]
+            `<span><strong class="code">${esc(c.code)}</strong> ${c.loan ? (c.loan.overdue ? '<span class="badge badge-late">En retard</span>' : '<span class="badge badge-warn">Prêté</span>') : c.reservedFor ? '<span class="badge badge-reserved">Réservé</span>' : '<span class="badge badge-ok">Disponible</span>'}</span>`,
+            [books.length > 1 ? esc(c.book.title) : '', c.reservedFor ? `pour ${esc(c.reservedFor.name)}` : '', c.loan ? `${esc(c.loan.borrower.name)} depuis le ${fmtDate(c.loan.loanedAt)}${c.loan.dueAt ? `, à rendre le ${fmtDay(c.loan.dueAt)}` : ''}` : '', esc(c.location)]
               .filter(Boolean).join(' · ')),
         })));
       if (code) await openCopy(code);
@@ -2017,7 +2017,7 @@
     if (!book.copies.length && !book.ebookCopies) return '<p class="muted">Aucun exemplaire.</p>';
     return `<div class="table-wrap"><table><thead><tr><th>Exemplaire</th><th>Emplacement</th><th>État</th></tr></thead><tbody>
       ${book.copies.map((c) => `<tr><td class="code">${esc(c.code)}</td><td>${esc(c.location) || '<span class="muted">—</span>'}</td>
-        <td>${c.available ? '<span class="badge badge-ok">Disponible</span>' : '<span class="badge badge-warn">Emprunté</span>'}</td></tr>`).join('')}
+        <td>${c.reserved ? '<span class="badge badge-reserved">Réservé</span>' : c.available ? '<span class="badge badge-ok">Disponible</span>' : '<span class="badge badge-warn">Emprunté</span>'}</td></tr>`).join('')}
       ${book.ebookCopies ? `<tr><td><span class="badge badge-ebook">Numérique</span></td><td><span class="muted">—</span></td><td>${ebookFileHtml(book) || '<span class="small muted">Version numérique</span>'}</td></tr>` : ''}
     </tbody></table></div>`;
   }
@@ -2040,6 +2040,7 @@
         <td>${esc(c.location) || '<span class="muted">—</span>'}</td>
         <td>${c.loan
           ? `<span class="badge badge-warn">Prêté</span> à <a href="#/borrower/${c.loan.borrower.id}">${esc(c.loan.borrower.name)}</a><div class="small muted">depuis le ${fmtDate(c.loan.loanedAt)}</div>`
+          : c.reservedFor ? `<span class="badge badge-reserved">Réservé</span> pour <a href="#/borrower/${c.reservedFor.id}">${esc(c.reservedFor.name)}</a>`
           : '<span class="badge badge-ok">Disponible</span>'}</td>
         <td>${c.labelPrintedAt ? '<span class="small muted">imprimée</span>' : '<span class="badge badge-muted">à imprimer</span>'}</td>
         <td style="text-align:right;white-space:nowrap">
@@ -2803,11 +2804,11 @@
             <button class="btn" type="submit">${copy.loan.dueAt ? 'Prolonger' : 'Fixer la date de retour'}</button>
           </form>
         ` : `
-          <div class="info-box"><span class="badge badge-ok">Disponible</span></div>
+          <div class="info-box">${copy.reservedFor ? `<span class="badge badge-reserved">Réservé</span> pour <strong>${esc(copy.reservedFor.name)}</strong>` : '<span class="badge badge-ok">Disponible</span>'}</div>
           <form id="loan-form">
             <div class="field">
               <label for="borrower">Emprunteur</label>
-              <input id="borrower" name="borrower" list="borrower-list" placeholder="Nom (nouvel emprunteur créé automatiquement)" autocomplete="off" required value="${who ? esc(who.name) : ''}">
+              <input id="borrower" name="borrower" list="borrower-list" placeholder="Nom (nouvel emprunteur créé automatiquement)" autocomplete="off" required value="${who ? esc(who.name) : copy.reservedFor ? esc(copy.reservedFor.name) : ''}">
               <datalist id="borrower-list">${borrowers.map((b) => `<option value="${esc(b.name)}">`).join('')}</datalist>
             </div>
             <div class="grid-2">

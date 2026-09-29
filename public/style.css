@@ -300,6 +300,7 @@ input[type="checkbox"], input[type="radio"] { width: auto; min-height: 0; paddin
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .badge-ok { background: var(--ok-soft); color: var(--ok); }
 .badge-warn { background: var(--warn-soft); color: var(--warn); }
+.badge-reserved { background: var(--grape-soft); color: var(--grape); }
 .badge-muted { background: var(--surface-2); color: var(--muted); }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 600; margin: 0 4px 4px 0; }
 .chip-tag { background: var(--surface-2); color: var(--text); text-decoration: none; }

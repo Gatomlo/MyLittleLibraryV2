@@ -57,6 +57,7 @@
     .badge { align-self: flex-start; margin-top: auto; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
     .ok { background: #dcefe3; color: #2e7d4f; }
     .warn { background: #f6e7d4; color: #a4611c; }
+    .res { background: #ece4fc; color: #6a3fd0; }
     .ebook { background: #e3e4fa; color: #3f46a8; }
     .more { text-align: center; margin-top: 16px; }
     button.btn { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 10px; border: 1px solid #d9d2c9; background: #fff; cursor: pointer; color: inherit; }
@@ -174,7 +175,7 @@
     const media = (u) => (u ? `${base}/${u}` : '');
     const cover = (b) => `<div class="cover">${b.coverUrl ? `<img src="${esc(media(b.coverUrl))}" alt="" loading="lazy">` : `<span>${esc(b.title)}</span>`}</div>`;
     // Papier : disponible / emprunte ; numerique en plus si le livre en a un exemplaire.
-    const badge = (b) => '<div class="badges">' + (b.availableCopies > 0 ? '<span class="badge ok">Disponible</span>' : b.totalCopies ? '<span class="badge warn">Emprunté</span>' : '')
+    const badge = (b) => '<div class="badges">' + (b.availableCopies > 0 ? '<span class="badge ok">Disponible</span>' : b.reservedCopies > 0 ? '<span class="badge res">Réservé</span>' : b.totalCopies ? '<span class="badge warn">Emprunté</span>' : '')
       + (b.ebookCopies > 0 ? '<span class="badge ebook">Numérique</span>' : '') + '</div>';
     const reload = () => { state.page = 1; load(false); };
 
@@ -270,7 +271,7 @@
           <dl>${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
           ${b.summary ? `<p class="summary">${esc(b.summary)}</p>` : ''}
           ${b.copies.length ? `<table>${b.copies.map((c) => `<tr><td class="code">${esc(c.code)}</td><td>${esc(c.location)}</td>
-            <td>${c.available ? '<span class="badge ok">Disponible</span>' : '<span class="badge warn">Emprunté</span>'}</td></tr>`).join('')}</table>` : ''}
+            <td>${c.reserved ? '<span class="badge res">Réservé</span>' : c.available ? '<span class="badge ok">Disponible</span>' : '<span class="badge warn">Emprunté</span>'}</td></tr>`).join('')}</table>` : ''}
         </div></div></div>`;
       const prevOverflow = document.documentElement.style.overflow;
       const close = () => {

@@ -158,7 +158,10 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   tabulation contenue, focus rendu), titre de l'onglet et focus mis à jour à chaque page, page active annoncée.
 - **Réservations** : un compte connecté réserve, au nom d'un emprunteur (choisi ou créé), un livre dont tous
   les exemplaires sont prêtés (fiche du livre) ; au retour d'un exemplaire, alerte « à mettre de côté pour … »
-  avec « Prêter à … » ; le prêt à cet emprunteur retire sa réservation. Onglet « Réservations » de la page
+  avec « Prêter à … » ; le prêt à cet emprunteur retire sa réservation.
+  Un exemplaire libre d'un livre réservé est mis de côté (un par réservation) : état « Réservé » au lieu de
+  « Disponible » (catalogue, fiche, widget WordPress ; nom de l'emprunteur visible seulement en gestion), exclu du
+  filtre « Disponibles », emprunteur pré-rempli sur la page de prêt de l'exemplaire. Onglet « Réservations » de la page
   Prêts, réservations visibles sur la fiche de l'emprunteur.
 - **Emprunteurs** : formulaire de création ouvert à la demande, champ libre « Informations ». Fiche d'un
   emprunteur : prêts en cours (retards), historique, « Prêter un livre » (scanner avec l'emprunteur pré-rempli,
