@@ -2427,6 +2427,10 @@
       try {
         await gapi(setup ? '/api/auth/setup' : '/api/auth/login', { method: 'POST', body });
         await loadStatus();
+        // Connexion acceptee mais cookie refuse (cadre d'un autre site : Teams, Safari...)
+        if (!state.user) throw new Error(window.top !== window.self
+          ? 'Connexion refusée par le navigateur dans ce cadre (cookies bloqués). Ouvrez l’application dans un onglet du navigateur.'
+          : 'Connexion impossible : le navigateur bloque les cookies de ce site.');
         toast(`Bienvenue ${state.user.username} !`);
         const after = sessionStorageTake('mll-after-login');
         if (LIBRARY) {
