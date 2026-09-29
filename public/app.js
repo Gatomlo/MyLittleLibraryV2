@@ -4663,12 +4663,12 @@
   // (ni vertical ni horizontal) ; chaque tuile ouvre la page correspondante.
   const HOME_PHONE_QUERY = '(max-width: 599px), (max-height: 520px) and (orientation: landscape) and (pointer: coarse)';
   const HOME_META = {
-    todo: { icon: 'todo', color: 'sun', wide: true },
-    reading: { icon: 'catalog', color: 'sky', wide: true },
+    todo: { icon: 'todo', color: 'sun' },
+    reading: { icon: 'catalog', color: 'sky' },
     forme: { icon: 'user', color: 'grape' },
-    due: { icon: 'loans', color: 'coral', wide: true },
+    due: { icon: 'loans', color: 'coral' },
     wishes: { icon: 'wish', color: 'rose' },
-    news: { icon: 'add', color: 'accent', wide: true },
+    news: { icon: 'add', color: 'accent' },
     goal: { icon: 'goal', color: 'grape' },
   };
   // Onglet ouvert par la page Prets quand on y arrive depuis l'accueil.
@@ -4787,7 +4787,7 @@
         </form>
       </div>
       ${shown.length ? `
-      <div class="home-cards">${shown.map((c) => `<section class="card home-card${HOME_META[c.key].wide ? ' wide' : ''}" aria-labelledby="hc-${c.key}">
+      <div class="home-cards">${shown.map((c) => `<section class="card home-card" aria-labelledby="hc-${c.key}">
           <div class="home-card-head"><span class="h-icon" style="${colorVars(HOME_META[c.key].color)}" aria-hidden="true">${icon(HOME_META[c.key].icon, 18)}</span>
             <h2 id="hc-${c.key}">${esc(c.label)}${c.key === 'wishes' && d.wishes.count ? ` <span class="muted">(${d.wishes.count})</span>` : ''}</h2>
             ${HOME_LINKS[c.key] ? `<button type="button" class="link-btn" data-home-go="${HOME_LINKS[c.key][0]}">${HOME_LINKS[c.key][1]}</button>` : ''}</div>
