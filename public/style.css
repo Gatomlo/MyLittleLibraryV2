@@ -819,7 +819,6 @@ ul.list { list-style: none; margin: 0; padding: 0; }
 .wish-toolbar .tabs { margin-bottom: 12px; flex: 1 1 auto; }
 .wish-item { align-items: flex-start; flex-wrap: wrap; }
 .wish-item .grow { display: flex; flex-direction: column; gap: 4px; }
-.wish-item.is-acquired strong { text-decoration: line-through; text-decoration-color: var(--muted); }
 .wish-notes { color: var(--text); font-style: italic; }
 .wish-actions { justify-content: flex-end; }
 .badge-wish { display: inline-flex; align-items: center; gap: 3px; background: var(--rose-soft); color: var(--rose); }

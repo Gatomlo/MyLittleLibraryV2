@@ -142,16 +142,17 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **ISBN inconnu au scan** : proposition d'ajouter le livre (fiche pré-remplie par l'ISBN) ou de l'ajouter à ses souhaits.
 - **Accueil personnalisé** (lien « Accueil », page d'arrivée d'un compte connecté ; visiteur : catalogue) :
   cartes À faire (prêts à relancer ou en retard, retours de la semaine, réservations prêtes, souhaits des
-  membres, étiquettes, fiches incomplètes), Mes lectures en cours (progression Kobo), Pour moi (livres dont on
-  est lecteur redevenus disponibles, souhaits acquis), Échéances des prêts, Mes souhaits, Nouveautés, Objectif
-  de lecture. Chaque compte choisit ses cartes et leur ordre (« Personnaliser », par bibliothèque). Sur
+  membres, étiquettes, fiches incomplètes), Mes lectures en cours (progression Kobo), Pour moi (livres ajoutés
+  ces 30 jours dont on est lecteur, par exemple ses souhaits, et ceux redevenus disponibles), Échéances des prêts, Mes souhaits, Nouveautés, Objectif
+  de lecture. Chaque compte choisit ses cartes et leur ordre (menu du compte > « Personnaliser l'accueil », par bibliothèque). Sur
   smartphone : tuiles résumées qui tiennent dans l'écran, sans aucun défilement ; une tuile ouvre la page.
 - **Souhaits** (lien « Souhaits », tout compte connecté) : liste de livres souhaités propre à chaque compte
   (hors bibliothèque) ; ajout par ISBN (tapé ou scanné) ou par titre (choix de l'édition), notes, « Très envie ».
   Partage de sa liste avec d'autres comptes (lecture seule). Les gestionnaires d'une bibliothèque voient les
   souhaits de ses membres, les ajoutent au catalogue en un clic (fiche pré-remplie, le membre coché comme
-  lecteur, souhait marqué « acquis ») et exportent en .xlsx / .csv les souhaits d'un ou plusieurs membres
-  (colonnes compatibles avec l'import). Badge « Déjà dans la bibliothèque » (même ISBN ou même titre).
+  lecteur ; à l'enregistrement, le souhait est retiré de sa liste) et exportent en .xlsx / .csv les souhaits d'un ou plusieurs membres
+  (colonnes compatibles avec l'import). Pas d'état « acquis » : un souhait est dans la liste, ajouté à la
+  bibliothèque (et retiré) ou supprimé. Badge « Déjà dans la bibliothèque » (même ISBN ou même titre).
 - **Accessibilité** : lien « Aller au contenu », focus clavier visible, fenêtres utilisables au clavier (Échap,
   tabulation contenue, focus rendu), titre de l'onglet et focus mis à jour à chaque page, page active annoncée.
 - **Réservations** : un compte connecté réserve, au nom d'un emprunteur (choisi ou créé), un livre dont tous

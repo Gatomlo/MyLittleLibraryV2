@@ -723,7 +723,7 @@
   // ISBN scanne absent de la bibliotheque : pre-rempli sur la page Ajouter.
   let pendingAddIsbn = null;
   // Souhait a ajouter a la bibliotheque (page Souhaits) : fiche pre-remplie, puis
-  // souhait marque comme acquis a l'enregistrement.
+  // souhait retire de la liste a l'enregistrement.
   let pendingWish = null;
 
   // Ligne d'une liste de choix : couverture, texte principal, detail.
@@ -1019,6 +1019,7 @@
       <div class="menu-sep"></div>
       <a class="menu-item" href="#/account">${icon('user')}Mon compte</a>
       <a class="menu-item" href="#/wishes">${icon('wish')}Mes souhaits</a>
+      ${LIBRARY ? `<button class="menu-item" type="button" id="menu-home-custom">${icon('home')}Personnaliser l'accueil</button>` : ''}
       ${canInstall() ? `<button class="menu-item" type="button" id="install-app">${icon('install')}Installer l'application</button>` : ''}
       ${u.role === 'admin' ? `<a class="menu-item" href="#/admin">${icon('admin')}Administration</a>` : ''}
       <button class="menu-item" type="button" id="logout">${icon('logout')}Déconnexion</button>`;
@@ -1050,6 +1051,7 @@
       };
     });
     if ($('#install-app')) $('#install-app').onclick = () => { closeMenu(); installApp(); };
+    if ($('#menu-home-custom')) $('#menu-home-custom').onclick = () => { closeMenu(); openHomeCustomize(); };
     $('#logout').onclick = async () => {
       closeMenu();
       await gapi('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
@@ -3557,7 +3559,7 @@
       if (reader) reader.checked = true;
       if (wish.coverUrl && !wish.isbn) { form.cover.remoteUrl = wish.coverUrl; form.cover.url = wish.coverUrl; renderCover(); }
       if (wish.isbn) pendingAddIsbn = wish.isbn;
-      $('#isbn-result').insertAdjacentHTML('beforebegin', `<div class="info-box" style="margin-top:8px">Souhait de <strong>${esc(wish.owner.username)}</strong> : il sera marqué comme acquis à l'enregistrement.</div>`);
+      $('#isbn-result').insertAdjacentHTML('beforebegin', `<div class="info-box" style="margin-top:8px">Souhait de <strong>${esc(wish.owner.username)}</strong> : il sera retiré de ses souhaits à l'enregistrement.</div>`);
     }
     // ISBN scanne absent de la bibliotheque (bouton Scanner) : recherche lancee.
     if (!editing && pendingAddIsbn) {
@@ -3596,8 +3598,8 @@
           const codes = saved.copies.filter((c) => c.format !== 'ebook').map((c) => c.code);
           toast(codes.length ? `Livre ajouté : ${codes.join(', ')}. Étiquette(s) en attente d'impression.` : 'Livre ajouté.');
           if (wish) {
-            await gapi(`/api/wishes/${wish.id}`, { method: 'PUT', body: { status: 'acquired', library: LIBRARY.id, bookId: saved.id } })
-              .catch((err) => toast(`Souhait non mis à jour : ${err.message}`, 'error'));
+            await gapi(`/api/wishes/${wish.id}/added`, { method: 'POST', body: { library: LIBRARY.id, bookId: saved.id } })
+              .catch((err) => toast(`Souhait non retiré : ${err.message}`, 'error'));
           }
         }
         if (fromIncomplete) sessionStorageTake('mll-after-edit');
@@ -4698,7 +4700,7 @@
         return { value: items.length ? String(items.reduce((s, i) => s + i.n, 0)) : '✓', lines: items.length ? items.map((i) => `${i.n} · ${i.label.toLowerCase()}`) : ['Tout est à jour'], go: items[0] ? items[0].target : 'open' };
       }
       case 'reading': return { value: String(x.length), lines: x.length ? x.map((b) => `${b.title}${b.percent != null ? ` · ${b.percent} %` : ''}`) : ['Aucune lecture en cours'], go: 'reading' };
-      case 'forme': return { value: String(x.length), lines: x.length ? x.map((f) => (f.kind === 'back' ? `${f.book.title} : disponible` : `${f.title} : ajouté`)) : ['Rien de neuf pour toi'], go: x[0] ? `#/book/${x[0].kind === 'back' ? x[0].book.id : x[0].bookId}` : '#/' };
+      case 'forme': return { value: String(x.length), lines: x.length ? x.map((f) => `${f.book.title} : ${f.kind === 'back' ? 'disponible' : 'ajouté'}`) : ['Rien de neuf pour toi'], go: x[0] ? `#/book/${x[0].book.id}` : '#/' };
       case 'due': {
         const late = x.filter((l) => l.overdue).length;
         return { value: String(late || x.length), sub: late ? 'en retard' : 'à venir', lines: x.length ? x.map((l) => `${l.book.title} · ${l.overdue ? `${daysLate(l.dueAt)} j de retard` : fmtDay(l.dueAt)}`) : ['Aucune échéance proche'], go: late ? 'overdue' : 'open' };
@@ -4723,7 +4725,7 @@
   }
 
   const shelfHtml = (books, empty) => (books.length ? `<ul class="home-shelf" role="list">${books.map((b) => `<li><a class="home-book" href="#/book/${b.id}">
-      ${coverHtml(b, b.wish ? 'Ton souhait' : '')}<span class="t">${esc(b.title)}</span><span class="a">${esc(b.authors)}</span>
+      ${coverHtml(b, b.mine ? 'Pour toi' : '')}<span class="t">${esc(b.title)}</span><span class="a">${esc(b.authors)}</span>
       ${b.percent != null && b.percent !== undefined ? `<span class="bar" role="img" aria-label="${b.percent} % lus"><span style="width:${b.percent}%"></span></span>` : ''}</a></li>`).join('')}</ul>`
     : `<p class="muted">${empty}</p>`);
 
@@ -4739,8 +4741,8 @@
       case 'reading': return shelfHtml(x, 'Aucune lecture en cours. Choisis « En cours » sur la fiche d\'un livre.');
       case 'forme': return x.length ? `<ul class="list">${x.map((f) => (f.kind === 'back'
         ? `<li class="list-item"><div class="grow"><a href="#/book/${f.book.id}"><strong>« ${esc(f.book.title)} » est disponible</strong></a><div class="small muted">Tu en es lecteur</div></div><span class="badge badge-ok">Disponible</span></li>`
-        : `<li class="list-item"><div class="grow">${f.bookId ? `<a href="#/book/${f.bookId}"><strong>« ${esc(f.title)} » a été ajouté</strong></a>` : `<strong>« ${esc(f.title)} » a été ajouté</strong>`}<div class="small muted">Ton souhait, le ${fmtDate(f.at)}</div></div><span class="badge badge-wish">Souhait</span></li>`)).join('')}</ul>`
-        : '<p class="muted">Rien de neuf pour toi : les livres dont tu es lecteur redevenus disponibles et tes souhaits acquis apparaîtront ici.</p>';
+        : `<li class="list-item"><div class="grow"><a href="#/book/${f.book.id}"><strong>« ${esc(f.book.title)} » a été ajouté</strong></a><div class="small muted">Le ${fmtDate(f.at)}, tu en es lecteur</div></div><span class="badge badge-wish">Nouveau</span></li>`)).join('')}</ul>`
+        : '<p class="muted">Rien de neuf pour toi : les livres ajoutés pour toi (tes souhaits par exemple) et ceux dont tu es lecteur redevenus disponibles apparaîtront ici.</p>';
       case 'due': return x.length ? `<ul class="list">${x.map((l) => { loanCache.set(l.id, l); return `<li class="list-item">
           ${l.book.coverUrl ? `<img class="thumb" src="${esc(mediaSrc(l.book.coverUrl))}" alt="" loading="lazy">` : '<span class="thumb" aria-hidden="true"></span>'}
           <div class="grow"><a href="#/book/${l.book.id}"><strong>${esc(l.book.title)}</strong></a><div class="small muted"><a href="#/borrower/${l.borrower.id}">${esc(l.borrower.name)}</a> · <span class="code">${esc(l.copy.code)}</span></div></div>
@@ -4783,7 +4785,6 @@
           <input type="search" id="home-q" placeholder="Titre, auteur, ISBN…" autocomplete="off">
           <button class="btn btn-primary" type="submit" aria-label="Rechercher">${icon('search', 16)}<span class="hide-phone">Rechercher</span></button>
         </form>
-        <button class="btn btn-small home-custom" type="button" id="home-custom" aria-label="Personnaliser l'accueil">${icon('settings', 16)}<span class="hide-phone">Personnaliser</span></button>
       </div>
       ${shown.length ? `
       <div class="home-cards">${shown.map((c) => `<section class="card home-card${HOME_META[c.key].wide ? ' wide' : ''}" aria-labelledby="hc-${c.key}">
@@ -4800,9 +4801,7 @@
       : `<div class="empty">Toutes les cartes sont masquées.<br><br><button class="btn" type="button" id="home-custom-2">Choisir les cartes</button></div>`}
     </div>`;
     $('#home-search').onsubmit = (e) => { e.preventDefault(); openCatalog({ q: $('#home-q').value.trim() }); };
-    const custom = async () => { if (await homeCustomize(home.cards)) viewDashboard(); };
-    $('#home-custom').onclick = custom;
-    if ($('#home-custom-2')) $('#home-custom-2').onclick = custom;
+    if ($('#home-custom-2')) $('#home-custom-2').onclick = openHomeCustomize;
     $$('[data-home-go]').forEach((b) => { b.onclick = () => homeGo(b.dataset.homeGo); });
     if ($('#home-wish-add')) $('#home-wish-add').onclick = async () => { if (await wishDialog()) viewDashboard(); };
     fitHome();
@@ -4832,6 +4831,15 @@
   [HOME_PHONE_QUERY, '(orientation: landscape)'].forEach((q) => { const m = window.matchMedia(q); if (m.addEventListener) m.addEventListener('change', refitHome); });
   if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if ($('#home-tiles')) fitHome(); });
   window.addEventListener('hashchange', () => { if (!/^#\/home$/.test(location.hash)) document.body.classList.remove('home-fit'); });
+
+  // Menu du compte « Personnaliser l'accueil » : depuis n'importe quelle page, puis accueil.
+  async function openHomeCustomize() {
+    try {
+      const { cards } = await api('/api/home');
+      if (!await homeCustomize(cards)) return;
+      if (location.hash === '#/home') viewDashboard(); else go('#/home');
+    } catch (err) { toast(err.message, 'error'); }
+  }
 
   // Choix et ordre des cartes (cases a cocher, boutons Monter / Descendre).
   function homeCustomize(cards) {
@@ -4882,7 +4890,7 @@
   // Onglets : sa liste, celles partagees avec soi et, pour un gestionnaire de la
   // bibliotheque ouverte, celles de ses membres. Plusieurs listes peuvent etre
   // selectionnees a la fois (affichage et export).
-  const wishState = { owners: null, status: 'wanted' };
+  const wishState = { owners: null };
   const libParam = () => (LIBRARY && canConfigure() ? `library=${LIBRARY.id}` : '');
 
   async function viewWishes() {
@@ -4899,12 +4907,10 @@
       ${owners.length > 1 ? `<div class="wish-owners" role="group" aria-label="Listes affichées">
         ${owners.map((o) => `<button type="button" class="chip-toggle" data-owner="${o.id}" aria-pressed="${selected.includes(o.id)}">
           <span class="tab-avatar" aria-hidden="true">${initials(o.username)}</span>${o.id === me ? 'Mes souhaits' : esc(o.username)}
-          <span class="count">${o.wanted}</span>${VIA[o.via] ? `<span class="sr-only"> (liste ${VIA[o.via]})</span>` : ''}</button>`).join('')}
+          <span class="count">${o.count}</span>${VIA[o.via] ? `<span class="sr-only"> (liste ${VIA[o.via]})</span>` : ''}</button>`).join('')}
         <button type="button" class="btn btn-small" id="wish-all">${selected.length === owners.length ? 'Seulement moi' : 'Toutes'}</button>
       </div>` : ''}
       <div class="wish-toolbar">
-        <div class="tabs" role="group" aria-label="Statut">${[['wanted', 'À acquérir'], ['acquired', 'Acquis'], ['all', 'Tous']].map(([k, l]) =>
-          `<button type="button" data-status="${k}" class="${wishState.status === k ? 'active' : ''}" aria-pressed="${wishState.status === k}">${l}</button>`).join('')}</div>
         <div class="btn-row"><span class="small muted">Exporter${selected.length > 1 ? ` les ${selected.length} listes` : ''} :</span>
           <a class="btn btn-small" id="wish-xlsx" download>Excel</a><a class="btn btn-small" id="wish-csv" download>CSV</a></div>
       </div>
@@ -4922,8 +4928,7 @@
       };
     });
     if ($('#wish-all')) $('#wish-all').onclick = () => setSelected(selected.length === owners.length ? [me] : owners.map((o) => o.id));
-    $$('[data-status]').forEach((btn) => { btn.onclick = () => { wishState.status = btn.dataset.status; viewWishes(); }; });
-    const q = `owners=${selected.join(',')}&status=${wishState.status}${libParam() ? '&' + libParam() : ''}`;
+    const q = `owners=${selected.join(',')}${libParam() ? '&' + libParam() : ''}`;
     $('#wish-xlsx').href = `${ROOT}/api/wishes/export.xlsx?${q}`;
     $('#wish-csv').href = `${ROOT}/api/wishes/export.csv?${q}`;
     $('#wish-add').onclick = async () => { if (await wishDialog()) viewWishes(); };
@@ -4931,7 +4936,7 @@
     const wishes = await gapi(`/api/wishes?${q}`);
     const multi = selected.length > 1 || selected[0] !== me;
     $('#wish-list').innerHTML = wishes.length ? `<ul class="list wish-list">${wishes.map((w) => wishItemHtml(w, { me, manager, multi })).join('')}</ul>`
-      : `<div class="empty">${wishState.status === 'acquired' ? 'Aucun souhait acquis.' : 'Aucun souhait pour le moment.'}${selected.includes(me) && wishState.status !== 'acquired' ? '<br><br>Ajoute un livre par son ISBN, en le scannant ou par son titre.' : ''}</div>`;
+      : `<div class="empty">Aucun souhait pour le moment.${selected.includes(me) ? '<br><br>Ajoute un livre par son ISBN, en le scannant ou par son titre.' : ''}</div>`;
     const byId = new Map(wishes.map((w) => [w.id, w]));
     $$('[data-wish-act]', $('#wish-list')).forEach((btn) => {
       btn.onclick = async () => {
@@ -4943,10 +4948,6 @@
             if (!confirm(`Supprimer « ${w.title} » de tes souhaits ?`)) return;
             await gapi(`/api/wishes/${w.id}`, { method: 'DELETE' });
             toast('Souhait supprimé.');
-          }
-          if (act === 'acquired' || act === 'wanted') {
-            await gapi(`/api/wishes/${w.id}`, { method: 'PUT', body: { status: act, library: LIBRARY && canConfigure() ? LIBRARY.id : undefined } });
-            toast(act === 'acquired' ? 'Souhait marqué comme acquis.' : 'Souhait remis à acquérir.');
           }
           if (act === 'add') { pendingWish = w; go('#/add'); return; }
           viewWishes();
@@ -4960,17 +4961,12 @@
     const own = w.owner.id === me;
     const meta = [w.authors, [w.publisher, w.year].filter(Boolean).join(', '), w.isbn ? `ISBN ${w.isbn}` : ''].filter(Boolean).map(esc).join(' · ');
     const acts = [];
-    if (manager && w.status === 'wanted' && !w.inLibrary) acts.push(`<button class="btn btn-small btn-primary" type="button" data-wish-act="add" data-wish="${w.id}">${icon('add', 16)}Ajouter à la bibliothèque</button>`);
-    if (own || manager) {
-      acts.push(w.status === 'wanted'
-        ? `<button class="btn btn-small" type="button" data-wish-act="acquired" data-wish="${w.id}">Marquer acquis</button>`
-        : `<button class="btn btn-small" type="button" data-wish-act="wanted" data-wish="${w.id}">Remettre à acquérir</button>`);
-    }
+    if (manager && !w.inLibrary) acts.push(`<button class="btn btn-small btn-primary" type="button" data-wish-act="add" data-wish="${w.id}">${icon('add', 16)}Ajouter à la bibliothèque</button>`);
     if (own) {
       acts.push(`<button class="btn btn-small" type="button" data-wish-act="edit" data-wish="${w.id}" aria-label="Modifier « ${esc(w.title)} »">Modifier</button>`);
       acts.push(`<button class="btn btn-small btn-danger" type="button" data-wish-act="delete" data-wish="${w.id}" aria-label="Supprimer « ${esc(w.title)} »">Supprimer</button>`);
     }
-    return `<li class="list-item wish-item${w.status === 'acquired' ? ' is-acquired' : ''}">
+    return `<li class="list-item wish-item">
       ${w.coverUrl ? `<img class="thumb" src="${esc(w.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb" aria-hidden="true"></span>'}
       <div class="grow">
         <strong>${esc(w.title)}</strong>${w.subtitle ? ` <span class="muted">— ${esc(w.subtitle)}</span>` : ''}
@@ -4980,7 +4976,6 @@
           ${w.priority ? `<span class="badge badge-wish">${icon('wish', 12)}Très envie</span>` : ''}
           ${multi ? `<span class="badge badge-muted">${own ? 'Moi' : esc(w.owner.username)}</span>` : ''}
           ${w.inLibrary ? `<a class="badge badge-ok" href="#/book/${w.inLibrary.id}">Déjà dans la bibliothèque</a>` : ''}
-          ${w.status === 'acquired' ? `<span class="badge badge-ok">Acquis${w.acquiredLibrary ? ` · ${esc(w.acquiredLibrary.name)}` : ''} · ${fmtDate(w.acquiredAt)}</span>` : ''}
         </div>
       </div>
       ${acts.length ? `<div class="btn-row wish-actions">${acts.join('')}</div>` : ''}
