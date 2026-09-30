@@ -134,6 +134,7 @@ p { margin: 0 0 10px; }
     max-height: calc(100vh - 70px); overflow-y: auto;
   }
   .hide-mobile { display: none !important; }
+  .btn-row.only-mobile { display: flex !important; }
   .nav.open a { padding: 11px 14px; font-size: 16px; border-radius: 14px; gap: 12px; }
   body.nav-open { overflow: hidden; }
 }
@@ -270,6 +271,7 @@ p { margin: 0 0 10px; }
 .btn-icon { gap: 6px; }
 .btn-block { width: 100%; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.only-mobile { display: none !important; }
 .scan-btn { background: linear-gradient(135deg, var(--sun), var(--coral)); border-color: transparent; color: #fff;
   box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--coral) 80%, transparent); }
 .scan-btn:hover { background: linear-gradient(135deg, var(--sun), var(--coral)); filter: brightness(1.05); }
@@ -404,9 +406,18 @@ tr:last-child td { border-bottom: 0; }
 /* ---------- Formulaire livre ---------- */
 .cover-edit { display: flex; gap: 14px; align-items: flex-start; }
 .cover-edit .cover { width: 120px; flex-shrink: 0; border-radius: 8px; }
+/* Couverture cliquable (choisir ou photographier une image). */
+.cover-pick { cursor: pointer; margin: 0; }
+.cover-pick:hover > img, .cover-pick:hover > .cover-fallback { opacity: .8; }
+.cover-pick-badge { position: absolute; right: 6px; bottom: 6px; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 .isbn-row { display: flex; gap: 8px; }
 .isbn-row input { flex: 1; min-width: 0; }
-@media (max-width: 600px) { .isbn-row { flex-wrap: wrap; } .isbn-row input { flex-basis: 100%; } }
+@media (max-width: 600px) {
+  .isbn-row { flex-wrap: wrap; } .isbn-row input { flex-basis: 100%; }
+  /* Boutons en icones : sur la meme ligne que le champ. */
+  .isbn-row:has(> .btn > svg) { flex-wrap: nowrap; } .isbn-row:has(> .btn > svg) input { flex-basis: 0; }
+  .isbn-row:has(> .btn > svg) > .btn { padding-left: 12px; padding-right: 12px; }
+}
 .edition-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 420px; overflow-y: auto; }
 .edition-list li { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); }
 .edition-list li > div:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -544,8 +555,6 @@ tr:last-child td { border-bottom: 0; }
 .stats-tabs button.active .tab-avatar { background: rgba(255, 255, 255, .25); color: inherit; }
 #st-body { transition: opacity .15s; }
 #st-body.loading { opacity: .45; }
-.stat-prefs { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 14px; }
-.stat-prefs > summary { cursor: pointer; }
 
 /* En-tete : objectif + chiffres cles */
 .hero { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr); gap: 14px; margin-bottom: 14px; }
@@ -836,6 +845,9 @@ span.wish-heart:not(.on) { visibility: hidden; }
 .wish-share { margin-top: 18px; }
 .wish-share summary { cursor: pointer; display: flex; align-items: center; gap: 8px; }
 .check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px 14px; }
+.wish-owner-pick { flex-wrap: nowrap; }
+.wish-owner-pick .combo { flex: 1 1 240px; max-width: 360px; }
+.wish-export.only-mobile { margin-top: 12px; justify-content: flex-end; }
 .wish-form-grid { display: grid; grid-template-columns: 110px 1fr; gap: 14px; align-items: start; }
 .wish-form-grid .cover { width: 110px; }
 @media (max-width: 600px) {
@@ -942,7 +954,6 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
   .hide-phone { display: none !important; }
   .home-cards { display: none; }
   .home-tiles { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows, 4), minmax(0, 1fr)); gap: 8px; min-height: 0; overflow: hidden; }
-  .home-tiles.odd > :last-child { grid-column: 1 / -1; }
   .home-tile { display: flex; flex-direction: column; align-items: stretch; gap: 2px; min-width: 0; min-height: 0; overflow: hidden; padding: 8px 10px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: var(--shadow); }
   .home-tile .tile-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .home-tile .h-icon { width: 24px; height: 24px; border-radius: 8px; }

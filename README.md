@@ -14,8 +14,10 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   emprunteurs, nom, logo et réglages d'étiquettes. L'adresse est fixée à la création
   (modifiable par un administrateur ; l'ancienne reste redirigée).
 - **Comptes** : administrateurs (créent bibliothèques et comptes, gèrent tout),
-  gestionnaires (gèrent les bibliothèques auxquelles ils sont liés, étiquettes et réglages compris)
-  et utilisateurs (mêmes outils que les gestionnaires, sans les étiquettes ni les réglages). Bibliothèque par
+  gestionnaires (gèrent les bibliothèques auxquelles ils sont liés, réglages compris),
+  bibliothécaires (catalogue, ajouts, prêts, emprunteurs et étiquettes, sans les réglages de la bibliothèque)
+  et lecteurs (catalogue en lecture seule, avec leurs statuts de lecture, souhaits, statistiques et liseuse ;
+  ni ajout ni prêt). Réglages personnels de lecture (partage des statistiques, objectif annuel) dans « Mon compte ». Bibliothèque par
   défaut ouverte à la connexion ; le menu du compte permet de basculer.
   La racine du site n'affiche que la page de connexion.
 - **Catalogue public** (lecture seule, sans connexion) : recherche, filtre par
@@ -147,15 +149,16 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   de lecture, Suite de mes séries (tome suivant présent et pas encore lu), Ma pile à lire (disponibles d'abord),
   À noter (lus sans note, étoiles cliquables), Une idée de lecture (livre disponible non lu, de préférence dans ses
   catégories préférées, bouton « Autre idée »), Ma liseuse Kobo (dernier scan, envois en attente, livres non reliés) ;
-  gestionnaires : Souhaits les plus demandés (regroupés par livre, « Très envie » d'abord, ajout au catalogue en un
+  bibliothécaires et gestionnaires : Souhaits les plus demandés (regroupés par livre, « Très envie » d'abord, ajout au catalogue en un
   clic pour tous les membres concernés) et Activité de la semaine (prêts, retours, ajouts, emprunteurs vs semaine
   précédente). Chaque compte choisit ses cartes et leur ordre (menu du compte > « Personnaliser l'accueil », par bibliothèque). Sur
-  smartphone : tuiles résumées qui tiennent dans l'écran, sans aucun défilement ; une tuile ouvre la page.
+  smartphone : tuiles résumées sur une seule colonne (la page ne défile que si elles ne tiennent pas dans l'écran) ; une tuile ouvre la page.
 - **Souhaits** (lien « Souhaits », tout compte connecté) : liste de livres souhaités propre à chaque compte
   (hors bibliothèque) ; ajout par ISBN (tapé ou scanné) ou par titre (choix de l'édition), notes, « Très envie » (cœur cliquable dans la liste,
   filtre « Très envie seulement », aussi appliqué à l'export).
-  Partage de sa liste avec d'autres comptes (lecture seule). Les gestionnaires d'une bibliothèque voient les
-  souhaits de ses membres, les ajoutent au catalogue en un clic (fiche pré-remplie, le membre coché comme
+  Couverture cherchée en ligne quand la recherche par ISBN n'en donne pas.
+  Partage de sa liste avec d'autres comptes (lecture seule). Les bibliothécaires et gestionnaires d'une bibliothèque voient les
+  souhaits de ses membres (compte choisi dans une liste déroulante avec recherche, ou toutes les listes), les ajoutent au catalogue en un clic (fiche pré-remplie, le membre coché comme
   lecteur ; à l'enregistrement, le souhait est retiré de sa liste) et exportent en .xlsx / .csv les souhaits d'un ou plusieurs membres
   (colonnes compatibles avec l'import). Pas d'état « acquis » : un souhait est dans la liste, ajouté à la
   bibliothèque (et retiré) ou supprimé. Badge « Déjà dans la bibliothèque » (même ISBN ou même titre).

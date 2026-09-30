@@ -179,7 +179,7 @@ api.post('/me/password', h((req, res) => {
 
 api.put('/me/default-library', h((req, res) => {
   const libId = intOrNull(req.body.libraryId);
-  if (libId && !auth.canManage(req.user, libId)) throw httpError(403, "Tu n'as pas accès à cette bibliothèque.");
+  if (libId && !auth.isMember(req.user, libId)) throw httpError(403, "Tu n'as pas accès à cette bibliothèque.");
   db.prepare('UPDATE users SET default_library_id = ? WHERE id = ?').run(libId, req.user.id);
   res.json({ ok: true });
 }));
@@ -219,7 +219,7 @@ function applyUserLinks(userId, body) {
 }
 
 function readRole(v) {
-  return ['admin', 'user'].includes(v) ? v : 'manager';
+  return auth.ROLES.includes(v) ? v : 'manager';
 }
 
 function adminCount(exceptId) {

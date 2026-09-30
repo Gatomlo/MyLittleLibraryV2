@@ -22,14 +22,23 @@
   };
 
   const isAdmin = () => !!state.user && state.user.role === 'admin';
-  // Le compte connecte peut-il gerer la bibliotheque de la page ?
-  const canManage = () => !!state.user && !!LIBRARY && (isAdmin() || state.libraries.some((l) => l.slug === LIBRARY.slug));
-  // Utilisateur : outils de la bibliotheque, sans les etiquettes ni les reglages.
-  const canConfigure = () => canManage() && state.user.role !== 'user';
-  const roleLabel = (r) => (r === 'admin' ? 'Administrateur' : r === 'user' ? 'Utilisateur' : 'Gestionnaire');
+  // Compte de la bibliotheque de la page (lie a elle, ou administrateur).
+  const isMember = () => !!state.user && !!LIBRARY && (isAdmin() || state.libraries.some((l) => l.slug === LIBRARY.slug));
+  // Gestion du catalogue, des prets et des etiquettes : tous sauf les lecteurs (role user).
+  const canManage = () => isMember() && state.user.role !== 'user';
+  // Reglages de la bibliotheque : gestionnaires et administrateurs.
+  const canConfigure = () => isMember() && (isAdmin() || state.user.role === 'manager');
+  const ROLE_LABELS = { admin: 'Administrateur', manager: 'Gestionnaire', librarian: 'Bibliothécaire', user: 'Lecteur' };
+  const roleLabel = (r) => ROLE_LABELS[r] || ROLE_LABELS.manager;
+  const ROLE_HELP = {
+    user: 'Lecteur : consulte le catalogue, avec ses statuts de lecture, ses souhaits, ses statistiques et sa liseuse. Ni ajout ni prêt.',
+    librarian: 'Bibliothécaire : catalogue, ajouts, prêts, emprunteurs et étiquettes. Pas les réglages de la bibliothèque.',
+    manager: 'Gestionnaire : tout dans ses bibliothèques, réglages compris.',
+    admin: 'Administrateur : toutes les bibliothèques, les comptes et les sauvegardes.',
+  };
   // Options de la bibliotheque (Reglages) : livres numeriques, statuts de lecture.
   const features = () => (state.settings && state.settings.features) || {};
-  const statusesOn = () => canManage() && !!features().readingStatus;
+  const statusesOn = () => isMember() && !!features().readingStatus;
 
   const READING_LABELS = { to_read: 'À lire', reading: 'En cours', read: 'Lu', abandoned: 'Abandonné' };
   const OPINION_LABELS = { liked: 'Aimé', disliked: 'Pas aimé' };
@@ -796,7 +805,7 @@
       </div>
       <div class="btn-row">
         <button class="btn btn-ok" type="button" data-v="return">Enregistrer le retour</button>
-        <button class="btn btn-primary" type="button" data-v="next">Retour + scanner le suivant</button>
+        <button class="btn btn-primary" type="button" data-v="next" title="Retour + scanner le suivant">${icon('scan', 16)}Retour + <span class="hide-mobile">scanner le </span>suivant</button>
       </div>
       <div class="btn-row" style="margin-top:10px">
         <button class="btn" type="button" data-v="open">Voir le prêt</button>
@@ -913,10 +922,19 @@
     idea: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/>',
     trophy: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>',
     share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"/>',
+    trash: '<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
+    scan: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M8 8v8M12 8v8M16 8v8"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    image: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/>',
+    text: '<path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/>',
+    print: '<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/>',
   };
   function icon(name, size = 18) {
     return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ''}</svg>`;
   }
+  // Libelle de bouton : icone + texte, icone seule sur smartphone (texte masque sous
+  // 760 px : le bouton doit alors porter un title ou un aria-label).
+  const iconText = (name, text, size = 16) => `${icon(name, size)}<span class="hide-mobile">${text}</span>`;
   // Couleur de chaque page (teinte, fond pastel) : navigation et pastille du titre.
   const PAGE_COLORS = {
     catalog: 'accent', kobo: 'grape', add: 'coral', import: 'sky', loans: 'sun', borrowers: 'grape', labels: 'rose', stats: 'sky', settings: 'accent',
@@ -945,9 +963,11 @@
   function renderNav() {
     let links = [];
     if (LIBRARY) {
+      // Lecteur : catalogue, statistiques et liseuse, sans les outils de gestion.
+      const own = isMember() ? [...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : []), ...(koboOn() ? [[`#/kobo/${kobo.device.id}`, kobo.device.name, 'kobo']] : [])] : [];
       links = canManage()
-        ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ...(features().stats ? [['#/stats', 'Statistiques', 'stats']] : []), ...(koboOn() ? [[`#/kobo/${kobo.device.id}`, kobo.device.name, 'kobo']] : [])]
-        : [['#/', 'Catalogue', 'catalog']];
+        ? [['#/', 'Catalogue', 'catalog'], ['#/add', 'Ajouter', 'add'], ['#/loans', 'Prêts', 'loans'], ['#/borrowers', 'Emprunteurs', 'borrowers'], ...own]
+        : [['#/', 'Catalogue', 'catalog'], ...own];
       if (state.user) {
         links.splice(canManage() ? 4 : 1, 0, ['#/wishes', 'Souhaits', 'wish']);
         links.unshift(['#/home', 'Accueil', 'home']);
@@ -1012,11 +1032,11 @@
       <div class="menu-sep"></div>
       <div class="menu-title">Mes bibliothèques</div>
       ${libs || '<p class="small muted" style="padding:4px 10px">Aucune bibliothèque liée à ce compte.</p>'}
-      ${LIBRARY && canConfigure() ? `<div class="menu-sep"></div>
+      ${LIBRARY && canManage() ? `<div class="menu-sep"></div>
       <div class="menu-title">${esc(state.settings.libraryName)}</div>
       <a class="menu-item" href="#/labels">${icon('labels')}Étiquettes</a>
-      <a class="menu-item" href="#/settings">${icon('settings')}Réglages</a>` : ''}
-      ${canManage() && features().kobo && !TOUCH_ONLY ? `<div class="menu-sep"></div>
+      ${canConfigure() ? `<a class="menu-item" href="#/settings">${icon('settings')}Réglages</a>` : ''}` : ''}
+      ${isMember() && features().kobo && !TOUCH_ONLY ? `<div class="menu-sep"></div>
       <div class="menu-title">Liseuses</div>
       ${koboSavedInfo && !koboOn() ? `<button class="menu-item" type="button" id="menu-kobo-reconnect">${icon('kobo')}Reconnecter ${esc(koboSavedInfo.name)}</button>` : ''}
       <button class="menu-item" type="button" id="menu-kobo-connect">${icon('kobo')}${koboOn() ? `Rescanner ${esc(kobo.device.name)}` : koboSavedInfo ? 'Brancher une autre liseuse' : 'Brancher une liseuse'}</button>
@@ -1087,14 +1107,15 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
 
   // ================= Routage =================
-  // needs : 'manage' (gerer cette bibliotheque), 'user' (etre connecte), 'admin'.
+  // needs : 'user' (etre connecte), 'member' (compte de cette bibliotheque), 'manage'
+  // (la gerer : pas les lecteurs), 'config' (ses reglages), 'admin'.
   const LIBRARY_ROUTES = [
     [/^\/?$/, viewCatalog],
     [/^\/home$/, viewDashboard, 'user'],
     [/^\/book\/(\d+)$/, viewBook],
     [/^\/read\/(\d+)$/, viewReader],
-    [/^\/kobo$/, viewKobo, 'manage'],
-    [/^\/kobo\/(\d+)$/, viewKoboDevice, 'manage'],
+    [/^\/kobo$/, viewKobo, 'member'],
+    [/^\/kobo\/(\d+)$/, viewKoboDevice, 'member'],
     [/^\/book\/(\d+)\/edit$/, viewBookForm, 'manage'],
     [/^\/c\/([^/]+)$/, viewCopy],
     [/^\/login$/, viewLogin],
@@ -1104,8 +1125,8 @@
     [/^\/loans$/, viewLoans, 'manage'],
     [/^\/borrowers$/, viewBorrowers, 'manage'],
     [/^\/borrower\/(\d+)$/, viewBorrower, 'manage'],
-    [/^\/labels$/, viewLabels, 'config'],
-    [/^\/stats$/, viewStats, 'manage'],
+    [/^\/labels$/, viewLabels, 'manage'],
+    [/^\/stats$/, viewStats, 'member'],
     [/^\/settings$/, viewSettings, 'config'],
     [/^\/account$/, viewAccount, 'user'],
     [/^\/wishes$/, viewWishes, 'user'],
@@ -1150,7 +1171,7 @@
         sessionStorageSet('mll-after-login', location.hash);
         return go('#/login');
       }
-      if ((needs === 'manage' && !canManage()) || (needs === 'config' && !canConfigure()) || (needs === 'admin' && !isAdmin())) {
+      if ((needs === 'member' && !isMember()) || (needs === 'manage' && !canManage()) || (needs === 'config' && !canConfigure()) || (needs === 'admin' && !isAdmin())) {
         view().innerHTML = `<div class="empty">Ton compte n'a pas accès à cette page.<br><br><a class="btn" href="#/">Retour</a></div>`;
         return;
       }
@@ -1333,7 +1354,7 @@
     const conf = catalogConf();
     const show = (k) => conf.filters.includes(k);
     const withStatus = statusesOn() && show('statusUser');
-    const withReader = canManage() && show('reader');
+    const withReader = isMember() && show('reader');
     state.selecting = false;
     state.selected = new Set();
     const [cats, collections, seriesList, tags, members] = await Promise.all([
@@ -1360,7 +1381,7 @@
     if (show('collection') && collections.length) controls.push(['collection', 'Collection', '<input type="search" id="coll" placeholder="Toutes les collections">']);
     if (show('series') && seriesList.length) controls.push(['series', 'Série', '<input type="search" id="seriesf" placeholder="Toutes les séries">']);
     if (show('tag') && tags.some((t) => t.count)) controls.push(['tag', 'Tag', '<input type="search" id="tagf" placeholder="Tous les tags">']);
-    if (canManage() && show('mine')) {
+    if (isMember() && show('mine')) {
       controls.push(['mine', '', `<label class="check filter-check"><input type="checkbox" id="mine" ${c.mine ? 'checked' : ''}> Mes livres</label>`]);
     }
     if (withReader && members.length) {
@@ -1735,8 +1756,8 @@
     if (c.series) params.set('series', c.series);
     if (c.missing && canManage()) params.set('missing', c.missing);
     if (features().tags && c.tag) params.set('tag', c.tag);
-    if (canManage() && c.reader && show('reader')) params.set('reader', c.reader);
-    if (canManage() && c.mine && show('mine')) params.set('mine', '1');
+    if (isMember() && c.reader && show('reader')) params.set('reader', c.reader);
+    if (isMember() && c.mine && show('mine')) params.set('mine', '1');
     if (features().ebooks && c.format && show('format')) params.set('format', c.format);
     if (koboOn() && c.kobo) {
       params.set('kobo', c.kobo);
@@ -1756,7 +1777,7 @@
   async function loadBooks(append) {
     const c = state.catalog;
     const withStatus = statusesOn();
-    const data = await api(`/api/${canManage() ? 'books' : 'public/books'}?${catalogParams()}`);
+    const data = await api(`/api/${isMember() ? 'books' : 'public/books'}?${catalogParams()}`);
     const list = $('#books');
     if (!list) return;
     // Elements de la miniature choisis dans les Reglages.
@@ -1798,7 +1819,8 @@
   // ================= Fiche livre =================
   async function viewBook(id) {
     const manage = canManage();
-    const book = await api(manage ? `/api/books/${id}` : `/api/public/books/${id}`);
+    const member = isMember();
+    const book = await api(member ? `/api/books/${id}` : `/api/public/books/${id}`);
     const facts = [
       ['Auteur(s)', esc(book.authors)],
       ['Éditeur', esc(book.publisher)],
@@ -1820,15 +1842,15 @@
           <h1>${esc(book.title)}</h1>
           ${book.subtitle ? `<div class="subtitle">${esc(book.subtitle)}</div>` : ''}
           ${availabilityBadge(book)}
-          ${manage ? readersHtml(book) : ''}
-          ${manage && book.myStatus ? statusEditorHtml(book) : ''}
+          ${member ? readersHtml(book) : ''}
+          ${member && book.myStatus ? statusEditorHtml(book) : ''}
           <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
           ${book.summary ? `<h3>Résumé</h3><p class="summary">${esc(book.summary)}</p>` : ''}
           ${manage && book.notes ? `<h3>Notes internes</h3><p class="summary muted">${esc(book.notes)}</p>` : ''}
-          ${manage ? `<div class="btn-row" style="margin-top:14px">
-              <a class="btn" href="#/book/${book.id}/edit">Modifier</a>
-              ${koboOn() && book.ebookFile && book.ebookFile.download ? `<button class="btn" id="push-kobo" title="${esc(kobo.device.name)}">Envoyer sur ma liseuse</button>` : ''}
-              <button class="btn btn-danger" id="del-book">Supprimer</button>
+          ${member ? `<div class="btn-row" style="margin-top:14px">
+              ${manage ? `<a class="btn" href="#/book/${book.id}/edit">Modifier</a>` : ''}
+              ${koboOn() && book.ebookFile && book.ebookFile.download ? `<button class="btn" id="push-kobo" title="Envoyer sur ${esc(kobo.device.name)}" aria-label="Envoyer sur ma liseuse">${iconText('kobo', 'Envoyer sur ma liseuse')}</button>` : ''}
+              ${manage ? '<button class="btn btn-danger" id="del-book">Supprimer</button>' : ''}
             </div>` : ''}
         </div>
       </div>
@@ -1839,8 +1861,8 @@
     if (manage) { bindAdminBook(book); bindReservations(book); }
     const push = $('#push-kobo');
     if (push) push.onclick = busy(() => pushToKobo(book.id));
-    if (manage) bindReaders(book);
-    if (manage && book.myStatus) bindStatusEditor(book);
+    if (member) bindReaders(book);
+    if (member && book.myStatus) bindStatusEditor(book);
     // Tag : catalogue filtre sur ce tag.
     $$('[data-tag]').forEach((a) => {
       a.onclick = (e) => {
@@ -2006,7 +2028,7 @@
 
   // Fichier epub de l'exemplaire numerique : droits (voir, lire, telecharger) regles dans
   // les reglages de la bibliotheque.
-  const FILE_LEVELS = [['public', 'Tout le monde (même sans connexion)'], ['members', 'Comptes de la bibliothèque'], ['managers', 'Gestionnaires'], ['admin', 'Administrateurs']];
+  const FILE_LEVELS = [['public', 'Tout le monde (même sans connexion)'], ['members', 'Comptes de la bibliothèque (lecteurs compris)'], ['managers', 'Bibliothécaires et gestionnaires'], ['admin', 'Administrateurs']];
   const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} Mo` : `${Math.max(1, Math.round(n / 1024))} Ko`);
 
   // Presence du fichier et boutons selon les droits du visiteur (book.ebookFile).
@@ -2056,9 +2078,9 @@
     return `
       ${book.copies.length ? `<div class="table-wrap"><table class="stack"><thead><tr><th>Code</th><th>Emplacement</th><th>État</th><th>Étiquette</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted">Aucun exemplaire.</p>'}
       <div class="btn-row" style="margin-top:12px">
-        <button class="btn" id="add-copy">+ Exemplaire papier</button>
-        ${features().ebooks && !hasEbook ? '<button class="btn" id="add-ebook">+ Exemplaire numérique</button>' : ''}
-        ${physical.length && canConfigure() ? '<button class="btn" id="print-labels">Imprimer les étiquettes</button>' : ''}
+        <button class="btn" id="add-copy">+ <span class="hide-mobile">Exemplaire </span>papier</button>
+        ${features().ebooks && !hasEbook ? '<button class="btn" id="add-ebook">+ <span class="hide-mobile">Exemplaire </span>numérique</button>' : ''}
+        ${physical.length ? `<button class="btn" id="print-labels" title="Imprimer les étiquettes" aria-label="Imprimer les étiquettes">${iconText('print', 'Imprimer les étiquettes')}</button>` : ''}
       </div>`;
   }
 
@@ -2189,7 +2211,7 @@
   const koboState = { filter: 'all', q: '', category: '', series: '', tag: '', reading: '', sort: 'series', focus: false };
   // Liseuse branchee (et connue de la bibliotheque) : onglet, filtre du catalogue et
   // boutons d'envoi n'apparaissent qu'a cette condition.
-  const koboOn = () => canManage() && features().kobo && !!kobo && !!kobo.device;
+  const koboOn = () => isMember() && features().kobo && !!kobo && !!kobo.device;
   let koboReturn = null; // fiche creee depuis une liseuse : { deviceId, name, bookId }
 
   const koboWarning = () => (KOBO_FS ? '' : `<div class="warn-box">Ce navigateur ne peut pas écrire sur la liseuse : le scan fonctionne, mais les livres envoyés sont téléchargés et doivent être copiés à la main sur la Kobo. <strong>Utilise de préférence Chrome</strong> (Windows, Linux, Chromebook).</div>`);
@@ -2228,7 +2250,7 @@
     ? koboStore('readwrite', (st) => st.put({ root: src.root, name: src.device ? src.device.name : 'la liseuse' }, LIBRARY.slug)) : null);
 
   async function koboRestore() {
-    if (!KOBO_FS || !LIBRARY || !canManage() || !features().kobo || kobo) return;
+    if (!KOBO_FS || !LIBRARY || !isMember() || !features().kobo || kobo) return;
     const info = await koboStore('readonly', (st) => st.get(LIBRARY.slug));
     if (!info || !info.root) return;
     const perm = await info.root.queryPermission({ mode: 'readwrite' }).catch(() => 'denied');
@@ -2566,7 +2588,7 @@
         <p class="small muted">${d.owner ? `Propriétaire : ${esc(d.owner.username)}` : 'Sans propriétaire'} · ${d.books} livre(s) · scan du ${d.lastScanAt ? fmtDate(d.lastScanAt) : '—'}${d.firmware ? ` · firmware ${esc(d.firmware)}` : ''}</p></div>
         <div class="btn-row">
           <button class="btn btn-primary" id="kobo-rescan">${connected() ? 'Rescanner' : 'Brancher et scanner'}</button>
-          ${toCopy.length ? `<button class="btn" id="kobo-copy-all">Copier les ${toCopy.length} fichier(s) manquant(s)</button>` : ''}
+          ${toCopy.length && canManage() ? `<button class="btn" id="kobo-copy-all">Copier les ${toCopy.length} fichier(s) manquant(s)</button>` : ''}
           <button class="btn" id="kobo-edit">Modifier</button>
         </div></div>
       ${koboWarning()}
@@ -2586,12 +2608,13 @@
       ${items.length ? `<div class="card table-wrap"><table class="stack"><thead><tr><th>Livre sur la liseuse</th><th>Lecture</th><th>Fiche</th><th>Fichier dans la biblio</th></tr></thead><tbody>
         ${items.map((i) => `<tr>
           <td><strong>${esc(i.title)}</strong><div class="small muted">${esc(i.authors || '')}${i.series ? ` · ${esc(i.series)}${i.seriesNumber ? ` #${esc(i.seriesNumber)}` : ''}` : ''}</div>
-            ${canRemove && i.path ? `<button class="btn btn-small btn-danger" data-remove="${i.id}" title="Supprimer le fichier de la liseuse">Supprimer de la liseuse</button>` : ''}</td>
+            ${canRemove && i.path ? `<button class="btn btn-small btn-danger" data-remove="${i.id}" title="Supprimer le fichier de la liseuse" aria-label="Supprimer de la liseuse">${iconText('trash', 'Supprimer de la liseuse')}</button>` : ''}</td>
           <td>${reading(i)}</td>
           <td>${i.book
             ? `<a href="#/book/${i.book.id}">${esc(i.book.title)}</a> <button class="btn btn-small" data-unlink="${i.id}" title="Détacher de cette fiche">✕</button>`
-            : `<span class="btn-row"><button class="btn btn-small btn-primary" data-create="${i.id}">Créer la fiche</button><button class="btn btn-small" data-link="${i.id}">Rattacher…</button></span>`}</td>
+            : `<span class="btn-row">${canManage() ? `<button class="btn btn-small btn-primary" data-create="${i.id}">Créer la fiche</button>` : ''}<button class="btn btn-small" data-link="${i.id}">Rattacher…</button></span>`}</td>
           <td>${!i.book ? '<span class="muted">—</span>' : i.book.hasFile ? '<span class="badge badge-ok">Oui</span>'
+            : !canManage() ? '<span class="badge badge-muted">Non</span>'
             : `<button class="btn btn-small" data-copy="${i.id}" ${i.path && !i.pending ? '' : 'disabled title="Fichier inaccessible (carte SD ou pas encore importé)"'}>Copier depuis la Kobo</button>`}</td>
         </tr>`).join('')}</tbody></table></div>`
         : '<div class="empty">Aucun livre dans cette liste.</div>'}`;
@@ -2675,7 +2698,7 @@
         const bookId = await pickBookDialog(i);
         if (!bookId) return;
         const out = await api(`/api/kobo/items/${i.id}/link`, { method: 'POST', body: { bookId } });
-        await copyFile(i, out);
+        if (canManage()) await copyFile(i, out);
         toast('Livre rattaché.');
         route();
       });
@@ -2703,7 +2726,7 @@
   // ================= Liseuse epub (epub.js) =================
   // Position de lecture gardee dans le navigateur (localStorage, par livre).
   async function viewReader(id) {
-    const book = await api(canManage() ? `/api/books/${id}` : `/api/public/books/${id}`);
+    const book = await api(isMember() ? `/api/books/${id}` : `/api/public/books/${id}`);
     if (!book.ebookFile || !book.ebookFile.read) {
       throw new Error(state.user ? "Ton compte n'a pas accès à la lecture de ce livre." : 'Connecte-toi pour lire ce livre.');
     }
@@ -2824,7 +2847,7 @@
           </form>`}
       </div>
       <div class="btn-row" style="margin-top:14px">
-        <button class="btn" id="scan-next">${who ? `Prêter un autre livre à ${esc(who.name)}` : 'Scanner un autre livre'}</button>
+        <button class="btn" id="scan-next">${icon('scan', 16)}${who ? `<span class="hide-mobile">Prêter un </span>autre livre<span class="hide-mobile"> à ${esc(who.name)}</span>` : '<span class="hide-mobile">Scanner un </span>autre livre'}</button>
         ${who ? '<button class="btn" id="loan-for-stop">Terminer</button>' : ''}
       </div>`;
     $('#scan-next').onclick = () => scanAndOpen('loan');
@@ -2912,7 +2935,7 @@
     const u = state.user;
     view().innerHTML = `
       <h1>Mon compte</h1>
-      <p class="muted">${esc(u.username)} · ${u.role === 'admin' ? 'Administrateur (gère toutes les bibliothèques)' : roleLabel(u.role)}</p>
+      <p class="muted">${esc(u.username)} · ${roleLabel(u.role)} ${hint(ROLE_HELP[u.role] || ROLE_HELP.manager)}</p>
       <h2>Bibliothèque par défaut ${hint('Ouverte automatiquement après la connexion. Le menu du compte permet de basculer à tout moment.')}</h2>
       <div class="card">
         ${state.libraries.length ? `
@@ -2924,6 +2947,7 @@
           </label>`).join('')}</div>`
         : '<p class="muted">Aucune bibliothèque n\'est liée à ton compte. Demande à un administrateur.</p>'}
       </div>
+      <div id="acc-prefs"></div>
       <h2>Mot de passe</h2>
       <form class="card" id="pwd-form">
         <div class="grid-2">
@@ -2932,6 +2956,14 @@
         </div>
         <button class="btn" type="submit">Changer le mot de passe</button>
       </form>`;
+    // Reglages de lecture du compte dans la bibliotheque ouverte (si elle a les statistiques).
+    if (isMember() && features().stats) {
+      api('/api/stats/overview').then((ov) => {
+        if (!$('#acc-prefs')) return;
+        $('#acc-prefs').innerHTML = prefsHtml(ov);
+        bindPrefs(ov);
+      }).catch(() => {});
+    }
     $$('input[name=def]').forEach((radio) => {
       radio.onchange = async () => {
         try {
@@ -3272,8 +3304,9 @@
         <div class="field"><label>Identifiant *</label><input name="username" required value="${esc(u.username)}" autocomplete="off"></div>
         <div class="field"><label>${user ? `Nouveau mot de passe ${hint('Laisser vide pour ne pas changer.')}` : `Mot de passe * ${hint('8 caractères minimum.')}`}</label>
           <input name="password" type="password" autocomplete="new-password" minlength="8" ${user ? '' : 'required'}></div>
-        <div class="field"><label>Rôle ${hint('Utilisateur : utilise les outils des bibliothèques cochées ci-dessous (catalogue, ajouts, prêts, liseuses…). Gestionnaire : en plus, étiquettes et réglages de ces bibliothèques. Administrateur : toutes les bibliothèques, comptes et réglages.')}</label><select name="role">
-          <option value="user" ${u.role === 'user' ? 'selected' : ''}>Utilisateur</option>
+        <div class="field"><label>Rôle ${hint(['user', 'librarian', 'manager', 'admin'].map((r) => ROLE_HELP[r]).join(' '))}</label><select name="role">
+          <option value="user" ${u.role === 'user' ? 'selected' : ''}>Lecteur</option>
+          <option value="librarian" ${u.role === 'librarian' ? 'selected' : ''}>Bibliothécaire</option>
           <option value="manager" ${u.role === 'manager' || !u.role ? 'selected' : ''}>Gestionnaire</option>
           <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrateur</option>
         </select></div>
@@ -3341,21 +3374,22 @@
         <label for="isbn-search">Rechercher par ISBN ou titre ${hint('Scanne ou tape l\'ISBN pour pré-remplir la fiche. Sans ISBN : tape le titre et l\'auteur, ou « Titre + auteur » reprend ceux de la fiche, puis choisis l\'édition.')}</label>
         <div class="isbn-row">
           <input id="isbn-search" placeholder="ISBN, ou titre et auteur" value="${esc(b.isbn)}" autocomplete="off">
-          <button class="btn" id="isbn-go" type="button">Rechercher</button>
-          <button class="btn" id="isbn-title" type="button" title="Chercher l'édition avec le titre et l'auteur de la fiche">Titre + auteur</button>
-          <button class="btn btn-primary" id="isbn-scan" type="button">Scanner</button>
+          <button class="btn" id="isbn-go" type="button" title="Rechercher" aria-label="Rechercher">${iconText('search', 'Rechercher')}</button>
+          <button class="btn" id="isbn-title" type="button" title="Chercher l'édition avec le titre et l'auteur de la fiche" aria-label="Chercher avec le titre et l'auteur de la fiche">${iconText('text', 'Titre + auteur')}</button>
+          <button class="btn btn-primary" id="isbn-scan" type="button" title="Scanner le code-barres" aria-label="Scanner le code-barres">${iconText('scan', 'Scanner')}</button>
         </div>
         <div id="isbn-result" class="small" style="margin-top:8px"></div>
       </div>
       <form id="book-form" class="card">
         <div class="cover-edit field">
-          <div class="cover" id="cover-preview"></div>
+          <label class="cover cover-pick" id="cover-preview" for="cover-file" title="Choisir ou photographier une image"></label>
+          <input type="file" id="cover-file" accept="image/*" hidden>
           <div>
-            <label>Couverture ${hint('La couverture trouvée par la recherche ISBN est enregistrée automatiquement.')}</label>
+            <label for="cover-file">Couverture ${hint('Clique sur l\'image pour en choisir ou en photographier une. La couverture trouvée par la recherche ISBN est enregistrée automatiquement.')}</label>
             <div class="btn-row">
-              <label class="btn btn-small" style="margin:0">Choisir / photographier<input type="file" id="cover-file" accept="image/*" hidden></label>
-              <button class="btn btn-small" type="button" id="cover-online">Chercher en ligne</button>
-              <button class="btn btn-small btn-danger" type="button" id="cover-remove">Retirer</button>
+              <label class="btn btn-small" style="margin:0" for="cover-file" title="Choisir ou photographier une image">${iconText('image', 'Choisir / photographier')}</label>
+              <button class="btn btn-small" type="button" id="cover-online" title="Chercher une couverture en ligne" aria-label="Chercher une couverture en ligne">${iconText('search', 'Chercher en ligne')}</button>
+              <button class="btn btn-small btn-danger" type="button" id="cover-remove" title="Retirer la couverture" aria-label="Retirer la couverture">${iconText('trash', 'Retirer')}</button>
             </div>
           </div>
         </div>
@@ -3382,7 +3416,7 @@
           <div id="cat-chips"></div>
           <div class="isbn-row">
             <input id="cat-input" list="cat-list" placeholder="Ajouter une catégorie…" autocomplete="off">
-            <button class="btn" type="button" id="cat-add">Ajouter</button>
+            <button class="btn" type="button" id="cat-add" title="Ajouter la catégorie" aria-label="Ajouter la catégorie">${iconText('add', 'Ajouter')}</button>
           </div>
           <datalist id="cat-list">${cats.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist>
         </div>
@@ -3391,7 +3425,7 @@
           <div id="tag-chips"></div>
           <div class="isbn-row">
             <input id="tag-input" list="tag-list" placeholder="Ajouter un tag…" autocomplete="off">
-            <button class="btn" type="button" id="tag-add">Ajouter</button>
+            <button class="btn" type="button" id="tag-add" title="Ajouter le tag" aria-label="Ajouter le tag">${iconText('add', 'Ajouter')}</button>
           </div>
           <datalist id="tag-list">${allTags.map((t) => `<option value="${esc(t.name)}">`).join('')}</datalist>
         </div>` : ''}
@@ -3407,14 +3441,15 @@
           <div class="btn-row">${members.map((m) => `<label class="check"><input type="checkbox" data-reader="${m.id}" ${(editing ? (b.readers || []).some((r) => r.id === m.id) : m.id === state.user.id) ? 'checked' : ''}> ${m.id === state.user.id ? 'Moi' : esc(m.username)}</label>`).join('')}</div></div>` : ''}
         <div class="field"><label for="notes">Notes internes ${hint('Visibles uniquement par les gestionnaires.')}</label><textarea id="notes" name="notes" style="min-height:70px">${esc(b.notes)}</textarea></div>
         <div id="form-err"></div>
-        <div class="btn-row"><button class="btn btn-primary" type="submit">${editing ? 'Enregistrer' : 'Ajouter au catalogue'}</button></div>
+        <div class="btn-row"><button class="btn btn-primary" type="submit">${icon('check', 16)}${editing ? 'Enregistrer' : 'Ajouter<span class="hide-mobile"> au catalogue</span>'}</button></div>
       </form>`;
 
     const f = $('#book-form');
 
     function renderCover() {
       const src = form.cover.data || form.cover.remoteUrl || (form.cover.removed ? '' : form.cover.url);
-      $('#cover-preview').innerHTML = src ? `<img src="${esc(src)}" alt="">` : '<span class="cover-fallback">Pas d\'image</span>';
+      $('#cover-preview').innerHTML = (src ? `<img src="${esc(src)}" alt="Couverture actuelle">` : '<span class="cover-fallback">Ajouter une image</span>')
+        + `<span class="cover-pick-badge" aria-hidden="true">${icon('image', 16)}</span>`;
       $('#cover-remove').hidden = !src;
     }
     renderCover();
@@ -3765,7 +3800,7 @@
     return { onDuplicate: dup, markToRead: !!(toRead && toRead.checked), readers, ...extra };
   }
 
-  const importState = { mode: 'scan', text: '', fileName: '', rows: null, mapping: [], items: [], results: null, running: false, stop: false, batch: [], cats: [], tags: [], toRead: true, readers: null };
+  const importState = { mode: 'scan', text: '', fileName: '', rows: null, mapping: [], items: [], results: null, running: false, stop: false, batch: [], cats: [], tags: [], toRead: false, readers: null };
 
   // Import de fichiers epub : un fichier par requete, a la suite (fiche creee, ou fichier
   // ajoute a la fiche existante).
@@ -4285,8 +4320,7 @@
     const stop = $('#stop');
     if (stop) stop.onclick = () => { s.stop = true; stop.disabled = true; stop.textContent = 'Arrêt après le livre en cours…'; };
     const gl = $('#go-labels');
-    if (gl && !canConfigure()) gl.remove();
-    else if (gl) gl.onclick = () => { state.labels = { mode: 'pending', manual: [] }; go('#/labels'); };
+    if (gl) gl.onclick = () => { state.labels = { mode: 'pending', manual: [] }; go('#/labels'); };
   }
 
   function warnBeforeLeaving(e) { e.preventDefault(); e.returnValue = ''; }
@@ -4565,7 +4599,7 @@
   async function viewBorrowers() {
     view().innerHTML = `
       <div class="page-head"><div><h1>Emprunteurs</h1></div>
-        <div class="btn-row"><button class="btn btn-primary" type="button" id="show-new-borrower">+ Nouvel emprunteur</button></div></div>
+        <div class="btn-row"><button class="btn btn-primary" type="button" id="show-new-borrower" title="Nouvel emprunteur" aria-label="Nouvel emprunteur">${iconText('add', 'Nouvel emprunteur')}</button></div></div>
       <form class="card" id="new-borrower" style="margin-bottom:18px" hidden>
         <div class="grid-3">
           <div class="field"><label>Nom *</label><input name="name" required></div>
@@ -4616,7 +4650,7 @@
       <p><a href="#/borrowers">← Emprunteurs</a></p>
       <div class="page-head"><h1>${esc(b.name)}</h1>
         <div class="btn-row">${open.length ? `<button class="btn" type="button" id="remind-all">${icon('mail', 16)}Relancer (${open.length} livre${open.length > 1 ? 's' : ''})</button>` : ''}
-        <button class="btn btn-primary" type="button" id="lend">Prêter un livre</button></div></div>
+        <button class="btn btn-primary" type="button" id="lend" title="Prêter un livre">${icon('scan', 16)}Prêter<span class="hide-mobile"> un livre</span></button></div></div>
       <form class="card" id="borrower-form" style="margin-top:14px">
         <div class="grid-3">
           <div class="field"><label>Nom *</label><input name="name" required value="${esc(b.name)}"></div>
@@ -4917,16 +4951,19 @@
   function fitHome() {
     const tiles = $('#home-tiles');
     const phone = window.matchMedia(HOME_PHONE_QUERY).matches;
-    document.body.classList.toggle('home-fit', phone && !!$('.home'));
-    if (!tiles || !phone) { if (tiles) tiles.style.height = ''; return; }
+    if (!tiles || !phone) { document.body.classList.remove('home-fit'); if (tiles) tiles.style.height = ''; return; }
+    // Une seule colonne. Trop de cartes pour l'ecran : hauteur minimale par tuile et
+    // la page defile (sinon elle tient dans l'ecran, sans defilement).
     const n = tiles.children.length;
-    const landscape = window.innerWidth > window.innerHeight;
-    const cols = landscape ? Math.min(n, 4) : (n <= 3 ? 1 : 2);
-    tiles.style.setProperty('--cols', cols);
-    tiles.style.setProperty('--rows', Math.ceil(n / cols));
-    tiles.classList.toggle('odd', cols === 2 && n % 2 === 1);
-    const h = (window.visualViewport ? window.visualViewport.height : window.innerHeight) - tiles.getBoundingClientRect().top - 12;
-    tiles.style.height = `${Math.max(120, Math.floor(h))}px`;
+    const MIN = 68;
+    const GAP = 8;
+    const h = (window.visualViewport ? window.visualViewport.height : window.innerHeight) - (tiles.getBoundingClientRect().top + window.scrollY) - 12;
+    const needed = n * MIN + (n - 1) * GAP;
+    const fits = needed <= h;
+    document.body.classList.toggle('home-fit', fits && !!$('.home'));
+    tiles.style.setProperty('--cols', 1);
+    tiles.style.setProperty('--rows', n);
+    tiles.style.height = `${fits ? Math.max(120, Math.floor(h)) : needed}px`;
     // Petites tuiles : chiffre a cote du titre, pour garder des lignes de detail.
     tiles.classList.remove('compact');
     if (tiles.firstElementChild && tiles.firstElementChild.getBoundingClientRect().height < 104) tiles.classList.add('compact');
@@ -4999,11 +5036,11 @@
 
   // ================= Souhaits =================
   // Liste de souhaits de chaque compte (hors bibliotheque, API globale /api/wishes).
-  // Onglets : sa liste, celles partagees avec soi et, pour un gestionnaire de la
-  // bibliotheque ouverte, celles de ses membres. Plusieurs listes peuvent etre
-  // selectionnees a la fois (affichage et export).
+  // Sa liste et celles partagees avec soi : pastilles (plusieurs listes a la fois).
+  // Bibliothecaire ou gestionnaire de la bibliotheque ouverte : listes de ses membres,
+  // choisies dans une liste deroulante avec recherche (un compte, ou toutes).
   const wishState = { owners: null, priority: false };
-  const libParam = () => (LIBRARY && canConfigure() ? `library=${LIBRARY.id}` : '');
+  const libParam = () => (LIBRARY && canManage() ? `library=${LIBRARY.id}` : '');
 
   async function viewWishes() {
     const { owners, manager } = await gapi(`/api/wishes/owners?${libParam()}`);
@@ -5013,21 +5050,31 @@
     if (!selected.length) selected = [me];
     wishState.owners = selected;
     const VIA = { share: 'partagée', library: 'membre' };
+    const all = selected.length === owners.length;
+    const allBtn = `<button type="button" class="btn btn-small" id="wish-all">${all ? 'Seulement moi' : 'Toutes'}</button>`;
+    // Export : dans la barre d'outils, et en fin de page sur smartphone.
+    const exportHtml = (cls) => `<div class="btn-row wish-export ${cls}"><span class="small muted hide-mobile">Exporter${selected.length > 1 ? ` les ${selected.length} listes` : ''} :</span>
+      <a class="btn btn-small" data-wish-export="xlsx" download title="Exporter en Excel" aria-label="Exporter en Excel">${icon('install', 16)}Excel</a>
+      <a class="btn btn-small" data-wish-export="csv" download title="Exporter en CSV" aria-label="Exporter en CSV">${icon('install', 16)}CSV</a></div>`;
     view().innerHTML = `
-      <div class="page-head"><div><h1>Souhaits ${hint("Livres que tu aimerais lire ou voir acheter. Ta liste t'appartient (elle n'est dans aucune bibliothèque) ; tu peux la partager avec d'autres comptes. Les gestionnaires voient celles des membres de leur bibliothèque.")}</h1></div>
-        <div class="btn-row"><button class="btn btn-primary" type="button" id="wish-add">${icon('add', 16)}Ajouter un souhait</button></div></div>
-      ${owners.length > 1 ? `<div class="wish-owners" role="group" aria-label="Listes affichées">
+      <div class="page-head"><div><h1>Souhaits ${hint("Livres que tu aimerais lire ou voir acheter. Ta liste t'appartient (elle n'est dans aucune bibliothèque) ; tu peux la partager avec d'autres comptes. Les bibliothécaires et gestionnaires voient celles des membres de leur bibliothèque.")}</h1></div>
+        <div class="btn-row"><button class="btn btn-primary" type="button" id="wish-add" title="Ajouter un souhait" aria-label="Ajouter un souhait">${icon('add', 16)}Ajouter<span class="hide-mobile"> un souhait</span></button></div></div>
+      ${owners.length > 1 && manager ? `<div class="wish-owners wish-owner-pick">
+        <label for="wish-owner" class="sr-only">Liste affichée</label>
+        <input type="search" id="wish-owner" autocomplete="off" placeholder="${all ? `Toutes les listes (${owners.length})` : selected.length > 1 ? `${selected.length} listes` : 'Choisir un compte…'}">
+        ${allBtn}
+      </div>` : owners.length > 1 ? `<div class="wish-owners" role="group" aria-label="Listes affichées">
         ${owners.map((o) => `<button type="button" class="chip-toggle" data-owner="${o.id}" aria-pressed="${selected.includes(o.id)}">
           <span class="tab-avatar" aria-hidden="true">${initials(o.username)}</span>${o.id === me ? 'Mes souhaits' : esc(o.username)}
           <span class="count">${o.count}</span>${VIA[o.via] ? `<span class="sr-only"> (liste ${VIA[o.via]})</span>` : ''}</button>`).join('')}
-        <button type="button" class="btn btn-small" id="wish-all">${selected.length === owners.length ? 'Seulement moi' : 'Toutes'}</button>
+        ${allBtn}
       </div>` : ''}
       <div class="wish-toolbar">
-        <button type="button" class="chip-toggle wish-filter" id="wish-prio" aria-pressed="${wishState.priority}">${icon('wish', 16)}Très envie seulement</button>
-        <div class="btn-row"><span class="small muted">Exporter${selected.length > 1 ? ` les ${selected.length} listes` : ''} :</span>
-          <a class="btn btn-small" id="wish-xlsx" download>Excel</a><a class="btn btn-small" id="wish-csv" download>CSV</a></div>
+        <button type="button" class="chip-toggle wish-filter" id="wish-prio" aria-pressed="${wishState.priority}">${icon('wish', 16)}Très envie<span class="hide-mobile"> seulement</span></button>
+        ${exportHtml('hide-mobile')}
       </div>
       <div class="card" id="wish-list" aria-live="polite"><p class="muted">Chargement…</p></div>
+      ${exportHtml('only-mobile')}
       <details class="card wish-share" id="wish-share">
         <summary>${icon('share', 16)}<strong>Partager ma liste</strong> <span class="small muted" id="share-sum"></span></summary>
         <div id="share-body" style="margin-top:12px"></div>
@@ -5040,11 +5087,19 @@
         setSelected(next.length ? next : [id]);
       };
     });
-    if ($('#wish-all')) $('#wish-all').onclick = () => setSelected(selected.length === owners.length ? [me] : owners.map((o) => o.id));
+    if ($('#wish-all')) $('#wish-all').onclick = () => setSelected(all ? [me] : owners.map((o) => o.id));
+    // Gestion : compte a consulter, choisi dans une liste deroulante avec recherche.
+    if ($('#wish-owner')) {
+      const input = $('#wish-owner');
+      const ownerName = (o) => (o.id === me ? 'Mes souhaits' : o.username);
+      const cur = selected.length === 1 ? owners.find((o) => o.id === selected[0]) : null;
+      input.value = cur ? ownerName(cur) : '';
+      combo(input, owners.map((o) => ({ id: o.id, label: ownerName(o), hint: String(o.count) })), (it) => setSelected([it.id]), { emptyText: 'Aucun compte' });
+      input.addEventListener('focus', () => input.select());
+    }
     $('#wish-prio').onclick = () => { wishState.priority = !wishState.priority; viewWishes(); };
     const q = `owners=${selected.join(',')}${wishState.priority ? '&priority=1' : ''}${libParam() ? '&' + libParam() : ''}`;
-    $('#wish-xlsx').href = `${ROOT}/api/wishes/export.xlsx?${q}`;
-    $('#wish-csv').href = `${ROOT}/api/wishes/export.csv?${q}`;
+    $$('[data-wish-export]').forEach((a) => { a.href = `${ROOT}/api/wishes/export.${a.dataset.wishExport}?${q}`; });
     $('#wish-add').onclick = async () => { if (await wishDialog()) viewWishes(); };
 
     const wishes = await gapi(`/api/wishes?${q}`);
@@ -5053,6 +5108,20 @@
       : wishState.priority ? '<div class="empty">Aucun souhait « Très envie ».</div>'
         : `<div class="empty">Aucun souhait pour le moment.${selected.includes(me) ? '<br><br>Ajoute un livre par son ISBN, en le scannant ou par son titre.' : ''}</div>`;
     const byId = new Map(wishes.map((w) => [w.id, w]));
+    // Souhaits sans couverture : le serveur la cherche en arriere-plan ; les images
+    // trouvees sont posees quelques secondes plus tard, sans recharger la liste.
+    if (wishes.some((w) => !w.coverUrl)) {
+      setTimeout(async () => {
+        const list = $('#wish-list');
+        if (!list || !document.body.contains(list)) return;
+        const fresh = await gapi(`/api/wishes?${q}`).catch(() => []);
+        fresh.filter((w) => w.coverUrl && byId.has(w.id) && !byId.get(w.id).coverUrl).forEach((w) => {
+          byId.get(w.id).coverUrl = w.coverUrl;
+          const ph = $(`[data-wish-item="${w.id}"] span.thumb`, list);
+          if (ph) ph.outerHTML = wishThumb(w);
+        });
+      }, 7000);
+    }
     // Coeur « Tres envie » : bascule immediate (proprietaire).
     $$('[data-wish-heart]', $('#wish-list')).forEach((btn) => {
       btn.onclick = async () => {
@@ -5086,22 +5155,27 @@
     shareSection();
   }
 
+  // Vignette d'un souhait (image distante ; retiree si elle ne charge pas).
+  const wishThumb = (w) => (w.coverUrl
+    ? `<img class="thumb" src="${esc(w.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<span class=&quot;thumb&quot; aria-hidden=&quot;true&quot;></span>'">`
+    : '<span class="thumb" aria-hidden="true"></span>');
+
   function wishItemHtml(w, { me, manager, multi }) {
     const own = w.owner.id === me;
     const meta = [w.authors, [w.publisher, w.year].filter(Boolean).join(', '), w.isbn ? `ISBN ${w.isbn}` : ''].filter(Boolean).map(esc).join(' · ');
     const acts = [];
-    if (manager && !w.inLibrary) acts.push(`<button class="btn btn-small btn-primary" type="button" data-wish-act="add" data-wish="${w.id}">${icon('add', 16)}Ajouter à la bibliothèque</button>`);
+    if (manager && !w.inLibrary) acts.push(`<button class="btn btn-small btn-primary" type="button" data-wish-act="add" data-wish="${w.id}" title="Ajouter à la bibliothèque" aria-label="Ajouter « ${esc(w.title)} » à la bibliothèque">${iconText('add', 'Ajouter à la bibliothèque')}</button>`);
     if (own) {
-      acts.push(`<button class="btn btn-small" type="button" data-wish-act="edit" data-wish="${w.id}" aria-label="Modifier « ${esc(w.title)} »">Modifier</button>`);
-      acts.push(`<button class="btn btn-small btn-danger" type="button" data-wish-act="delete" data-wish="${w.id}" aria-label="Supprimer « ${esc(w.title)} »">Supprimer</button>`);
+      acts.push(`<button class="btn btn-small" type="button" data-wish-act="edit" data-wish="${w.id}" title="Modifier" aria-label="Modifier « ${esc(w.title)} »">${iconText('edit', 'Modifier')}</button>`);
+      acts.push(`<button class="btn btn-small btn-danger" type="button" data-wish-act="delete" data-wish="${w.id}" title="Supprimer" aria-label="Supprimer « ${esc(w.title)} »">${iconText('trash', 'Supprimer')}</button>`);
     }
     const heart = own
       ? `<button type="button" class="wish-heart" data-wish-heart="${w.id}" aria-pressed="${!!w.priority}" aria-label="Très envie : ${esc(w.title)}"
           title="${w.priority ? 'Très envie (cliquer pour retirer)' : 'Marquer « Très envie »'}">${icon('wish', 20)}</button>`
       : `<span class="wish-heart${w.priority ? ' on' : ''}" aria-hidden="true">${icon('wish', 20)}</span>`;
-    return `<li class="list-item wish-item">
+    return `<li class="list-item wish-item" data-wish-item="${w.id}">
       ${heart}
-      ${w.coverUrl ? `<img class="thumb" src="${esc(w.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb" aria-hidden="true"></span>'}
+      ${wishThumb(w)}
       <div class="grow">
         <strong>${esc(w.title)}</strong>${!own && w.priority ? '<span class="sr-only"> (très envie)</span>' : ''}${w.subtitle ? ` <span class="muted">— ${esc(w.subtitle)}</span>` : ''}
         ${meta ? `<div class="small muted">${meta}</div>` : ''}
@@ -5149,8 +5223,8 @@
           <div class="field"><label for="wish-q">ISBN ou titre</label>
             <div class="isbn-row">
               <input id="wish-q" autocomplete="off" placeholder="ISBN, ou titre et auteur" value="${esc(v.isbn)}">
-              <button class="btn" type="button" id="wish-search">Rechercher</button>
-              <button class="btn" type="button" id="wish-scan">Scanner</button>
+              <button class="btn" type="button" id="wish-search" title="Rechercher" aria-label="Rechercher">${iconText('search', 'Rechercher')}</button>
+              <button class="btn" type="button" id="wish-scan" title="Scanner le code-barres" aria-label="Scanner le code-barres">${iconText('scan', 'Scanner')}</button>
             </div>
             <div id="wish-found" class="small" role="status" aria-live="polite" style="margin-top:8px"></div>
           </div>
@@ -5175,12 +5249,30 @@
       const f = $('#wish-form', backdrop);
       const close = (ok) => { backdrop.remove(); resolve(ok); };
       backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(false); });
-      const renderCover = () => { $('#wish-cover', backdrop).innerHTML = cover ? `<img src="${esc(cover)}" alt="" referrerpolicy="no-referrer">` : '<span class="cover-fallback">Pas d\'image</span>'; };
+      const renderCover = () => {
+        const box = $('#wish-cover', backdrop);
+        box.innerHTML = cover ? `<img src="${esc(cover)}" alt="" referrerpolicy="no-referrer">` : '<span class="cover-fallback">Pas d\'image</span>';
+        const img = $('img', box);
+        if (img) img.onerror = () => { cover = ''; renderCover(); };
+      };
       renderCover();
+      // Couverture cherchee en ligne (ISBN, sinon titre + auteur) quand il n'y en a pas.
+      let coverSeq = 0;
+      const findCover = async () => {
+        const isbn = f.isbn.value.trim();
+        const title = f.title.value.trim();
+        if (cover || (!isbn && !title)) return;
+        const seq = ++coverSeq;
+        const r = await gapi(`/api/wishes/cover?${new URLSearchParams({ isbn, title, authors: f.authors.value })}`).catch(() => null);
+        if (r && r.coverUrl && seq === coverSeq && !cover && document.body.contains(backdrop)) { cover = r.coverUrl; renderCover(); }
+      };
       const fill = (d) => {
         ['title', 'subtitle', 'authors', 'publisher', 'year', 'isbn'].forEach((k) => { if (d[k] && f[k]) f[k].value = d[k]; });
-        if (d.coverUrl) { cover = d.coverUrl; renderCover(); }
+        cover = d.coverUrl || '';
+        renderCover();
+        findCover();
       };
+      if (editing) findCover();
       const found = $('#wish-found', backdrop);
       const search = async (text) => {
         const t = String(text || '').trim();
@@ -5707,23 +5799,24 @@
         const id = statsState.who === 'me' ? ov.me.id : Number(statsState.who);
         const s = await api(`/api/stats/user/${id}?period=${statsState.period}`);
         $('#st-sub').textContent = `${statsState.who === 'me' ? 'Mes lectures' : `Lectures de ${s.user.username} (partagées)`} · ${s.period.label}`;
-        body.innerHTML = (statsState.who === 'me' ? prefsHtml(ov) : '') + userStatsHtml(s, statsState.who === 'me');
-        if (statsState.who === 'me') bindPrefs(ov);
+        body.innerHTML = userStatsHtml(s, statsState.who === 'me');
       }
       bindAreaCharts(body);
     } catch (err) { body.innerHTML = `<div class="error-box">${esc(err.message)}</div>`; }
     body.classList.remove('loading');
   }
 
+  // Reglages personnels de lecture (par bibliotheque), affiches dans « Mon compte ».
   function prefsHtml(ov) {
     const p = ov.prefs;
-    return `<details class="stat-prefs"><summary>⚙️ <strong>Mes réglages</strong> <span class="small muted">partage ${p.shareStats ? 'activé' : 'désactivé'}${p.yearlyGoal ? ` · objectif ${p.yearlyGoal} livres` : ''}</span></summary>
-      <div class="grid-3" style="margin-top:12px">
+    return `<h2>Mes lectures ${hint('Réglages propres à cette bibliothèque : partage de tes statistiques, objectif annuel et délai avant de signaler une lecture qui traîne.')}</h2>
+    <div class="card">
+      <div class="grid-3">
         <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="pf-share" ${p.shareStats ? 'checked' : ''} ${ov.member ? '' : 'disabled'}> Partager mes statistiques avec les membres de la bibliothèque</label>${ov.member ? '' : hint('Réservé aux comptes liés à cette bibliothèque.')}</div>
         <div class="field"><label>Objectif de l'année (livres)</label><input type="number" id="pf-goal" min="1" max="1000" placeholder="aucun" value="${p.yearlyGoal || ''}"></div>
         <div class="field"><label>Signaler une lecture en cours après (jours)</label><input type="number" id="pf-stale" min="1" max="3650" value="${p.staleDays}"></div>
       </div>
-    </details>`;
+    </div>`;
   }
 
   function bindPrefs(ov) {
@@ -5731,7 +5824,6 @@
       try {
         ov.prefs = await api('/api/stats/prefs', { method: 'PUT', body });
         toast('Réglages enregistrés.');
-        renderStatsBody(ov);
       } catch (err) { toast(err.message, 'error'); }
     };
     $('#pf-share').onchange = (e) => save({ shareStats: e.target.checked });
