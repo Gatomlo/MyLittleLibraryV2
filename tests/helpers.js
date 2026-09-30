@@ -7,7 +7,7 @@ const path = require('path');
 
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'mll-test-'));
 process.env.MLL_DATA_DIR = DATA_DIR;
-process.env.MLL_TEST = '1';
+process.env.MLL_OFFLINE = '1'; // aucune recherche en ligne pendant les tests
 
 const app = require('../server');
 

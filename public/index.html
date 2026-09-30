@@ -6,7 +6,8 @@
 <meta name="theme-color" content="#0f8b6d">
 <title>{{TITLE}}</title>
 <!-- Page servie par server.js (renderIndex) : {{ROOT}} = chemin de montage de l'app
-     (ex. /mylittlelibrary dans la passerelle), CONFIG = bibliotheque courante. La
+     (ex. /mylittlelibrary dans la passerelle), {{ASSETS}} = {{ROOT}}/v/<version> (fichiers
+     gardes en cache par le navigateur), CONFIG = bibliotheque courante. La
      meme page sert l'accueil (/) et chaque bibliotheque (/<adresse>/). -->
 <link rel="manifest" href="{{MANIFEST}}">
 <link rel="icon" href="{{ROOT}}/icon.svg" type="image/svg+xml">
@@ -15,11 +16,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="{{TITLE}}">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap">
-<link rel="stylesheet" href="{{ROOT}}/style.css?v={{VERSION}}">
-<script>window.MLL = {{CONFIG}};</script>
+<link rel="preload" href="{{ASSETS}}/fonts/nunito-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{ASSETS}}/style.css">
+<script nonce="{{NONCE}}">window.MLL = {{CONFIG}};</script>
 </head>
 <body>
 <a class="skip-link no-print" href="#view">Aller au contenu</a>
@@ -44,6 +43,6 @@
 </header>
 <main class="shell" id="view" tabindex="-1"></main>
 <div class="toasts no-print" id="toasts" role="status" aria-live="polite"></div>
-<script src="{{ROOT}}/app.js?v={{VERSION}}"></script>
+<script src="{{ASSETS}}/app.js"></script>
 </body>
 </html>

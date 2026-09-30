@@ -11,11 +11,19 @@ const archives = require('./lib/archives');
 const { registerWishes } = require('./lib/wishes');
 const { registerInvitations } = require('./lib/invitations');
 const media = require('./lib/media');
+const security = require('./lib/security');
+const compression = require('compression');
+const crypto = require('crypto');
 const { createLibraryRouter, findLibrary, mediaUrl, str, intOrNull } = require('./lib/library-api');
 
-// Filet de securite : une erreur imprevue ne doit jamais faire tomber tout le serveur.
-process.on('uncaughtException', (err) => console.error('Erreur non interceptee (ignoree) :', err));
-process.on('unhandledRejection', (err) => console.error('Promesse rejetee non geree (ignoree) :', err));
+// Erreur imprevue hors d'une requete : lance seul, le serveur la consigne et s'arrete
+// (un processus dans un etat inconnu ne doit pas continuer a ecrire dans les bases).
+// Charge par la passerelle, c'est elle qui decide : l'app n'installe rien de global.
+if (require.main === module) {
+  const fatal = (kind) => (err) => { console.error(`${kind} :`, err); process.exit(1); };
+  process.on('uncaughtException', fatal('Erreur non interceptee'));
+  process.on('unhandledRejection', fatal('Promesse rejetee non geree'));
+}
 
 // Organisation des adresses (prefixees par /mylittlelibrary dans la passerelle) :
 //   /                        accueil : liste des bibliotheques, connexion, administration
@@ -26,28 +34,23 @@ process.on('unhandledRejection', (err) => console.error('Promesse rejetee non ge
 const app = express();
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const { httpError } = media;
-const h = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const { httpError, asyncHandler: h } = require('./lib/util');
 
+app.disable('x-powered-by');
+app.use(security.headers);
+// Reponses compressees (gzip / brotli) : l'interface et les listes JSON pesent 4 a 5
+// fois moins. Les fichiers deja compresses (images, epub, zip) sont laisses tels quels.
+app.use(compression());
 app.use(express.json({ limit: '8mb' }));
-// Fichiers de l'interface toujours revalides par le navigateur (reponse 304 s'ils
-// n'ont pas change) : une mise a jour de l'app est visible sans vider le cache.
-app.use(express.static(PUBLIC_DIR, { index: false, setHeaders: (res) => res.set('Cache-Control', 'no-cache') }));
 
-// Scanner de codes-barres/QR servi en local : aucune dependance a un CDN externe.
-function nodeModuleFile(...parts) {
-  const candidates = [
-    path.join(__dirname, 'node_modules', ...parts),
-    path.join(__dirname, 'node_modules', 'barcode-detector', 'node_modules', ...parts),
-  ];
-  return candidates.find((p) => fs.existsSync(p)) || candidates[0];
-}
-app.get('/vendor/barcode-detector.js', (req, res) => res.sendFile(nodeModuleFile('barcode-detector', 'dist', 'iife', 'ponyfill.js')));
-app.get('/vendor/quagga.min.js', (req, res) => res.sendFile(nodeModuleFile('@ericblade', 'quagga2', 'dist', 'quagga.min.js')));
-app.get('/vendor/read-excel-file.min.js', (req, res) => res.sendFile(nodeModuleFile('read-excel-file', 'bundle', 'read-excel-file.min.js')));
-app.get('/vendor/jszip.min.js', (req, res) => res.sendFile(nodeModuleFile('jszip', 'dist', 'jszip.min.js')));
-app.get('/vendor/epub.min.js', (req, res) => res.sendFile(nodeModuleFile('epubjs', 'dist', 'epub.min.js')));
-app.get('/vendor/zxing_reader.wasm', (req, res) => res.type('application/wasm').sendFile(nodeModuleFile('zxing-wasm', 'dist', 'reader', 'zxing_reader.wasm')));
+// Fichiers de l'interface (scripts, styles, polices, scanner et liseuse de
+// public/vendor : aucune dependance a un CDN externe). Deux adresses :
+//  - /v/<version>/... : la version fait partie de l'adresse (empreinte des fichiers), le
+//    navigateur garde donc le fichier sans jamais le redemander ; une mise a jour de
+//    l'app change la version (assetVersion), donc toutes les adresses ;
+//  - /... (icones, sw.js, embed.js) : toujours revalides (reponse 304 si inchanges).
+app.use('/v/:version', express.static(PUBLIC_DIR, { index: false, immutable: true, maxAge: '365d' }));
+app.use(express.static(PUBLIC_DIR, { index: false, setHeaders: (res) => res.set('Cache-Control', 'no-cache') }));
 
 // Les POST/PUT doivent etre en JSON : un formulaire d'un autre site ne peut pas en
 // envoyer sans CORS (protection CSRF, avec SameSite=Lax). Un DELETE d'un autre site
@@ -152,11 +155,13 @@ api.post('/auth/setup', h((req, res) => {
 api.post('/auth/login', h(async (req, res) => {
   const username = str(req.body.username, 60);
   const password = String(req.body.password || '');
-  if (auth.tooManyFailures(username)) throw httpError(429, 'Trop de tentatives, réessaie dans 15 minutes.');
+  if (auth.tooManyFailures(username)) throw httpError(429, 'Trop de tentatives pour ce compte, réessaie dans 15 minutes.');
   const user = db.prepare('SELECT id, username, role, default_library_id, password_hash FROM users WHERE username = ?').get(username);
-  if (!user || !auth.verifyPassword(password, user.password_hash)) {
+  // Meme calcul que le compte existe ou non (voir verifyPasswordAsync).
+  const valid = await auth.verifyPasswordAsync(password, user && user.password_hash);
+  if (!user || !valid) {
     auth.recordFailure(username);
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, auth.failureDelay()));
     throw httpError(401, 'Identifiant ou mot de passe incorrect.');
   }
   auth.createSession(req, res, user.id);
@@ -172,10 +177,13 @@ api.post('/auth/logout', (req, res) => {
 // ---------- Mon compte ----------
 api.use('/me', auth.requireAuth);
 
-api.post('/me/password', h((req, res) => {
+api.post('/me/password', h(async (req, res) => {
   const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
-  if (!auth.verifyPassword(String(req.body.current || ''), user.password_hash)) throw httpError(400, 'Mot de passe actuel incorrect.');
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(auth.hashPassword(readPassword(req.body.password)), req.user.id);
+  if (!await auth.verifyPasswordAsync(String(req.body.current || ''), user.password_hash)) throw httpError(400, 'Mot de passe actuel incorrect.');
+  const hash = await auth.hashPasswordAsync(readPassword(req.body.password));
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user.id);
+  // Les autres appareils connectes avec l'ancien mot de passe sont deconnectes.
+  auth.revokeSessions(req.user.id, req.sessionHash);
   res.json({ ok: true });
 }));
 
@@ -425,22 +433,53 @@ api.use(apiErrors);
 // index.html est servi avec les chemins absolus de l'app et la bibliotheque courante
 // (window.MLL) : la meme page sert l'accueil et chaque bibliotheque.
 const INDEX_TEMPLATE = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
-// Change a chaque demarrage : app.js et style.css sont recharges apres une mise a jour.
-const ASSET_VERSION = Date.now().toString(36);
-function renderIndex(req, library) {
-  const root = auth.rootPath(req);
-  const config = JSON.stringify({ root, library: library ? { id: library.id, slug: library.slug, name: library.name, logoUrl: mediaUrl(library.logo) } : null })
-    .replace(/</g, '\\u003c');
-  const title = library ? library.name.replace(/[<&"]/g, '') : 'Bibliothèques';
-  return INDEX_TEMPLATE
-    .replace('{{MANIFEST}}', library ? `${root}/${library.slug}/manifest.webmanifest` : `${root}/manifest.webmanifest`)
-    .replace(/\{\{ROOT\}\}/g, root)
-    .replace(/\{\{VERSION\}\}/g, ASSET_VERSION)
-    .replace(/\{\{TITLE\}\}/g, title)
-    .replace('{{CONFIG}}', config);
+// Version des fichiers de l'interface : empreinte de leurs noms, tailles et dates.
+// Elle ne change que si un fichier de public/ change (mise a jour de l'app), pas a
+// chaque redemarrage : le cache des navigateurs reste valable entre deux versions.
+// Recalculee au plus toutes les 2 secondes : en developpement, un fichier modifie est
+// pris en compte au rechargement de la page, sans redemarrer.
+let assetVersionAt = 0;
+let assetVersionValue = '';
+function assetVersion() {
+  if (Date.now() - assetVersionAt < 2000) return assetVersionValue;
+  const hash = crypto.createHash('sha256');
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1)).forEach((e) => {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) return walk(full);
+    const st = fs.statSync(full);
+    hash.update(`${path.relative(PUBLIC_DIR, full)}:${st.size}:${Math.floor(st.mtimeMs)};`);
+  });
+  walk(PUBLIC_DIR);
+  assetVersionAt = Date.now();
+  assetVersionValue = hash.digest('hex').slice(0, 10);
+  return assetVersionValue;
 }
 
-app.get('/', (req, res) => res.set('Cache-Control', 'no-cache').type('html').send(renderIndex(req, null)));
+// Page envoyee avec sa politique de contenu (voir lib/security.js). Les valeurs sont
+// inserees par une fonction : un nom contenant $& ou $' n'est pas interprete par
+// String.replace.
+function sendIndex(req, res, library) {
+  const root = auth.rootPath(req);
+  const nonce = security.pagePolicy(res);
+  const assets = `${root}/v/${assetVersion()}`;
+  const config = JSON.stringify({
+    root, assets,
+    library: library ? { id: library.id, slug: library.slug, name: library.name, logoUrl: mediaUrl(library.logo) } : null,
+  }).replace(/</g, '\\u003c');
+  const title = library ? library.name.replace(/[<&"]/g, '') : 'Bibliothèques';
+  const values = {
+    MANIFEST: library ? `${root}/${library.slug}/manifest.webmanifest` : `${root}/manifest.webmanifest`,
+    ROOT: root,
+    ASSETS: assets,
+    TITLE: title,
+    NONCE: nonce,
+    CONFIG: config,
+  };
+  const html = INDEX_TEMPLATE.replace(/\{\{([A-Z]+)\}\}/g, (m, key) => (key in values ? values[key] : m));
+  res.set('Cache-Control', 'no-cache').type('html').send(html);
+}
+
+app.get('/', (req, res) => sendIndex(req, res, null));
 
 // Manifeste d'application (installation sur l'ecran d'accueil du telephone) : un par
 // bibliotheque (nom, page de depart), et un pour l'accueil. Portee = toute l'app,
@@ -495,13 +534,14 @@ function libraryPage(req, res, next) {
   if (found.moved || req.params.slug !== found.library.slug || !req.originalUrl.split('?')[0].endsWith('/')) {
     return res.redirect(301, `${auth.rootPath(req)}/${found.library.slug}/`);
   }
-  res.set('Cache-Control', 'no-cache').type('html').send(renderIndex(req, found.library));
+  sendIndex(req, res, found.library);
 }
 app.get('/:slug', libraryPage);
 app.get('/:slug/', libraryPage);
 
-app.use((req, res) => res.status(404).type('html').send(
-  `<!doctype html><meta charset="utf-8"><title>Introuvable</title><p style="font-family:sans-serif;padding:24px">Page introuvable. <a href="${auth.rootPath(req)}/">Voir les bibliothèques</a></p>`));
+app.use((req, res) => { security.pagePolicy(res); res.status(404).type('html').send(
+  `<!doctype html><meta charset="utf-8"><title>Introuvable</title><p style="font-family:sans-serif;padding:24px">Page introuvable. <a href="${auth.rootPath(req)}/">Voir les bibliothèques</a></p>`);
+});
 
 // Lance seul en developpement (node server.js) ; charge par la passerelle, on se
 // contente d'exporter l'app, c'est elle qui ecoute sur le port.

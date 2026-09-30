@@ -10,6 +10,8 @@
   })();
   const LIBRARY = CONFIG.library || null;
   const LIB = LIBRARY ? `${ROOT}/${LIBRARY.slug}` : null;
+  // Fichiers de l'interface (scanner, liseuse...) : adresse versionnee, gardee en cache.
+  const ASSETS = typeof CONFIG.assets === 'string' ? CONFIG.assets : ROOT;
   const libUrl = (slug) => `${ROOT}/${slug}/`;
 
   const state = {
@@ -93,6 +95,23 @@
     window.addEventListener('scroll', () => { if (tip && !tip.hidden) hide(); }, { passive: true });
     window.addEventListener('hashchange', hide);
   })();
+
+  // Image introuvable (couverture en ligne disparue) : reaction choisie par l'attribut
+  // data-onerror. Un seul ecouteur pour toute la page : la politique de contenu (CSP)
+  // interdit les attributs onerror="..." en ligne.
+  document.addEventListener('error', (e) => {
+    const img = e.target;
+    if (!img || img.tagName !== 'IMG' || !img.dataset.onerror) return;
+    const mode = img.dataset.onerror;
+    if (mode === 'hide') img.style.visibility = 'hidden';
+    else if (mode === 'drop-choice') { const c = img.closest('.cover-choice'); if (c) c.remove(); }
+    else if (mode === 'placeholder') {
+      const span = document.createElement('span');
+      span.className = 'thumb';
+      span.setAttribute('aria-hidden', 'true');
+      img.replaceWith(span);
+    }
+  }, true);
 
   // Les chemins d'images renvoyes par l'API sont relatifs a la bibliotheque (ou a la racine).
   function mediaSrc(url) {
@@ -365,9 +384,9 @@
       } catch (e) { /* on bascule sur le polyfill */ }
     }
     if (!window.BarcodeDetectionAPI) {
-      await loadScript(ROOT + '/vendor/barcode-detector.js');
+      await loadScript(ASSETS + '/vendor/barcode-detector.js');
       window.BarcodeDetectionAPI.prepareZXingModule({
-        overrides: { locateFile: (p, prefix) => (p.endsWith('.wasm') ? ROOT + '/vendor/zxing_reader.wasm' : prefix + p) },
+        overrides: { locateFile: (p, prefix) => (p.endsWith('.wasm') ? ASSETS + '/vendor/zxing_reader.wasm' : prefix + p) },
       });
     }
     return (detectors[key] = new window.BarcodeDetectionAPI.BarcodeDetector({ formats }));
@@ -389,7 +408,7 @@
 
   let quaggaPromise = null;
   function loadQuagga() {
-    if (!quaggaPromise) quaggaPromise = loadScript(ROOT + '/vendor/quagga.min.js');
+    if (!quaggaPromise) quaggaPromise = loadScript(ASSETS + '/vendor/quagga.min.js');
     return quaggaPromise;
   }
 
@@ -578,7 +597,7 @@
           results.innerHTML = covers.map((c, i) => `
             <button type="button" class="cover-choice" data-i="${i}" title="${esc([c.title, c.detail].filter(Boolean).join(' — '))}">
               <span class="cover-choice-img"><img src="${esc(c.thumb || c.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"
-                onerror="this.closest('.cover-choice').remove()"></span>
+                data-onerror="drop-choice"></span>
               <span class="cover-choice-src">${esc(c.source)}${c.loose ? ' · à vérifier' : ''}</span>
               <span class="cover-choice-title">${esc(c.title)}</span>
             </button>`).join('');
@@ -2743,8 +2762,8 @@
     if (!book.ebookFile || !book.ebookFile.read) {
       throw new Error(state.user ? "Ton compte n'a pas accès à la lecture de ce livre." : 'Connecte-toi pour lire ce livre.');
     }
-    if (!window.JSZip) await loadScript(ROOT + '/vendor/jszip.min.js');
-    if (!window.ePub) await loadScript(ROOT + '/vendor/epub.min.js');
+    if (!window.JSZip) await loadScript(ASSETS + '/vendor/jszip.min.js');
+    if (!window.ePub) await loadScript(ASSETS + '/vendor/epub.min.js');
     const res = await fetch(`${LIB}/api/public/books/${id}/epub`, { credentials: 'same-origin' });
     if (!res.ok) throw new Error('Lecture du fichier impossible.');
     const data = await res.arrayBuffer();
@@ -3845,7 +3864,7 @@
   async function readTable(file) {
     let rows;
     if (/\.xlsx$/i.test(file.name)) {
-      if (!window.readXlsxFile) await loadScript(ROOT + '/vendor/read-excel-file.min.js');
+      if (!window.readXlsxFile) await loadScript(ASSETS + '/vendor/read-excel-file.min.js');
       const r = await window.readXlsxFile(file);
       rows = Array.isArray(r) && r[0] && !Array.isArray(r[0]) && r[0].data ? r[0].data : r;
     } else if (/\.(xls|ods|numbers)$/i.test(file.name)) {
@@ -4211,7 +4230,7 @@
 
     function itemHtml(it, i) {
       const f = it.found;
-      const img = f && f.coverUrl ? `<img class="thumb" src="${esc(f.coverUrl)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : '<span class="thumb"></span>';
+      const img = f && f.coverUrl ? `<img class="thumb" src="${esc(f.coverUrl)}" alt="" loading="lazy" data-onerror="hide">` : '<span class="thumb"></span>';
       const title = it.state === 'loading' ? '<span class="muted">Recherche…</span>'
         : f ? `<strong>${esc(f.title)}</strong><div class="small muted">${esc(f.authors || '')}${f.year ? ' · ' + f.year : ''}</div>`
           : '<span style="color:var(--warn)">Introuvable</span><div class="small muted">sera créé si un titre est trouvé, sinon ignoré</div>';
@@ -5289,7 +5308,7 @@
 
   // Vignette d'un souhait (image en ligne ou enregistree ; retiree si elle ne charge pas).
   const wishThumb = (w) => (w.coverUrl
-    ? `<img class="thumb" src="${esc(wishSrc(w.coverUrl))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<span class=&quot;thumb&quot; aria-hidden=&quot;true&quot;></span>'">`
+    ? `<img class="thumb" src="${esc(wishSrc(w.coverUrl))}" alt="" loading="lazy" referrerpolicy="no-referrer" data-onerror="placeholder">`
     : '<span class="thumb" aria-hidden="true"></span>');
 
   function wishItemHtml(w, { me, manager, multi }) {
