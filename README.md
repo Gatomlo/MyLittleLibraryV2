@@ -205,14 +205,26 @@ de commande :
 npm run set-password -- <identifiant> <mot-de-passe>
 ```
 
+## Développement
+
+```bash
+npm test             # tests d'API (node:test) sur des données temporaires : droits, parcours, protections
+npm run lint         # ESLint : variable inconnue, import oublié ou inutile
+node scripts/demo.js # instance jetable avec comptes et livres d'exemple : http://localhost:3100/demo/
+```
+
+Les tests et la démonstration n'utilisent jamais `data/`. En production, `npm install --omit=dev`
+suffit (ESLint n'y sert pas). Organisation du code : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ;
+interface : [public/app/README.md](public/app/README.md).
+
 ## Monter dans la passerelle (dev local)
 
 ```powershell
 New-Item -ItemType Junction -Path "C:\Users\thoma\ClaudeIA\node-gateway\apps\mylittlelibrary" -Target "C:\Users\thoma\ClaudeIA\MyLittleLibraryV2"
 ```
 
-L'app est alors servie sur `/mylittlelibrary`. Côté navigateur, tous les chemins sont
-relatifs et les appels passent par la constante `BASE` de `public/app.js`. Le cookie
+L'app est alors servie sur `/mylittlelibrary`. Côté navigateur, le chemin de montage est
+fourni par le serveur (`window.MLL.root`, lu dans `public/app/etat.js`). Le cookie
 de session est limité à ce chemin.
 
 ## Configuration (variables d'environnement)
@@ -221,7 +233,25 @@ de session est limité à ce chemin.
 | --- | --- |
 | `PORT` | Port en mode autonome (3000 par défaut). |
 | `MLL_DATA_DIR` | Dossier des données (`data/` par défaut) : `central.db` + un dossier par bibliothèque dans `libraries/` (voir Données). |
+| `MLL_FRAME_ANCESTORS` | Sites autorisés à afficher l'app dans un cadre (adresses séparées par des espaces, `*` pour tous). Par défaut : l'app elle-même et Microsoft Teams. |
+| `MLL_CSP` | `report` : la politique de contenu signale les violations dans la console sans rien bloquer ; `off` : aucune politique. À n'utiliser que pour diagnostiquer. |
+| `MLL_ALLOW_LOCAL_FETCH` | `1` : autorise le téléchargement de couvertures depuis `localhost` (développement : réimport d'un export local). |
+| `MLL_OFFLINE` | `1` : aucune recherche en ligne (ISBN, couvertures). Utilisé par les tests. |
 | `GOOGLE_BOOKS_API_KEY` | Clé Google Books (gratuite) : sans elle, le quota anonyme est souvent épuisé et seules BnF/Open Library répondent. Peut aussi être saisie dans **Administration › Google Books** (prioritaire, avec guide pas à pas). |
+
+## Sécurité
+
+- **Droits** : visiteur (catalogue public), lecteur, bibliothécaire, gestionnaire, administrateur. La
+  matrice complète est vérifiée par `tests/droits.test.js`.
+- **Sessions** : mot de passe haché (scrypt), jeton de session haché en base, cookie `HttpOnly`.
+  Huit échecs de connexion bloquent le compte visé 15 minutes ; changer son mot de passe ferme les
+  autres sessions.
+- **Page** : politique de contenu (CSP) avec nonce, aucun script en ligne ni CDN (scanner, liseuse et
+  police Nunito sont servis par l'app depuis `public/vendor/` et `public/fonts/`).
+- **Fichiers reçus** : images vérifiées (type, 5 Mo), couvertures par adresse limitées aux sites
+  publics, epub et archives lus avec un plafond de décompression.
+- **Exports CSV** : un texte commençant par `=`, `+`, `-` ou `@` est précédé d'une apostrophe
+  (retirée à l'import) pour ne pas être exécuté comme une formule.
 
 ## Scan et https
 

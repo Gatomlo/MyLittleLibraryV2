@@ -37,5 +37,5 @@ charge directement ces fichiers (`<script type="module" src="…/app/main.js">` 
   de la page (CSP, `lib/security.js`) les bloque. Utiliser `addEventListener`, ou `data-onerror` pour une
   image introuvable (voir `utilitaires.js`).
 - **Tout texte venant des données passe par `esc()`** avant d'être inséré dans du HTML.
-- **Fichiers servis sous `/v/<version>/`** (gardés en cache par le navigateur) : `ASSETS` (dans `etat.js`)
+- **Fichiers servis sous `/_v/<version>/`** (gardés en cache par le navigateur) : `ASSETS` (dans `etat.js`)
   pour charger un fichier de `vendor/`. La version change dès qu'un fichier de `public/` change.

@@ -1,7 +1,8 @@
 // Protections : en-tetes, connexion, sessions, fichiers pieges.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { setup, stop, client, login, PASSWORD } = require('./helpers');
+const express = require('express');
+const { app, setup, stop, client, login, PASSWORD } = require('./helpers');
 const { epub } = require('./fixtures');
 
 let ctx;
@@ -33,7 +34,7 @@ test('page : politique de contenu, nonce du script, pas d\'en-tete Express', asy
 test('fichiers de l\'interface : adresse versionnee gardee en cache, reponses compressees', async () => {
   const page = (await ctx.anonyme.get('/')).body;
   const assets = /href="([^"]+)\/style\.css"/.exec(page)[1];
-  assert.match(assets, /^\/v\/[0-9a-f]{10}$/);
+  assert.match(assets, /^\/_v\/[0-9a-f]{10}$/);
   const css = await ctx.anonyme.get(`${assets}/style.css`, { headers: { 'Accept-Encoding': 'gzip' } });
   assert.equal(css.status, 200);
   assert.match(css.headers.get('cache-control'), /immutable/);
@@ -44,6 +45,33 @@ test('fichiers de l\'interface : adresse versionnee gardee en cache, reponses co
   assert.equal((await ctx.anonyme.get('/sw.js')).headers.get('cache-control'), 'no-cache');
   const json = await ctx.admin.get(`${ctx.api}/books`, { headers: { 'Accept-Encoding': 'gzip' } });
   assert.equal(json.status, 200);
+});
+
+test('montee sous un chemin (passerelle) : adresses et cookie prefixes', async () => {
+  const parent = express();
+  parent.use('/mylittlelibrary', app);
+  const server = await new Promise((resolve) => { const s = parent.listen(0, '127.0.0.1', () => resolve(s)); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const html = await (await fetch(`${base}/mylittlelibrary/${ctx.lib.slug}/`)).text();
+    const config = JSON.parse(/window\.MLL = (.*);<\/script>/.exec(html)[1]);
+    assert.equal(config.root, '/mylittlelibrary');
+    assert.match(config.assets, /^\/mylittlelibrary\/_v\/[0-9a-f]{10}$/);
+    for (const file of ['style.css', 'app/main.js', 'app/etat.js', 'vendor/epub.min.js']) {
+      assert.equal((await fetch(`${base}${config.assets}/${file}`)).status, 200, file);
+    }
+    assert.ok(html.includes(`<script type="module" src="${config.assets}/app/main.js">`));
+    const res = await fetch(`${base}/mylittlelibrary/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: PASSWORD }),
+    });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.getSetCookie().join(' '), /Path=\/mylittlelibrary\/; .*HttpOnly/);
+    // Sans le prefixe, une redirection d'ancienne adresse reste sous le chemin de montage.
+    const old = await fetch(`${base}/mylittlelibrary/${ctx.lib.slug}`, { redirect: 'manual' });
+    assert.equal(old.headers.get('location'), `/mylittlelibrary/${ctx.lib.slug}/`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test('nom de bibliotheque avec $ et balises : page intacte', async () => {

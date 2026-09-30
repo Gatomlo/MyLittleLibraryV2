@@ -44,11 +44,11 @@ app.use(express.json({ limit: '8mb' }));
 
 // Fichiers de l'interface (scripts, styles, polices, scanner et liseuse de
 // public/vendor : aucune dependance a un CDN externe). Deux adresses :
-//  - /v/<version>/... : la version fait partie de l'adresse (empreinte des fichiers), le
+//  - /_v/<version>/... (prefixe impossible pour une adresse de bibliotheque) : la version fait partie de l'adresse (empreinte des fichiers), le
 //    navigateur garde donc le fichier sans jamais le redemander ; une mise a jour de
 //    l'app change la version (assetVersion), donc toutes les adresses ;
 //  - /... (icones, sw.js, embed.js) : toujours revalides (reponse 304 si inchanges).
-app.use('/v/:version', express.static(PUBLIC_DIR, { index: false, immutable: true, maxAge: '365d' }));
+app.use('/_v/:version', express.static(PUBLIC_DIR, { index: false, immutable: true, maxAge: '365d' }));
 app.use(express.static(PUBLIC_DIR, { index: false, setHeaders: (res) => res.set('Cache-Control', 'no-cache') }));
 
 // Les POST/PUT doivent etre en JSON : un formulaire d'un autre site ne peut pas en
@@ -460,7 +460,7 @@ function assetVersion() {
 function sendIndex(req, res, library) {
   const root = auth.rootPath(req);
   const nonce = security.pagePolicy(res);
-  const assets = `${root}/v/${assetVersion()}`;
+  const assets = `${root}/_v/${assetVersion()}`;
   const config = JSON.stringify({
     root, assets,
     library: library ? { id: library.id, slug: library.slug, name: library.name, logoUrl: mediaUrl(library.logo) } : null,
