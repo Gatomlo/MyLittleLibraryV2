@@ -135,6 +135,7 @@ p { margin: 0 0 10px; }
   }
   .hide-mobile { display: none !important; }
   .btn-row.only-mobile { display: flex !important; }
+  span.show-mobile { display: inline !important; }
   .nav.open a { padding: 11px 14px; font-size: 16px; border-radius: 14px; gap: 12px; }
   body.nav-open { overflow: hidden; }
 }
@@ -271,7 +272,11 @@ p { margin: 0 0 10px; }
 .btn-icon { gap: 6px; }
 .btn-block { width: 100%; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.only-mobile { display: none !important; }
+.only-mobile, .show-mobile { display: none !important; }
+/* Liens d'invitation et role par bibliotheque (Administration > Comptes). */
+.invite-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.invite-form select { flex: 1 1 130px; min-width: 0; width: auto; }
+.sel-row .sel-role { width: auto; min-height: 32px; padding: 2px 8px; font-size: 13px; flex-shrink: 0; }
 .scan-btn { background: linear-gradient(135deg, var(--sun), var(--coral)); border-color: transparent; color: #fff;
   box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--coral) 80%, transparent); }
 .scan-btn:hover { background: linear-gradient(135deg, var(--sun), var(--coral)); filter: brightness(1.05); }
@@ -850,9 +855,12 @@ span.wish-heart:not(.on) { visibility: hidden; }
 .wish-export.only-mobile { margin-top: 12px; justify-content: flex-end; }
 .wish-form-grid { display: grid; grid-template-columns: 110px 1fr; gap: 14px; align-items: start; }
 .wish-form-grid .cover { width: 110px; }
+.wish-cover-col { display: flex; flex-direction: column; gap: 8px; }
+.wish-cover-col .btn-row { flex-wrap: nowrap; }
 @media (max-width: 600px) {
   .wish-form-grid { grid-template-columns: 1fr; }
   .wish-form-grid .cover { width: 90px; }
+  .wish-cover-col { flex-direction: row; align-items: flex-end; }
   .wish-actions { width: 100%; justify-content: flex-start; }
 }
 
@@ -955,6 +963,9 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
   .home-cards { display: none; }
   .home-tiles { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows, 4), minmax(0, 1fr)); gap: 8px; min-height: 0; overflow: hidden; }
   .home-tile { display: flex; flex-direction: column; align-items: stretch; gap: 2px; min-width: 0; min-height: 0; overflow: hidden; padding: 8px 10px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: var(--shadow); }
+  .home-tile[hidden] { display: none; }
+  .home-tile.home-more { align-items: center; justify-content: center; box-shadow: none; background: none; color: var(--accent); }
+  .home-tiles.compact .home-tile.home-more { display: flex; }
   .home-tile .tile-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .home-tile .h-icon { width: 24px; height: 24px; border-radius: 8px; }
   .home-tile .tile-label { font-size: 13px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

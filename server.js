@@ -9,6 +9,7 @@ const {
 const auth = require('./lib/auth');
 const archives = require('./lib/archives');
 const { registerWishes } = require('./lib/wishes');
+const { registerInvitations } = require('./lib/invitations');
 const media = require('./lib/media');
 const { createLibraryRouter, findLibrary, mediaUrl, str, intOrNull } = require('./lib/library-api');
 
@@ -79,7 +80,8 @@ api.use(auth.loadUser, jsonOnly);
 
 // Logo relatif a la racine de l'app (chaque bibliotheque sert ses images).
 function libraryInfo(l) {
-  return { id: l.id, slug: l.slug, name: l.name, logoUrl: l.logo ? `${l.slug}/${mediaUrl(l.logo)}` : null };
+  // role : celui du compte dans la bibliotheque (listes de auth.librariesOf).
+  return { id: l.id, slug: l.slug, name: l.name, logoUrl: l.logo ? `${l.slug}/${mediaUrl(l.logo)}` : null, ...(l.role ? { role: l.role } : {}) };
 }
 
 // Adresses des bibliotheques (sans leurs noms) : sert uniquement a rediriger les
@@ -139,7 +141,7 @@ api.post('/auth/setup', h((req, res) => {
       || createLibrary(req.body.libraryName || 'Bibliothèque du bureau');
     const id = Number(db.prepare("INSERT INTO users (username, password_hash, role, default_library_id) VALUES (?, ?, 'admin', ?)")
       .run(username, auth.hashPassword(password), lib.id).lastInsertRowid);
-    db.prepare('INSERT INTO user_libraries (user_id, library_id) VALUES (?, ?)').run(id, lib.id);
+    db.prepare("INSERT INTO user_libraries (user_id, library_id, role) VALUES (?, ?, 'manager')").run(id, lib.id);
     return { id, lib };
   });
   libraryDb(result.lib.id); // dossier et base de la bibliotheque
@@ -190,14 +192,19 @@ registerWishes(api);
 // ---------- Administration ----------
 api.use('/admin', auth.requireAdmin);
 
+// role : admin | user (compte ordinaire) ; libraries : ses bibliotheques et son role
+// dans chacune (manager | librarian | user).
 function userRow(u) {
+  const libraries = db.prepare('SELECT library_id AS id, role FROM user_libraries WHERE user_id = ?').all(u.id)
+    .map((l) => ({ id: l.id, role: auth.libraryRole(l.role) }));
   return {
     id: u.id,
     username: u.username,
-    role: u.role,
+    role: u.role === 'admin' ? 'admin' : 'user',
     defaultLibraryId: u.default_library_id,
     createdAt: u.created_at,
-    libraryIds: db.prepare('SELECT library_id FROM user_libraries WHERE user_id = ?').all(u.id).map((r) => r.library_id),
+    libraries,
+    libraryIds: libraries.map((l) => l.id),
   };
 }
 
@@ -205,21 +212,23 @@ api.get('/admin/users', (req, res) => {
   res.json(db.prepare('SELECT * FROM users ORDER BY username COLLATE NOCASE').all().map(userRow));
 });
 
+// body.libraries : [{ id, role }] (role du compte dans chaque bibliotheque).
 function applyUserLinks(userId, body) {
-  const ids = (Array.isArray(body.libraryIds) ? body.libraryIds : []).map(intOrNull).filter(Boolean);
   const existing = new Set(db.prepare('SELECT id FROM libraries').all().map((l) => l.id));
+  const links = (Array.isArray(body.libraries) ? body.libraries : [])
+    .map((l) => ({ id: intOrNull(l && l.id), role: auth.libraryRole(l && l.role) })).filter((l) => existing.has(l.id));
   db.prepare('DELETE FROM user_libraries WHERE user_id = ?').run(userId);
-  const link = db.prepare('INSERT OR IGNORE INTO user_libraries (user_id, library_id) VALUES (?, ?)');
-  ids.filter((id) => existing.has(id)).forEach((id) => link.run(userId, id));
+  const link = db.prepare('INSERT OR IGNORE INTO user_libraries (user_id, library_id, role) VALUES (?, ?, ?)');
+  links.forEach((l) => link.run(userId, l.id, l.role));
   let def = intOrNull(body.defaultLibraryId);
-  const linked = ids.filter((id) => existing.has(id));
+  const linked = links.map((l) => l.id);
   if (def && !linked.includes(def) && body.role !== 'admin') def = null;
   if (!def && linked.length) def = linked[0];
   db.prepare('UPDATE users SET default_library_id = ? WHERE id = ?').run(def || null, userId);
 }
 
 function readRole(v) {
-  return auth.ROLES.includes(v) ? v : 'manager';
+  return v === 'admin' ? 'admin' : 'user';
 }
 
 function adminCount(exceptId) {
@@ -267,6 +276,9 @@ api.delete('/admin/users/:id', h((req, res) => {
   res.json({ ok: true });
 }));
 
+// ---------- Liens d'invitation (voir lib/invitations.js) ----------
+registerInvitations(api, { readUsername, readPassword, libraryInfo });
+
 api.get('/admin/libraries', (req, res) => {
   res.json(db.prepare(`SELECT l.*, (SELECT COUNT(*) FROM user_libraries ul WHERE ul.library_id = l.id) AS users
     FROM libraries l ORDER BY l.name COLLATE NOCASE`).all()
@@ -284,7 +296,7 @@ api.post('/admin/libraries', h((req, res) => {
   const lib = tx(() => {
     const created = createLibrary(req.body.name, req.body.slug);
     // Le createur est lie a la nouvelle bibliotheque (elle apparait dans son menu).
-    db.prepare('INSERT OR IGNORE INTO user_libraries (user_id, library_id) VALUES (?, ?)').run(req.user.id, created.id);
+    db.prepare("INSERT OR IGNORE INTO user_libraries (user_id, library_id, role) VALUES (?, ?, 'manager')").run(req.user.id, created.id);
     return created;
   });
   libraryDb(lib.id); // dossier et base de la bibliotheque

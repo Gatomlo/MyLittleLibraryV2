@@ -13,11 +13,13 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   (`…/mylittlelibrary/bibliotheque-du-bureau/`), ses livres, exemplaires, codes,
   emprunteurs, nom, logo et réglages d'étiquettes. L'adresse est fixée à la création
   (modifiable par un administrateur ; l'ancienne reste redirigée).
-- **Comptes** : administrateurs (créent bibliothèques et comptes, gèrent tout),
-  gestionnaires (gèrent les bibliothèques auxquelles ils sont liés, réglages compris),
-  bibliothécaires (catalogue, ajouts, prêts, emprunteurs et étiquettes, sans les réglages de la bibliothèque)
-  et lecteurs (catalogue en lecture seule, avec leurs statuts de lecture, souhaits, statistiques et liseuse ;
-  ni ajout ni prêt). Réglages personnels de lecture (partage des statistiques, objectif annuel) dans « Mon compte ». Bibliothèque par
+- **Comptes** : administrateurs (créent bibliothèques et comptes, gèrent tout). Pour les autres comptes, le rôle
+  est propre à chaque bibliothèque (on peut être gestionnaire de l'une et lecteur d'une autre) :
+  gestionnaire (tout dans la bibliothèque, réglages compris),
+  bibliothécaire (catalogue, ajouts, prêts, emprunteurs et étiquettes, sans les réglages)
+  ou lecteur (catalogue en lecture seule, avec ses statuts de lecture, souhaits, statistiques et liseuse ;
+  ni ajout ni prêt). **Liens d'invitation** (Administration › Comptes) : un lien par bibliothèque et par rôle,
+  valable 7, 30 ou 90 jours ; la personne choisit son identifiant et son mot de passe (ou rejoint avec son compte). Réglages personnels de lecture (partage des statistiques, objectif annuel) dans « Mon compte ». Bibliothèque par
   défaut ouverte à la connexion ; le menu du compte permet de basculer.
   La racine du site n'affiche que la page de connexion.
 - **Catalogue public** (lecture seule, sans connexion) : recherche, filtre par
@@ -152,11 +154,11 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   bibliothécaires et gestionnaires : Souhaits les plus demandés (regroupés par livre, « Très envie » d'abord, ajout au catalogue en un
   clic pour tous les membres concernés) et Activité de la semaine (prêts, retours, ajouts, emprunteurs vs semaine
   précédente). Chaque compte choisit ses cartes et leur ordre (menu du compte > « Personnaliser l'accueil », par bibliothèque). Sur
-  smartphone : tuiles résumées sur une seule colonne (la page ne défile que si elles ne tiennent pas dans l'écran) ; une tuile ouvre la page.
+  smartphone : tuiles résumées sur une seule colonne, les 6 premières puis « Voir tout » ; une tuile ouvre la page.
 - **Souhaits** (lien « Souhaits », tout compte connecté) : liste de livres souhaités propre à chaque compte
   (hors bibliothèque) ; ajout par ISBN (tapé ou scanné) ou par titre (choix de l'édition), notes, « Très envie » (cœur cliquable dans la liste,
   filtre « Très envie seulement », aussi appliqué à l'export).
-  Couverture cherchée en ligne quand la recherche par ISBN n'en donne pas.
+  Couverture cherchée en ligne quand la recherche par ISBN n'en donne pas ; un clic sur l'image permet d'en choisir ou d'en photographier une.
   Partage de sa liste avec d'autres comptes (lecture seule). Les bibliothécaires et gestionnaires d'une bibliothèque voient les
   souhaits de ses membres (compte choisi dans une liste déroulante avec recherche, ou toutes les listes), les ajoutent au catalogue en un clic (fiche pré-remplie, le membre coché comme
   lecteur ; à l'enregistrement, le souhait est retiré de sa liste) et exportent en .xlsx / .csv les souhaits d'un ou plusieurs membres

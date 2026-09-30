@@ -22,12 +22,21 @@
   };
 
   const isAdmin = () => !!state.user && state.user.role === 'admin';
+  // Role du compte dans la bibliotheque de la page : admin, ou son role dans cette
+  // bibliotheque (manager | librarian | user) ; null si le compte n'y est pas lie.
+  const libRole = () => {
+    if (!state.user || !LIBRARY) return null;
+    if (isAdmin()) return 'admin';
+    const l = state.libraries.find((x) => x.slug === LIBRARY.slug);
+    return l ? l.role || 'user' : null;
+  };
   // Compte de la bibliotheque de la page (lie a elle, ou administrateur).
-  const isMember = () => !!state.user && !!LIBRARY && (isAdmin() || state.libraries.some((l) => l.slug === LIBRARY.slug));
+  const isMember = () => !!libRole();
   // Gestion du catalogue, des prets et des etiquettes : tous sauf les lecteurs (role user).
-  const canManage = () => isMember() && state.user.role !== 'user';
+  const canManage = () => { const r = libRole(); return !!r && r !== 'user'; };
   // Reglages de la bibliotheque : gestionnaires et administrateurs.
-  const canConfigure = () => isMember() && (isAdmin() || state.user.role === 'manager');
+  const canConfigure = () => ['admin', 'manager'].includes(libRole());
+  const LIBRARY_ROLES = ['user', 'librarian', 'manager'];
   const ROLE_LABELS = { admin: 'Administrateur', manager: 'Gestionnaire', librarian: 'Bibliothécaire', user: 'Lecteur' };
   const roleLabel = (r) => ROLE_LABELS[r] || ROLE_LABELS.manager;
   const ROLE_HELP = {
@@ -155,9 +164,9 @@
       const v = await dialog(`<h2>Pas d'adresse e-mail</h2>
         <p><strong>${esc(borrower.name)}</strong> n'a pas d'adresse e-mail enregistrée.</p>
         <div class="btn-row">
-          <button class="btn btn-primary" type="button" data-v="mail">Écrire quand même</button>
-          <button class="btn" type="button" data-v="copy">Copier le message</button>
-          <button class="btn" type="button" data-v="edit">Ajouter l'adresse</button>
+          <button class="btn btn-primary" type="button" data-v="mail"><span class="hide-mobile">Écrire quand même</span><span class="show-mobile">Écrire</span></button>
+          <button class="btn" type="button" data-v="copy"><span class="hide-mobile">Copier le message</span><span class="show-mobile">Copier</span></button>
+          <button class="btn" type="button" data-v="edit"><span class="hide-mobile">Ajouter l'adresse</span><span class="show-mobile">Adresse</span></button>
           <button class="btn" type="button" data-close>Annuler</button>
         </div>`);
       if (v === 'edit') { go(`#/borrower/${borrower.id}`); return false; }
@@ -168,7 +177,7 @@
     } else openMailto(borrower.email, msg);
     const ok = await dialog(`<h2>Relance de ${esc(borrower.name)}</h2>
       <p>Le message est prêt dans ta messagerie. Une fois envoyé, note la relance pour ne pas relancer deux fois.</p>
-      <div class="btn-row"><button class="btn btn-primary" type="button" data-v="yes">Noter la relance</button><button class="btn" type="button" data-close>Pas envoyé</button></div>`);
+      <div class="btn-row"><button class="btn btn-primary" type="button" data-v="yes"><span class="hide-mobile">Noter la relance</span><span class="show-mobile">Noter</span></button><button class="btn" type="button" data-close>Pas envoyé</button></div>`);
     if (ok !== 'yes') return false;
     await api('/api/loans/reminded', { method: 'POST', body: { ids: loans.map((l) => l.id) } });
     toast('Relance notée.');
@@ -524,7 +533,8 @@
 
   // Recherche de couvertures en ligne : grille de propositions (meme ISBN, autres
   // editions...), recherche modifiable et collage d'une URL. Renvoie l'URL choisie ou null.
-  function openCoverSearch(initial) {
+  // fetchCovers(parametres) : recherche utilisee (par defaut celle de la bibliotheque).
+  function openCoverSearch(initial, fetchCovers = (q) => api('/api/covers?' + new URLSearchParams(q))) {
     return new Promise((resolve) => {
       const backdrop = document.createElement('div');
       backdrop.className = 'modal-backdrop';
@@ -562,7 +572,7 @@
         status.textContent = 'Recherche en cours…';
         results.innerHTML = '';
         try {
-          const { covers } = await api('/api/covers?' + new URLSearchParams(q));
+          const { covers } = await fetchCovers(q);
           if (my !== seq) return;
           status.textContent = covers.length ? `${covers.length} couverture(s) trouvée(s) — clique pour choisir.` : 'Aucune couverture trouvée. Essaie avec un autre titre ou colle une adresse d\'image.';
           results.innerHTML = covers.map((c, i) => `
@@ -754,8 +764,8 @@
       if (!books.length) {
         const v = await dialog(`<h2>ISBN ${esc(r.isbn)} inconnu</h2>
           <p>Aucun livre avec cet ISBN dans cette bibliothèque.</p>
-          <div class="btn-row"><button class="btn btn-primary" type="button" data-v="add">Ajouter à la bibliothèque</button>
-            <button class="btn" type="button" data-v="wish">${icon('wish', 16)}Ajouter à mes souhaits</button>
+          <div class="btn-row"><button class="btn btn-primary" type="button" data-v="add"><span class="hide-mobile">Ajouter à la bibliothèque</span><span class="show-mobile">Ajouter</span></button>
+            <button class="btn" type="button" data-v="wish">${icon('wish', 16)}<span class="hide-mobile">Ajouter à mes souhaits</span><span class="show-mobile">Souhait</span></button>
             <button class="btn" type="button" data-close>Annuler</button></div>`);
         if (v === 'add') { pendingAddIsbn = r.isbn; go('#/add'); }
         if (v === 'wish' && await wishDialog(null, { isbn: r.isbn })) go('#/wishes');
@@ -804,7 +814,7 @@
         </div>
       </div>
       <div class="btn-row">
-        <button class="btn btn-ok" type="button" data-v="return">Enregistrer le retour</button>
+        <button class="btn btn-ok" type="button" data-v="return"><span class="hide-mobile">Enregistrer le retour</span><span class="show-mobile">Retour</span></button>
         <button class="btn btn-primary" type="button" data-v="next" title="Retour + scanner le suivant">${icon('scan', 16)}Retour + <span class="hide-mobile">scanner le </span>suivant</button>
       </div>
       <div class="btn-row" style="margin-top:10px">
@@ -831,8 +841,8 @@
       ${others.length ? `<p class="small muted">Ensuite : ${others.map((x) => esc(x.borrower.name)).join(', ')}</p>` : ''}
       <div class="btn-row">
         <button class="btn btn-primary" type="button" data-v="lend">Prêter à ${esc(first.borrower.name)}</button>
-        <button class="btn" type="button" data-v="ok">Mettre de côté</button>
-        <button class="btn" type="button" data-v="done">Retirer la réservation</button>
+        <button class="btn" type="button" data-v="ok"><span class="hide-mobile">Mettre de côté</span><span class="show-mobile">Garder</span></button>
+        <button class="btn" type="button" data-v="done"><span class="hide-mobile">Retirer la réservation</span><span class="show-mobile">Libérer</span></button>
       </div>`);
     if (v === 'done') await api(`/api/reservations/${first.id}`, { method: 'DELETE' }).catch((err) => toast(err.message, 'error'));
     if (v !== 'lend') return false;
@@ -1022,13 +1032,13 @@
     const libs = state.libraries.map((l) => `
       <div class="menu-item ${LIBRARY && l.slug === LIBRARY.slug ? 'current' : ''}" style="padding:0 4px 0 0">
         <a class="menu-item" href="${esc(libUrl(l.slug))}" style="flex:1;min-width:0">
-          ${l.logoUrl ? `<img src="${esc(ROOT + '/' + l.logoUrl)}" alt="">` : ''}<span class="grow">${esc(l.name)}</span></a>
+          ${l.logoUrl ? `<img src="${esc(ROOT + '/' + l.logoUrl)}" alt="">` : ''}<span class="grow">${esc(l.name)}${isAdmin() ? '' : ` <span class="small muted">${roleLabel(l.role)}</span>`}</span></a>
         <button class="star ${l.id === def ? 'on' : ''}" data-default="${l.id}" title="${l.id === def ? 'Bibliothèque par défaut' : 'Définir comme bibliothèque par défaut'}">${l.id === def ? '★' : '☆'}</button>
       </div>`).join('');
     const menu = document.createElement('div');
     menu.className = 'menu';
     menu.innerHTML = `
-      <div class="menu-head"><strong>${esc(u.username)}</strong>${roleLabel(u.role)}</div>
+      <div class="menu-head"><strong>${esc(u.username)}</strong>${libRole() ? roleLabel(libRole()) : isAdmin() ? roleLabel('admin') : ''}</div>
       <div class="menu-sep"></div>
       <div class="menu-title">Mes bibliothèques</div>
       ${libs || '<p class="small muted" style="padding:4px 10px">Aucune bibliothèque liée à ce compte.</p>'}
@@ -1111,6 +1121,7 @@
   // (la gerer : pas les lecteurs), 'config' (ses reglages), 'admin'.
   const LIBRARY_ROUTES = [
     [/^\/?$/, viewCatalog],
+    [/^\/invite\/([\w-]+)$/, viewInvite],
     [/^\/home$/, viewDashboard, 'user'],
     [/^\/book\/(\d+)$/, viewBook],
     [/^\/read\/(\d+)$/, viewReader],
@@ -1134,6 +1145,7 @@
   ];
   const HOME_ROUTES = [
     [/^\/?$/, viewHome],
+    [/^\/invite\/([\w-]+)$/, viewInvite],
     [/^\/login$/, viewLogin],
     [/^\/account$/, viewAccount, 'user'],
     [/^\/wishes$/, viewWishes, 'user'],
@@ -1205,7 +1217,7 @@
           ${l.logoUrl ? `<img src="${esc(ROOT + '/' + l.logoUrl)}" alt="">` : `<span class="ph">${esc(l.name.charAt(0).toUpperCase())}</span>`}
           <div><strong>${esc(l.name)}</strong><div class="small muted">/${esc(l.slug)}/${l.id === state.user.defaultLibraryId ? ' · par défaut' : ''}</div></div>
         </a>`).join('')}</div>`
-        : `<div class="empty">Aucune bibliothèque n'est liée à ton compte.${isAdmin() ? '<br><br><a class="btn btn-primary" href="#/admin">Créer une bibliothèque</a>' : ' Demande à un administrateur.'}</div>`}`;
+        : `<div class="empty">Aucune bibliothèque n'est liée à ton compte.${isAdmin() ? '<br><br><a class="btn btn-primary" href="#/admin"><span class="hide-mobile">Créer une bibliothèque</span><span class="show-mobile">Créer</span></a>' : ' Demande à un administrateur.'}</div>`}`;
   }
 
   async function viewLegacyRedirect(rest) {
@@ -1454,7 +1466,7 @@
     view().innerHTML = `
       <div class="page-head">
         <div><h1>Catalogue</h1></div>
-        ${canManage() ? '<div class="btn-row"><a class="btn hide-mobile" href="#/import">Ajout multiple</a><a class="btn btn-primary hide-mobile" href="#/add">+ Ajouter un livre</a></div>' : ''}
+        ${canManage() ? '<div class="btn-row"><a class="btn hide-mobile" href="#/import">Ajout multiple</a><a class="btn btn-primary hide-mobile" href="#/add">+ Ajouter un livre</a></div>' : koboOn() ? '<div class="btn-row"></div>' : ''}
       </div>
       <div id="active-filters"></div>
       ${body}`;
@@ -1534,7 +1546,7 @@
         onPick: (name) => { if (name !== (c.series || '')) { c.series = name; reload(); } },
       });
     }
-    if (canManage()) bindSelection(reload);
+    if (canManage() || koboOn()) bindSelection(reload);
     if ($('#mine')) $('#mine').onchange = (e) => { c.mine = e.target.checked; reload(); };
     [['#kobo-filter', 'kobo'], ['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#reader', 'reader'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion'], ['#rating', 'rating']].forEach(([selector, key]) => {
       const el = $(selector);
@@ -1547,17 +1559,19 @@
   // appui long sur une couverture, puis clic sur les couvertures, ou "Tout
   // sélectionner" = tous les livres du filtre en cours ; puis modification ou
   // suppression en masse.
+  // Lecteur (liseuse branchee) : seulement l'envoi groupe vers la liseuse.
   function bindSelection(reload) {
     const head = $('.page-head .btn-row');
     if (!head) return;
+    const manage = canManage();
     head.insertAdjacentHTML('afterbegin', '<button class="btn hide-mobile" type="button" id="select-toggle">Sélectionner</button>');
     document.body.insertAdjacentHTML('beforeend', `<div class="select-bar" id="select-bar" hidden>
       <strong id="select-count"></strong>
-      <button class="btn btn-small" type="button" id="select-all">Tout sélectionner</button>
+      <button class="btn btn-small" type="button" id="select-all"><span class="hide-mobile">Tout sélectionner</span><span class="show-mobile">Tout</span></button>
       <button class="btn btn-small" type="button" id="select-none">Aucun</button>
-      <button class="btn btn-small btn-primary" type="button" id="select-edit">Modifier</button>
-      ${koboOn() ? '<button class="btn btn-small" type="button" id="select-kobo">Envoyer sur la liseuse</button>' : ''}
-      <button class="btn btn-small btn-danger" type="button" id="select-delete">Supprimer</button>
+      ${manage ? '<button class="btn btn-small btn-primary" type="button" id="select-edit">Modifier</button>' : ''}
+      ${koboOn() ? `<button class="btn btn-small ${manage ? '' : 'btn-primary'}" type="button" id="select-kobo"><span class="hide-mobile">Envoyer sur la liseuse</span><span class="show-mobile">Liseuse</span></button>` : ''}
+      ${manage ? '<button class="btn btn-small btn-danger" type="button" id="select-delete">Supprimer</button>' : ''}
       <button class="btn btn-small" type="button" id="select-done" style="margin-left:auto">Terminer</button>
     </div>`);
     const bar = $('#select-bar');
@@ -1565,8 +1579,7 @@
     const refreshBar = () => {
       const n = state.selected.size;
       $('#select-count').textContent = `${n} livre${n > 1 ? 's' : ''} sélectionné${n > 1 ? 's' : ''}`;
-      $('#select-delete').disabled = !n;
-      $('#select-edit').disabled = !n;
+      if (manage) { $('#select-delete').disabled = !n; $('#select-edit').disabled = !n; }
       if ($('#select-kobo')) $('#select-kobo').disabled = !n;
     };
     const setMode = (on, firstId) => {
@@ -1590,7 +1603,7 @@
         loadBooks(false);
       } catch (err) { toast(err.message, 'error'); }
     };
-    $('#select-delete').onclick = async () => {
+    if (manage) $('#select-delete').onclick = async () => {
       const n = state.selected.size;
       if (!n || !confirm(`Supprimer définitivement ${n} livre(s), leurs exemplaires et leur historique de prêts ?\nLes livres dont un exemplaire est en prêt seront conservés.`)) return;
       try {
@@ -1601,7 +1614,7 @@
         reload();
       } catch (err) { toast(err.message, 'error'); }
     };
-    $('#select-edit').onclick = () => bulkEditDialog(Array.from(state.selected), () => { refreshBar(); reload(); });
+    if (manage) $('#select-edit').onclick = () => bulkEditDialog(Array.from(state.selected), () => { refreshBar(); reload(); });
     const selKobo = $('#select-kobo');
     if (selKobo) selKobo.onclick = busy(async (btn) => {
       const ids = Array.from(state.selected);
@@ -1610,7 +1623,7 @@
         toast(`${r.sent} livre(s) envoyé(s)${r.already ? `, ${r.already} déjà sur la liseuse` : ''}${r.skipped ? `, ${r.skipped} sans fichier ou sans droit` : ''}.`
           + (r.sent ? (kobo && kobo.write ? ' Éjecte la liseuse pour qu\'elle les importe.' : ' Copie les fichiers téléchargés sur la liseuse.') : ''));
         reload();
-      } finally { btn.textContent = 'Envoyer sur la liseuse'; }
+      } finally { btn.innerHTML = '<span class="hide-mobile">Envoyer sur la liseuse</span><span class="show-mobile">Liseuse</span>'; }
     });
     // Appui long sur une couverture : active la selection avec ce livre (le clic
     // qui suit est ignore). Menu contextuel du navigateur neutralise sur les couvertures.
@@ -2471,7 +2484,7 @@
     const devices = await api('/api/kobo/devices');
     view().innerHTML = `
       <div class="page-head"><div><h1>Liseuses ${hint('Branche une Kobo en USB puis « Scanner une Kobo » et choisis le lecteur de la liseuse (KOBOeReader). Rien n\'est modifié sur la liseuse.')}</h1></div>
-        <button class="btn btn-primary" id="kobo-scan">Scanner une Kobo</button></div>
+        <button class="btn btn-primary" id="kobo-scan"><span class="hide-mobile">Scanner une Kobo</span><span class="show-mobile">Scanner</span></button></div>
       ${koboWarning()}
       ${devices.length ? `<div class="lib-grid">${devices.map((d) => `
         <a class="card kobo-card" href="#/kobo/${d.id}">
@@ -2587,8 +2600,8 @@
       <div class="page-head"><div><h1>${esc(d.name)}</h1>
         <p class="small muted">${d.owner ? `Propriétaire : ${esc(d.owner.username)}` : 'Sans propriétaire'} · ${d.books} livre(s) · scan du ${d.lastScanAt ? fmtDate(d.lastScanAt) : '—'}${d.firmware ? ` · firmware ${esc(d.firmware)}` : ''}</p></div>
         <div class="btn-row">
-          <button class="btn btn-primary" id="kobo-rescan">${connected() ? 'Rescanner' : 'Brancher et scanner'}</button>
-          ${toCopy.length && canManage() ? `<button class="btn" id="kobo-copy-all">Copier les ${toCopy.length} fichier(s) manquant(s)</button>` : ''}
+          <button class="btn btn-primary" id="kobo-rescan">${connected() ? 'Rescanner' : '<span class="hide-mobile">Brancher et scanner</span><span class="show-mobile">Brancher</span>'}</button>
+          ${toCopy.length && canManage() ? `<button class="btn" id="kobo-copy-all"><span class="hide-mobile">Copier les ${toCopy.length} fichier(s) manquant(s)</span><span class="show-mobile">Copier (${toCopy.length})</span></button>` : ''}
           <button class="btn" id="kobo-edit">Modifier</button>
         </div></div>
       ${koboWarning()}
@@ -2600,7 +2613,7 @@
         ${tags.some((t) => t.count) ? '<input type="search" id="ktag" placeholder="Tous les tags">' : ''}
         <select id="kreading">${[['', 'Lecture : toutes'], ['unread', 'Pas commencés'], ['reading', 'En cours'], ['read', 'Lus'], ['abandoned', 'Abandonnés'], ['pending', 'En attente d’import']].map(([v, l]) => opt(v, l, k.reading)).join('')}</select>
         <select id="ksort">${[['series', 'Tri : série'], ['title', 'Tri : titre'], ['author', 'Tri : auteur'], ['recent', 'Tri : dernière lecture']].map(([v, l]) => opt(v, l, k.sort)).join('')}</select>
-        ${filtered ? '<button class="btn" type="button" id="kclear">Effacer les filtres</button>' : ''}
+        ${filtered ? '<button class="btn" type="button" id="kclear"><span class="hide-mobile">Effacer les filtres</span><span class="show-mobile">Effacer</span></button>' : ''}
       </div>
       <div class="seg seg-3" style="max-width:560px">
         ${seg('all', 'Tous', d.items.length)}${seg('nobook', 'Sans fiche', d.items.filter((i) => !i.book).length)}${seg('nofile', 'Sans fichier', d.items.filter((i) => i.book && !i.book.hasFile).length)}
@@ -2615,7 +2628,7 @@
             : `<span class="btn-row">${canManage() ? `<button class="btn btn-small btn-primary" data-create="${i.id}">Créer la fiche</button>` : ''}<button class="btn btn-small" data-link="${i.id}">Rattacher…</button></span>`}</td>
           <td>${!i.book ? '<span class="muted">—</span>' : i.book.hasFile ? '<span class="badge badge-ok">Oui</span>'
             : !canManage() ? '<span class="badge badge-muted">Non</span>'
-            : `<button class="btn btn-small" data-copy="${i.id}" ${i.path && !i.pending ? '' : 'disabled title="Fichier inaccessible (carte SD ou pas encore importé)"'}>Copier depuis la Kobo</button>`}</td>
+            : `<button class="btn btn-small" data-copy="${i.id}" ${i.path && !i.pending ? '' : 'disabled title="Fichier inaccessible (carte SD ou pas encore importé)"'}><span class="hide-mobile">Copier depuis la Kobo</span><span class="show-mobile">Copier</span></button>`}</td>
         </tr>`).join('')}</tbody></table></div>`
         : '<div class="empty">Aucun livre dans cette liste.</div>'}`;
 
@@ -2826,10 +2839,10 @@
         ${reservations.length ? `<div class="warn-box">Réservé pour ${reservations.map((r) => `<a href="#/borrower/${r.borrower.id}"><strong>${esc(r.borrower.name)}</strong></a>`).join(', ')}</div>` : ''}
         ${copy.loan ? `
           <div class="info-box">Prêté à <a href="#/borrower/${copy.loan.borrower.id}"><strong>${esc(copy.loan.borrower.name)}</strong></a> depuis le ${fmtDate(copy.loan.loanedAt)}${copy.loan.dueAt ? ` · ${dueHtml(copy.loan)}` : ''}.</div>
-          <button class="btn btn-ok btn-block" id="return">Enregistrer le retour</button>
+          <button class="btn btn-ok btn-block" id="return"><span class="hide-mobile">Enregistrer le retour</span><span class="show-mobile">Retour</span></button>
           <form class="field isbn-row" id="due-form" style="margin-top:14px">
             <input type="date" name="due" value="${esc(copy.loan.dueAt || '')}" aria-label="Date de retour">
-            <button class="btn" type="submit">${copy.loan.dueAt ? 'Prolonger' : 'Fixer la date de retour'}</button>
+            <button class="btn" type="submit">${copy.loan.dueAt ? 'Prolonger' : '<span class="hide-mobile">Fixer la date de retour</span><span class="show-mobile">Fixer</span>'}</button>
           </form>
         ` : `
           <div class="info-box">${copy.reservedFor ? `<span class="badge badge-reserved">Réservé</span> pour <strong>${esc(copy.reservedFor.name)}</strong>` : '<span class="badge badge-ok">Disponible</span>'}</div>
@@ -2882,6 +2895,42 @@
   }
 
   // ================= Connexion =================
+  // Lien d'invitation : creation de son compte (identifiant, mot de passe), ou
+  // ajout de la bibliotheque a son compte si on est deja connecte.
+  async function viewInvite(token) {
+    const inv = await gapi(`/api/invitations/${encodeURIComponent(token)}`);
+    const open = async () => {
+      await loadStatus();
+      renderHeader();
+      if (LIBRARY && LIBRARY.slug === inv.library.slug) go('#/home'); else location.href = `${libUrl(inv.library.slug)}#/home`;
+    };
+    if (inv.member) return open();
+    const me = state.user;
+    view().innerHTML = `
+      <div class="card" style="max-width:420px;margin:24px auto">
+        <h1>Invitation</h1>
+        <p>Tu es invité à rejoindre <strong>${esc(inv.library.name)}</strong> <span class="badge badge-muted">${roleLabel(inv.role)}</span> ${hint(ROLE_HELP[inv.role] || ROLE_HELP.user)}</p>
+        <div id="err"></div>
+        <form id="invite-accept">
+          ${me ? `<p class="muted">Connecté : <strong>${esc(me.username)}</strong></p>` : `
+          <div class="field"><label for="iv-user">Identifiant</label><input id="iv-user" name="username" required maxlength="60" autocomplete="username"></div>
+          <div class="field"><label for="iv-pass">Mot de passe ${hint('8 caractères minimum.')}</label><input id="iv-pass" name="password" type="password" required minlength="8" autocomplete="new-password"></div>`}
+          <button class="btn btn-primary btn-block" type="submit">${me ? 'Rejoindre' : 'Créer mon compte'}</button>
+        </form>
+        ${me ? '' : `<p class="small muted" style="margin-top:12px">Déjà un compte ? <a href="#/login" id="iv-login">Connecte-toi</a>, puis rouvre ce lien.</p>`}
+      </div>`;
+    if ($('#iv-login')) $('#iv-login').onclick = () => sessionStorageSet('mll-after-login', location.hash);
+    $('#invite-accept').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      try {
+        await gapi(`/api/invitations/${encodeURIComponent(token)}`, { method: 'POST', body: me ? {} : { username: f.username.value, password: f.password.value } });
+        toast(`Bienvenue dans ${inv.library.name} !`);
+        await open();
+      } catch (err) { $('#err').innerHTML = `<div class="error-box">${esc(err.message)}</div>`; }
+    };
+  }
+
   async function viewLogin() {
     if (state.user) return go(LIBRARY ? '#/home' : '#/');
     const setup = state.needsSetup;
@@ -2935,14 +2984,15 @@
     const u = state.user;
     view().innerHTML = `
       <h1>Mon compte</h1>
-      <p class="muted">${esc(u.username)} · ${roleLabel(u.role)} ${hint(ROLE_HELP[u.role] || ROLE_HELP.manager)}</p>
+      <p class="muted">${esc(u.username)}${isAdmin() ? ` · ${roleLabel('admin')} ${hint(ROLE_HELP.admin)}` : ''}</p>
       <h2>Bibliothèque par défaut ${hint('Ouverte automatiquement après la connexion. Le menu du compte permet de basculer à tout moment.')}</h2>
       <div class="card">
         ${state.libraries.length ? `
         <div class="list">${state.libraries.map((l) => `
           <label class="list-item check" style="cursor:pointer">
             <input type="radio" name="def" value="${l.id}" ${l.id === u.defaultLibraryId ? 'checked' : ''}>
-            <span class="grow">${esc(l.name)} <span class="small muted">/${esc(l.slug)}/</span></span>
+            <span class="grow">${esc(l.name)} <span class="small muted">/${esc(l.slug)}/</span>
+              ${isAdmin() ? '' : `<br><span class="badge badge-muted">${roleLabel(l.role)}</span> ${hint(ROLE_HELP[l.role] || ROLE_HELP.user)}`}</span>
             <a class="btn btn-small" href="${esc(libUrl(l.slug))}">Ouvrir</a>
           </label>`).join('')}</div>`
         : '<p class="muted">Aucune bibliothèque n\'est liée à ton compte. Demande à un administrateur.</p>'}
@@ -2954,7 +3004,7 @@
           <div class="field"><label>Mot de passe actuel</label><input name="current" type="password" autocomplete="current-password" required></div>
           <div class="field"><label>Nouveau mot de passe (8 caractères min.)</label><input name="password" type="password" autocomplete="new-password" minlength="8" required></div>
         </div>
-        <button class="btn" type="submit">Changer le mot de passe</button>
+        <button class="btn" type="submit"><span class="hide-mobile">Changer le mot de passe</span><span class="show-mobile">Changer</span></button>
       </form>`;
     // Reglages de lecture du compte dans la bibliotheque ouverte (si elle a les statistiques).
     if (isMember() && features().stats) {
@@ -3101,7 +3151,7 @@
         <div class="btn-row">
           <button class="btn btn-primary" type="button" data-act="go">Sauvegarder</button>
           <button class="btn" type="button" data-act="later">Reporter</button>
-          <button class="btn" type="button" data-act="skip">Passer ce mois-ci</button>
+          <button class="btn" type="button" data-act="skip"><span class="hide-mobile">Passer ce mois-ci</span><span class="show-mobile">Passer</span></button>
         </div>
       </div>`;
     document.body.appendChild(backdrop);
@@ -3136,8 +3186,8 @@
         <p>${stateHtml}</p>
         <div class="field"><label>${info.saved ? 'Remplacer la clé' : 'Coller la clé'}</label>
           <input name="key" placeholder="AIza…" autocomplete="off" spellcheck="false"></div>
-        <button class="btn btn-primary" type="submit">Vérifier et enregistrer</button>
-        ${info.saved ? '<button class="btn btn-danger" type="button" id="gkey-del">Retirer la clé</button>' : ''}
+        <button class="btn btn-primary" type="submit"><span class="hide-mobile">Vérifier et enregistrer</span><span class="show-mobile">Enregistrer</span></button>
+        ${info.saved ? '<button class="btn btn-danger" type="button" id="gkey-del"><span class="hide-mobile">Retirer la clé</span><span class="show-mobile">Retirer</span></button>' : ''}
       </form>
       <div class="card">
         <h3 style="margin-top:0">Obtenir une clé gratuite (5 min)</h3>
@@ -3272,17 +3322,60 @@
     const [users, libs] = await Promise.all([gapi('/api/admin/users'), gapi('/api/admin/libraries')]);
     const libName = (id) => (libs.find((l) => l.id === id) || {}).name || '?';
     $('#admin-body').innerHTML = `
-      <div class="btn-row" style="margin-bottom:12px"><button class="btn btn-primary" id="new-user">+ Nouveau compte</button></div>
+      <div class="btn-row" style="margin-bottom:12px"><button class="btn btn-primary" id="new-user">+ <span class="hide-mobile">Nouveau </span>compte</button></div>
       <div class="card">${users.length ? `<div class="list">${users.map((u) => `
         <div class="list-item">
           <div class="grow">
-            <strong>${esc(u.username)}</strong> ${u.role === 'admin' ? '<span class="badge badge-ok">Administrateur</span>' : `<span class="badge badge-muted">${roleLabel(u.role)}</span>`}
+            <strong>${esc(u.username)}</strong> ${u.role === 'admin' ? '<span class="badge badge-ok">Administrateur</span>' : ''}
             ${u.id === state.user.id ? '<span class="small muted">(toi)</span>' : ''}
-            <div class="small muted">${u.role === 'admin' ? 'Toutes les bibliothèques' : (u.libraryIds.map((id) => esc(libName(id)) + (id === u.defaultLibraryId ? ' ★' : '')).join(', ') || 'Aucune bibliothèque')}</div>
+            <div class="small muted">${u.role === 'admin' ? 'Toutes les bibliothèques' : (u.libraries.map((l) => `${esc(libName(l.id))} (${roleLabel(l.role)})${l.id === u.defaultLibraryId ? ' ★' : ''}`).join(', ') || 'Aucune bibliothèque')}</div>
           </div>
-          <button class="btn btn-small" data-edit-user="${u.id}">Modifier</button>
-          ${u.id === state.user.id ? '' : `<button class="btn btn-small btn-danger" data-del-user="${u.id}">Supprimer</button>`}
-        </div>`).join('')}</div>` : ''}</div>`;
+          <button class="btn btn-small" data-edit-user="${u.id}" title="Modifier" aria-label="Modifier ${esc(u.username)}">${iconText('edit', 'Modifier')}</button>
+          ${u.id === state.user.id ? '' : `<button class="btn btn-small btn-danger" data-del-user="${u.id}" title="Supprimer" aria-label="Supprimer ${esc(u.username)}">${iconText('trash', 'Supprimer')}</button>`}
+        </div>`).join('')}</div>` : ''}</div>
+      <h2>Liens d'invitation ${hint('La personne qui ouvre le lien choisit son identifiant et son mot de passe ; son compte est lié à la bibliothèque avec le rôle choisi. Un lien sert à plusieurs personnes, jusqu\'à son expiration ou sa suppression.')}</h2>
+      <div class="card">
+        <form class="invite-form" id="invite-form">
+          <select name="library" aria-label="Bibliothèque" required>${libs.map((l) => `<option value="${l.id}" ${LIBRARY && l.slug === LIBRARY.slug ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select>
+          <select name="role" aria-label="Rôle">${LIBRARY_ROLES.map((r) => `<option value="${r}">${roleLabel(r)}</option>`).join('')}</select>
+          <select name="days" aria-label="Durée de validité"><option value="7">7 jours</option><option value="30">30 jours</option><option value="90">90 jours</option></select>
+          <button class="btn btn-primary" type="submit" ${libs.length ? '' : 'disabled'}>${icon('add', 16)}Créer<span class="hide-mobile"> un lien</span></button>
+        </form>
+        <div id="invite-list" class="list" style="margin-top:10px"></div>
+      </div>`;
+    // Liens d'invitation en cours : copier l'adresse, supprimer.
+    const inviteUrl = (i) => `${location.origin}${libUrl(i.library.slug)}#/invite/${i.token}`;
+    const renderInvites = (list) => {
+      const box = $('#invite-list');
+      box.innerHTML = list.length ? list.map((i) => `<div class="list-item">
+          <div class="grow"><strong>${esc(i.library.name)}</strong> <span class="badge badge-muted">${roleLabel(i.role)}</span>
+            <div class="small muted">Jusqu'au ${fmtDate(i.expiresAt)} · ${i.uses} compte${i.uses > 1 ? 's' : ''}</div></div>
+          <button class="btn btn-small" type="button" data-copy-invite="${i.id}" title="Copier le lien" aria-label="Copier le lien">${iconText('share', 'Copier le lien')}</button>
+          <button class="btn btn-small btn-danger" type="button" data-del-invite="${i.id}" title="Supprimer le lien" aria-label="Supprimer le lien">${iconText('trash', 'Supprimer')}</button>
+        </div>`).join('') : '<p class="small muted" style="margin:0">Aucun lien en cours.</p>';
+      $$('[data-copy-invite]', box).forEach((btn) => {
+        btn.onclick = async () => {
+          const url = inviteUrl(list.find((i) => i.id === Number(btn.dataset.copyInvite)));
+          try { await navigator.clipboard.writeText(url); toast('Lien copié.'); } catch (e) { prompt('Lien d\'invitation :', url); }
+        };
+      });
+      $$('[data-del-invite]', box).forEach((btn) => {
+        btn.onclick = async () => {
+          if (!confirm('Supprimer ce lien ? Il ne fonctionnera plus (les comptes déjà créés sont gardés).')) return;
+          try { renderInvites(await gapi(`/api/admin/invitations/${btn.dataset.delInvite}`, { method: 'DELETE' })); } catch (err) { toast(err.message, 'error'); }
+        };
+      });
+    };
+    gapi('/api/admin/invitations').then(renderInvites).catch(() => {});
+    $('#invite-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      try {
+        const list = await gapi('/api/admin/invitations', { method: 'POST', body: { libraryId: Number(f.library.value), role: f.role.value, days: Number(f.days.value) } });
+        renderInvites(list);
+        try { await navigator.clipboard.writeText(inviteUrl(list[0])); toast('Lien créé et copié.'); } catch (err) { toast('Lien créé.'); }
+      } catch (err) { toast(err.message, 'error'); }
+    };
     $('#new-user').onclick = () => userDialog(null, libs);
     $$('[data-edit-user]').forEach((btn) => { btn.onclick = () => userDialog(users.find((u) => u.id === Number(btn.dataset.editUser)), libs); });
     $$('[data-del-user]').forEach((btn) => {
@@ -3295,7 +3388,9 @@
   }
 
   function userDialog(user, libs) {
-    const u = user || { username: '', role: 'manager', libraryIds: LIBRARY ? libs.filter((l) => l.slug === LIBRARY.slug).map((l) => l.id) : [], defaultLibraryId: null };
+    // Nouveau compte : lecteur de la bibliotheque ouverte.
+    const u = user || { username: '', role: 'user', libraries: LIBRARY ? libs.filter((l) => l.slug === LIBRARY.slug).map((l) => ({ id: l.id, role: 'user' })) : [], defaultLibraryId: null };
+    const linkOf = (id) => u.libraries.find((l) => l.id === id);
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
     backdrop.innerHTML = `
@@ -3304,17 +3399,14 @@
         <div class="field"><label>Identifiant *</label><input name="username" required value="${esc(u.username)}" autocomplete="off"></div>
         <div class="field"><label>${user ? `Nouveau mot de passe ${hint('Laisser vide pour ne pas changer.')}` : `Mot de passe * ${hint('8 caractères minimum.')}`}</label>
           <input name="password" type="password" autocomplete="new-password" minlength="8" ${user ? '' : 'required'}></div>
-        <div class="field"><label>Rôle ${hint(['user', 'librarian', 'manager', 'admin'].map((r) => ROLE_HELP[r]).join(' '))}</label><select name="role">
-          <option value="user" ${u.role === 'user' ? 'selected' : ''}>Lecteur</option>
-          <option value="librarian" ${u.role === 'librarian' ? 'selected' : ''}>Bibliothécaire</option>
-          <option value="manager" ${u.role === 'manager' || !u.role ? 'selected' : ''}>Gestionnaire</option>
-          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrateur</option>
-        </select></div>
-        <div class="field"><label>Bibliothèques gérées (★ = par défaut)</label>
+        <div class="field"><label class="check"><input type="checkbox" name="admin" ${u.role === 'admin' ? 'checked' : ''}>
+          <span>Administrateur ${hint(ROLE_HELP.admin)}</span></label></div>
+        <div class="field"><label>Bibliothèques et rôle dans chacune (★ = par défaut) ${hint(LIBRARY_ROLES.map((r) => ROLE_HELP[r]).join(' '))}</label>
           <div class="sel-list">${libs.map((l) => `
             <div class="sel-row">
-              <input type="checkbox" name="lib" value="${l.id}" ${u.libraryIds.includes(l.id) ? 'checked' : ''} id="lib-${l.id}">
+              <input type="checkbox" name="lib" value="${l.id}" ${linkOf(l.id) ? 'checked' : ''} id="lib-${l.id}">
               <label for="lib-${l.id}" class="grow" style="margin:0;font-weight:500;color:var(--text);font-size:14px">${esc(l.name)}</label>
+              <select data-lib-role="${l.id}" aria-label="Rôle dans ${esc(l.name)}" class="sel-role">${LIBRARY_ROLES.map((r) => `<option value="${r}" ${(linkOf(l.id) || {}).role === r ? 'selected' : ''}>${roleLabel(r)}</option>`).join('')}</select>
               <label class="small" style="margin:0;display:flex;align-items:center;gap:4px" title="Bibliothèque par défaut"><input type="radio" name="def" value="${l.id}" ${u.defaultLibraryId === l.id ? 'checked' : ''} style="width:auto;min-height:0"> ★</label>
             </div>`).join('') || '<p class="muted small" style="padding:8px">Crée d\'abord une bibliothèque.</p>'}</div>
         </div>
@@ -3331,12 +3423,18 @@
     $$('input[name=def]', backdrop).forEach((r) => {
       r.onchange = () => { const cb = $(`#lib-${r.value}`, backdrop); if (cb) cb.checked = true; };
     });
+    // Choisir un role coche la bibliotheque ; un administrateur a tous les droits partout.
+    const adminBox = $('input[name=admin]', backdrop);
+    const syncRoles = () => $$('[data-lib-role]', backdrop).forEach((s) => { s.disabled = adminBox.checked; });
+    adminBox.onchange = syncRoles;
+    syncRoles();
+    $$('[data-lib-role]', backdrop).forEach((s) => { s.onchange = () => { $(`#lib-${s.dataset.libRole}`, backdrop).checked = true; }; });
     $('form', backdrop).onsubmit = async (e) => {
       e.preventDefault();
       const t = e.target;
-      const libraryIds = $$('input[name=lib]:checked', backdrop).map((x) => Number(x.value));
+      const libraries = $$('input[name=lib]:checked', backdrop).map((x) => ({ id: Number(x.value), role: $(`[data-lib-role="${x.value}"]`, backdrop).value }));
       const def = $('input[name=def]:checked', backdrop);
-      const body = { username: t.username.value, role: t.role.value, libraryIds, defaultLibraryId: def ? Number(def.value) : null };
+      const body = { username: t.username.value, role: t.admin.checked ? 'admin' : 'user', libraries, defaultLibraryId: def ? Number(def.value) : null };
       if (t.password.value) body.password = t.password.value;
       try {
         await gapi(user ? `/api/admin/users/${user.id}` : '/api/admin/users', { method: user ? 'PUT' : 'POST', body });
@@ -3506,7 +3604,7 @@
           // Resume trouve seulement dans une autre langue que celle du livre : propose, pas impose.
           if (d.summaryAlt && !f.summary.value) {
             $('#summary-alt').innerHTML = `<p class="small muted" style="margin-top:6px">Aucun résumé dans la langue du livre. Un résumé en ${esc(d.summaryAlt.language)} est disponible (${esc(d.summaryAlt.source)}).
-              <button type="button" class="btn btn-small" id="use-alt">Utiliser le résumé en ${esc(d.summaryAlt.language)}</button></p>`;
+              <button type="button" class="btn btn-small" id="use-alt"><span class="hide-mobile">Utiliser le résumé en ${esc(d.summaryAlt.language)}</span><span class="show-mobile">Utiliser</span></button></p>`;
             $('#use-alt').onclick = () => { f.summary.value = d.summaryAlt.text; $('#summary-alt').innerHTML = ''; };
           }
           html += `<span style="color:var(--ok)">✓ Fiche pré-remplie (${esc(d.sources.join(', '))}). Vérifie et complète avant d'enregistrer.</span>`;
@@ -3598,7 +3696,14 @@
       if (wish.notes && f.notes) f.notes.value = wish.notes;
       const owners = wish.owners || [wish.owner];
       owners.forEach((o) => { const reader = $(`[data-reader="${o.id}"]`, f); if (reader) reader.checked = true; });
-      if (wish.coverUrl && !wish.isbn) { form.cover.remoteUrl = wish.coverUrl; form.cover.url = wish.coverUrl; renderCover(); }
+      // Couverture du souhait : adresse en ligne, ou image enregistree (relue puis envoyee avec la fiche).
+      if (/^https?:/i.test(wish.coverUrl || '')) { form.cover.remoteUrl = wish.coverUrl; form.cover.url = wish.coverUrl; renderCover(); }
+      else if (wish.coverUrl) {
+        fetch(wishSrc(wish.coverUrl), { credentials: 'same-origin' }).then((r) => (r.ok ? r.blob() : null))
+          .then((blob) => (blob ? imageToDataUrl(blob, 900, 'image/jpeg') : null))
+          .then((data) => { if (data && document.body.contains(f)) { form.cover.data = data; form.cover.remoteUrl = ''; renderCover(); } })
+          .catch(() => {});
+      }
       if (wish.isbn) pendingAddIsbn = wish.isbn;
       $('#isbn-result').insertAdjacentHTML('beforebegin', `<div class="info-box" style="margin-top:8px">${owners.length > 1 ? 'Souhaité par' : 'Souhait de'} <strong>${owners.map((o) => esc(o.username)).join(', ')}</strong> : retiré de ${owners.length > 1 ? 'leurs' : 'ses'} souhaits à l'enregistrement.</div>`);
     }
@@ -3867,7 +3972,7 @@
     view().innerHTML = `
       <p><a href="#/add">← Ajouter un livre</a></p>
       <div class="page-head"><div><h1>Ajout multiple ${hint('Ajoute d\'un coup plusieurs livres. Les exemplaires et leurs codes sont créés automatiquement ; leurs étiquettes passent « en attente ».')}</h1></div>
-        <a class="btn" href="#/incomplete">Fiches incomplètes</a></div>
+        <a class="btn" href="#/incomplete"><span class="hide-mobile">Fiches incomplètes</span><span class="show-mobile">Incomplètes</span></a></div>
       <div class="seg seg-${features().ebooks ? 4 : 3}" style="max-width:${features().ebooks ? 820 : 640}px">
         <button type="button" data-mode="scan" class="${s.mode === 'scan' ? 'active' : ''}">Scanner en série</button>
         <button type="button" data-mode="isbn" class="${s.mode === 'isbn' ? 'active' : ''}">Liste d'ISBN</button>
@@ -3941,7 +4046,7 @@
           </div>
           <h3>2. Options</h3>
           ${options}
-          <button class="btn btn-primary" id="analyse">Analyser la liste</button>
+          <button class="btn btn-primary" id="analyse"><span class="hide-mobile">Analyser la liste</span><span class="show-mobile">Analyser</span></button>
         </div>
         <div id="preview"></div>`;
       bindOptions();
@@ -3991,7 +4096,7 @@
           <div id="mapping"></div>
           <h3>2. Options</h3>
           ${options}
-          <button class="btn btn-primary" id="analyse" ${s.rows ? '' : 'disabled'}>Analyser le fichier</button>
+          <button class="btn btn-primary" id="analyse" ${s.rows ? '' : 'disabled'}><span class="hide-mobile">Analyser le fichier</span><span class="show-mobile">Analyser</span></button>
         </div>
         <div id="preview"></div>`;
       const renderMapping = () => {
@@ -4081,7 +4186,7 @@
           <div>
             <div class="scanner-video barcode" id="batch-video-box" hidden><video playsinline muted id="batch-video"></video><div class="frame"></div></div>
             <div class="btn-row">
-              <button class="btn btn-primary" type="button" id="cam-toggle">Démarrer la caméra</button>
+              <button class="btn btn-primary" type="button" id="cam-toggle"><span class="hide-mobile">Démarrer la caméra</span><span class="show-mobile">Caméra</span></button>
               <label class="btn" style="margin:0">Photo<input type="file" id="batch-photo" accept="image/*" capture="environment" hidden></label>
             </div>
             <p class="small muted" style="margin-top:8px"><span id="batch-status">Un bip confirme chaque livre scanné.</span> ${hint('Scanne les livres les uns après les autres. Un lecteur de codes-barres USB fonctionne aussi dans le champ ci-dessous.')}</p>
@@ -4098,7 +4203,7 @@
         </div>
         <h3>Options</h3>
         ${options}
-        <div class="btn-row"><button class="btn btn-primary" type="button" id="batch-create">Créer les fiches</button></div>
+        <div class="btn-row"><button class="btn btn-primary" type="button" id="batch-create"><span class="hide-mobile">Créer les fiches</span><span class="show-mobile">Créer</span></button></div>
       </div>
       <div id="preview"></div>`;
 
@@ -4280,7 +4385,7 @@
     const summary = s.results && !s.running ? (() => {
       const c = (st) => s.results.filter((r) => r && r.status === st).length;
       return `<div class="info-box"><strong>Import terminé${s.stop ? ' (arrêté)' : ''}.</strong> ${c('created')} livre(s) ajouté(s), ${c('copies')} exemplaire(s) ajouté(s) à des livres existants${c('updated') || c('unchanged') ? `, ${c('updated')} fiche(s) mise(s) à jour, ${c('unchanged')} inchangée(s)` : ''}, ${c('skipped')} ignoré(s), ${c('error')} erreur(s).</div>
-        <div class="btn-row" style="margin-bottom:12px"><button class="btn btn-primary" id="go-labels">Imprimer les étiquettes en attente</button><a class="btn" href="#/">Voir le catalogue</a></div>`;
+        <div class="btn-row" style="margin-bottom:12px"><button class="btn btn-primary" id="go-labels"><span class="hide-mobile">Imprimer les étiquettes en attente</span><span class="show-mobile">Étiquettes</span></button><a class="btn" href="#/"><span class="hide-mobile">Voir le catalogue</span><span class="show-mobile">Catalogue</span></a></div>`;
     })() : '';
     $('#preview').innerHTML = `
       <h2>3. ${s.results ? 'Import' : 'Vérification'}</h2>
@@ -4429,7 +4534,7 @@
               <a class="btn btn-small" href="${LIB}/api/export/inventory.csv?missing=${key}">CSV</a>
               ${hint('Exporte ces fiches pour les corriger dans Excel, puis réimporte le fichier : Ajout multiple › Fichier complet › « ISBN déjà au catalogue : Mettre à jour la fiche ». Seules les colonnes remplies écrasent les fiches.')}</span>
             <button class="btn btn-small" type="button" id="missing-catalog" title="Ouvrir dans le catalogue (sélection en masse)">Catalogue</button>
-            ${MISSING_REFILL.includes(key) ? `<button class="btn btn-small btn-primary" type="button" id="missing-refill" hidden>Compléter tout</button>${hint(REFILL_HINT[key] || 'Relance la recherche en ligne pour chaque livre concerné ; le champ n\'est rempli que s\'il est toujours vide.')}` : ''}
+            ${MISSING_REFILL.includes(key) ? `<button class="btn btn-small btn-primary" type="button" id="missing-refill" hidden><span class="hide-mobile">Compléter tout</span><span class="show-mobile">Tout</span></button>${hint(REFILL_HINT[key] || 'Relance la recherche en ligne pour chaque livre concerné ; le champ n\'est rempli que s\'il est toujours vide.')}` : ''}
           </div>
         </div>
         <div id="refill-progress" class="small muted" hidden></div>
@@ -4703,6 +4808,7 @@
   // Cartes choisies et ordonnees par chaque compte (lib/home.js). Grand ecran : cartes
   // detaillees. Smartphone : tuiles resumees qui tiennent dans l'ecran, sans defilement
   // (ni vertical ni horizontal) ; chaque tuile ouvre la page correspondante.
+  const HOME_PHONE_TILES = 6; // tuiles affichees d'emblee sur smartphone
   const HOME_PHONE_QUERY = '(max-width: 599px), (max-height: 520px) and (orientation: landscape) and (pointer: coarse)';
   const HOME_META = {
     todo: { icon: 'todo', color: 'sun' },
@@ -4810,7 +4916,7 @@
           <button class="btn btn-small" type="button" data-remind="${l.id}" aria-label="Relancer ${esc(l.borrower.name)} pour « ${esc(l.book.title)} »">${icon('mail', 16)}<span class="hide-mobile">Relancer</span></button></li>`; }).join('')}</ul>`
         : '<p class="muted">Aucune échéance dans les 14 prochains jours.</p>';
       case 'wishes': return `${x.items.length ? `<ul class="list">${x.items.map((w) => `<li class="list-item">
-          ${w.coverUrl ? `<img class="thumb" src="${esc(w.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb" aria-hidden="true"></span>'}
+          ${w.coverUrl ? `<img class="thumb" src="${esc(wishSrc(w.coverUrl))}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb" aria-hidden="true"></span>'}
           <div class="grow"><strong>${esc(w.title)}</strong><div class="small muted">${esc(w.authors)}</div></div>${w.priority ? `<span class="badge badge-wish">Très envie</span>` : ''}</li>`).join('')}</ul>`
         : '<p class="muted">Aucun souhait pour le moment.</p>'}<button class="btn btn-small" type="button" id="home-wish-add" style="margin-top:8px">${icon('add', 16)}Ajouter un souhait</button>`;
       case 'news': return shelfHtml(x.items, 'Aucun livre pour le moment.');
@@ -4835,7 +4941,7 @@
         </li>`).join('')}</ul>` : '<p class="muted">Tous tes livres lus récemment ont une note.</p>';
       case 'idea': return `<div id="home-idea">${ideaHtml(x)}</div>`;
       case 'topwishes': return x.length ? `<ul class="list">${x.map((g, i) => `<li class="list-item">
-          ${g.coverUrl ? `<img class="thumb" src="${esc(g.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb" aria-hidden="true"></span>'}
+          ${g.coverUrl ? `<img class="thumb" src="${esc(wishSrc(g.coverUrl))}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="thumb" aria-hidden="true"></span>'}
           <div class="grow"><strong>${esc(g.title)}</strong>${g.authors ? `<div class="small muted">${esc(g.authors)}</div>` : ''}
             <div class="small">${plural(g.count, 'membre', 'membres')} : ${g.owners.map((o) => esc(o.username)).join(', ')}${g.priority ? ` <span class="badge badge-wish">${icon('wish', 12)}${g.priority} très envie</span>` : ''}</div></div>
           <button class="btn btn-small btn-primary" type="button" data-top-add="${i}">${icon('add', 16)}<span class="hide-mobile">Ajouter</span></button></li>`).join('')}</ul>`
@@ -4913,6 +5019,8 @@
     const now = new Date().toLocaleDateString('fr-BE', { weekday: 'long', day: 'numeric', month: 'long' });
     const alerts = d.todo ? todoItems(d.todo).filter((i) => ['remind', 'overdue'].includes(i.target)).reduce((s, i) => s + i.n, 0) : 0;
     const sub = alerts ? `${now} · ${plural(alerts, 'prêt demande', 'prêts demandent')} ton attention` : now;
+    // Smartphone : les premieres tuiles (dans l'ordre choisi), les autres derriere « Voir tout ».
+    const foldTiles = shown.length > HOME_PHONE_TILES + 1;
     view().innerHTML = `<div class="home">
       <div class="home-head">
         <div class="home-hello"><h1>Bonjour ${esc(state.user.username)}</h1><p class="muted">${esc(sub.charAt(0).toUpperCase() + sub.slice(1))}</p></div>
@@ -4928,19 +5036,37 @@
             <h2 id="hc-${c.key}">${esc(c.label)}${c.key === 'wishes' && d.wishes.count ? ` <span class="muted">(${d.wishes.count})</span>` : ''}</h2>
             ${HOME_LINKS[c.key] ? `<button type="button" class="link-btn" data-home-go="${HOME_LINKS[c.key][0]}">${HOME_LINKS[c.key][1]}</button>` : ''}</div>
           ${homeCardBody(c.key, d)}</section>`).join('')}</div>
-      <nav class="home-tiles" id="home-tiles" aria-label="Accueil">${shown.map((c) => { const s = homeSummary(c.key, d); return `
-          <button type="button" class="home-tile" data-home-go="${esc(s.go)}" style="${colorVars(HOME_META[c.key].color)}">
+      <nav class="home-tiles" id="home-tiles" aria-label="Accueil">${shown.map((c, i) => { const s = homeSummary(c.key, d); return `
+          <button type="button" class="home-tile" data-home-go="${esc(s.go)}" style="${colorVars(HOME_META[c.key].color)}" ${foldTiles && i >= HOME_PHONE_TILES ? 'data-extra hidden' : ''}>
             <span class="tile-head"><span class="h-icon" aria-hidden="true">${icon(HOME_META[c.key].icon, 16)}</span><span class="tile-label">${esc(c.label)}</span></span>
             <span class="tile-value">${esc(s.value)}${s.sub ? ` <small>${esc(s.sub)}</small>` : ''}</span>
             <span class="tile-lines">${s.lines.map((l) => `<span>${esc(l)}</span>`).join('')}</span>
-          </button>`; }).join('')}</nav>`
-      : `<div class="empty">Toutes les cartes sont masquées.<br><br><button class="btn" type="button" id="home-custom-2">Choisir les cartes</button></div>`}
+          </button>`; }).join('')}
+          ${foldTiles ? '<button type="button" class="home-tile home-more" id="home-more" aria-expanded="false"></button>' : ''}</nav>`
+      : `<div class="empty">Toutes les cartes sont masquées.<br><br><button class="btn" type="button" id="home-custom-2"><span class="hide-mobile">Choisir les cartes</span><span class="show-mobile">Choisir</span></button></div>`}
     </div>`;
     $('#home-search').onsubmit = (e) => { e.preventDefault(); openCatalog({ q: $('#home-q').value.trim() }); };
     if ($('#home-custom-2')) $('#home-custom-2').onclick = openHomeCustomize;
     $$('[data-home-go]').forEach((b) => { b.onclick = () => homeGo(b.dataset.homeGo); });
     if ($('#home-wish-add')) $('#home-wish-add').onclick = async () => { if (await wishDialog()) viewDashboard(); };
     bindHomeCards(d);
+    if (foldTiles) {
+      const more = $('#home-more');
+      const setAll = (all) => {
+        $$('#home-tiles [data-extra]').forEach((t) => { t.hidden = !all; });
+        more.setAttribute('aria-expanded', String(all));
+        more.innerHTML = `<span class="tile-head"><span class="tile-label">${all ? 'Réduire' : `Voir tout (${shown.length - HOME_PHONE_TILES} de plus)`}</span></span>`;
+      };
+      let all = false;
+      try { all = localStorage.getItem('mll-home-all') === '1'; } catch (e) { /* stockage indisponible */ }
+      setAll(all);
+      more.onclick = () => {
+        all = !all;
+        try { localStorage.setItem('mll-home-all', all ? '1' : '0'); } catch (e) { /* stockage indisponible */ }
+        setAll(all);
+        fitHome();
+      };
+    }
     fitHome();
     // Apres la pastille du titre (ajoutee juste apres) : nouvelle mesure.
     requestAnimationFrame(fitHome);
@@ -4954,7 +5080,8 @@
     if (!tiles || !phone) { document.body.classList.remove('home-fit'); if (tiles) tiles.style.height = ''; return; }
     // Une seule colonne. Trop de cartes pour l'ecran : hauteur minimale par tuile et
     // la page defile (sinon elle tient dans l'ecran, sans defilement).
-    const n = tiles.children.length;
+    const visible = Array.from(tiles.children).filter((t) => !t.hidden);
+    const n = visible.length;
     const MIN = 68;
     const GAP = 8;
     const h = (window.visualViewport ? window.visualViewport.height : window.innerHeight) - (tiles.getBoundingClientRect().top + window.scrollY) - 12;
@@ -4962,6 +5089,9 @@
     const fits = needed <= h;
     document.body.classList.toggle('home-fit', fits && !!$('.home'));
     tiles.style.setProperty('--cols', 1);
+    // « Voir tout » : une ligne basse, les tuiles se partagent le reste.
+    const more = $('#home-more');
+    tiles.style.gridTemplateRows = more ? `repeat(${n - 1}, minmax(0, 1fr)) 40px` : '';
     tiles.style.setProperty('--rows', n);
     tiles.style.height = `${fits ? Math.max(120, Math.floor(h)) : needed}px`;
     // Petites tuiles : chiffre a cote du titre, pour garder des lignes de detail.
@@ -5002,7 +5132,7 @@
         <ol class="home-order" id="home-order"></ol>
         <div class="btn-row" style="margin-top:14px">
           <button class="btn btn-primary" type="button" id="hcust-save">Enregistrer</button>
-          <button class="btn" type="button" id="hcust-reset">Ordre par défaut</button>
+          <button class="btn" type="button" id="hcust-reset"><span class="hide-mobile">Ordre par défaut</span><span class="show-mobile">Par défaut</span></button>
           <button class="btn" type="button" data-close>Annuler</button>
         </div></div>`;
       document.body.appendChild(backdrop);
@@ -5040,6 +5170,8 @@
   // Bibliothecaire ou gestionnaire de la bibliotheque ouverte : listes de ses membres,
   // choisies dans une liste deroulante avec recherche (un compte, ou toutes).
   const wishState = { owners: null, priority: false };
+  // Image d'un souhait : adresse en ligne, ou chemin d'une image enregistree (relatif a la racine).
+  const wishSrc = (url) => (/^(https?:|data:)/i.test(url) ? url : `${ROOT}/${url}`);
   const libParam = () => (LIBRARY && canManage() ? `library=${LIBRARY.id}` : '');
 
   async function viewWishes() {
@@ -5155,9 +5287,9 @@
     shareSection();
   }
 
-  // Vignette d'un souhait (image distante ; retiree si elle ne charge pas).
+  // Vignette d'un souhait (image en ligne ou enregistree ; retiree si elle ne charge pas).
   const wishThumb = (w) => (w.coverUrl
-    ? `<img class="thumb" src="${esc(w.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<span class=&quot;thumb&quot; aria-hidden=&quot;true&quot;></span>'">`
+    ? `<img class="thumb" src="${esc(wishSrc(w.coverUrl))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<span class=&quot;thumb&quot; aria-hidden=&quot;true&quot;></span>'">`
     : '<span class="thumb" aria-hidden="true"></span>');
 
   function wishItemHtml(w, { me, manager, multi }) {
@@ -5214,6 +5346,7 @@
     const editing = !!(w && w.id);
     const v = w || { isbn: '', title: '', subtitle: '', authors: '', publisher: '', year: '', notes: '', priority: 0, coverUrl: '', ...(preset || {}) };
     let cover = v.coverUrl || '';
+    let coverData = '';
     return new Promise((resolve) => {
       const backdrop = document.createElement('div');
       backdrop.className = 'modal-backdrop';
@@ -5229,7 +5362,14 @@
             <div id="wish-found" class="small" role="status" aria-live="polite" style="margin-top:8px"></div>
           </div>
           <div class="wish-form-grid">
-            <div class="cover" id="wish-cover" aria-hidden="true"></div>
+            <div class="wish-cover-col">
+              <label class="cover cover-pick" id="wish-cover" for="wish-file" title="Choisir ou photographier une image"></label>
+              <input type="file" id="wish-file" accept="image/*" hidden>
+              <div class="btn-row">
+                <button class="btn btn-small" type="button" id="wish-cover-online" title="Chercher une couverture en ligne" aria-label="Chercher une couverture en ligne">${icon('search', 16)}</button>
+                <button class="btn btn-small btn-danger" type="button" id="wish-cover-remove" title="Retirer l'image" aria-label="Retirer l'image">${icon('trash', 16)}</button>
+              </div>
+            </div>
             <div>
               <div class="field"><label for="wf-title">Titre *</label><input id="wf-title" name="title" required value="${esc(v.title)}"></div>
               <div class="field"><label for="wf-authors">Auteur(s)</label><input id="wf-authors" name="authors" value="${esc(v.authors)}"></div>
@@ -5251,26 +5391,41 @@
       backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(false); });
       const renderCover = () => {
         const box = $('#wish-cover', backdrop);
-        box.innerHTML = cover ? `<img src="${esc(cover)}" alt="" referrerpolicy="no-referrer">` : '<span class="cover-fallback">Pas d\'image</span>';
+        const src = coverData || (cover ? wishSrc(cover) : '');
+        box.innerHTML = (src ? `<img src="${esc(src)}" alt="Image actuelle" referrerpolicy="no-referrer">` : '<span class="cover-fallback">Ajouter une image</span>')
+          + `<span class="cover-pick-badge" aria-hidden="true">${icon('image', 16)}</span>`;
         const img = $('img', box);
-        if (img) img.onerror = () => { cover = ''; renderCover(); };
+        if (img && !coverData) img.onerror = () => { cover = ''; renderCover(); };
+        $('#wish-cover-remove', backdrop).hidden = !src;
       };
       renderCover();
+      // Image choisie ou photographiee (envoyee a l'enregistrement), ou cherchee en ligne.
+      let picked = false; // choix fait a la main : plus de recherche automatique
+      $('#wish-file', backdrop).onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try { coverData = await imageToDataUrl(file, 900, 'image/jpeg'); cover = ''; picked = true; renderCover(); } catch (err) { toast(err.message, 'error'); }
+      };
+      $('#wish-cover-online', backdrop).onclick = async () => {
+        const url = await openCoverSearch({ isbn: f.isbn.value, title: f.title.value, author: f.authors.value },
+          (q) => gapi('/api/wishes/covers?' + new URLSearchParams(q)));
+        if (url) { cover = url; coverData = ''; picked = true; renderCover(); }
+      };
+      $('#wish-cover-remove', backdrop).onclick = () => { cover = ''; coverData = ''; picked = true; renderCover(); };
       // Couverture cherchee en ligne (ISBN, sinon titre + auteur) quand il n'y en a pas.
       let coverSeq = 0;
       const findCover = async () => {
         const isbn = f.isbn.value.trim();
         const title = f.title.value.trim();
-        if (cover || (!isbn && !title)) return;
+        if (picked || cover || coverData || (!isbn && !title)) return;
         const seq = ++coverSeq;
         const r = await gapi(`/api/wishes/cover?${new URLSearchParams({ isbn, title, authors: f.authors.value })}`).catch(() => null);
-        if (r && r.coverUrl && seq === coverSeq && !cover && document.body.contains(backdrop)) { cover = r.coverUrl; renderCover(); }
+        if (r && r.coverUrl && seq === coverSeq && !cover && !coverData && !picked && document.body.contains(backdrop)) { cover = r.coverUrl; renderCover(); }
       };
       const fill = (d) => {
         ['title', 'subtitle', 'authors', 'publisher', 'year', 'isbn'].forEach((k) => { if (d[k] && f[k]) f[k].value = d[k]; });
-        cover = d.coverUrl || '';
-        renderCover();
-        findCover();
+        // Une image choisie a la main est gardee.
+        if (!picked) { cover = d.coverUrl || ''; renderCover(); findCover(); }
       };
       if (editing) findCover();
       const found = $('#wish-found', backdrop);
@@ -5306,7 +5461,7 @@
       f.onsubmit = async (e) => {
         e.preventDefault();
         const body = { title: f.title.value, authors: f.authors.value, publisher: f.publisher.value, year: f.year.value, isbn: f.isbn.value,
-          notes: f.notes.value, priority: f.priority.checked, coverUrl: cover };
+          notes: f.notes.value, priority: f.priority.checked, coverUrl: cover, coverData: coverData || undefined };
         try {
           await gapi(editing ? `/api/wishes/${w.id}` : '/api/wishes', { method: editing ? 'PUT' : 'POST', body });
           toast(editing ? 'Souhait enregistré.' : 'Ajouté à tes souhaits.');
@@ -6037,7 +6192,7 @@
           <label class="check"><input type="checkbox" id="compact"> Repartir de 1 ${hint('Renumérote dans l\'ordre d\'ajout, sans trous.')}</label>
           <p class="small muted" id="compact-warn" hidden>Avec le même préfixe, des numéros seront réattribués à d'autres livres : une ancienne étiquette pourrait alors ouvrir le mauvais exemplaire. Réimprime toutes les étiquettes rapidement.</p>
           <div class="btn-row" style="margin-top:10px">
-            <button class="btn btn-danger" type="button" id="renumber-go">Régénérer maintenant</button>
+            <button class="btn btn-danger" type="button" id="renumber-go"><span class="hide-mobile">Régénérer maintenant</span><span class="show-mobile">Régénérer</span></button>
             <button class="btn" type="button" id="renumber-cancel">Annuler</button>
           </div>
         </div>
@@ -6063,7 +6218,7 @@
         <div class="field"><label for="rem-subject">Objet</label><input id="rem-subject" name="subject" value="${esc(rem.subject)}" placeholder="${esc(REMINDER_DEFAULT.subject)}"></div>
         <div class="field"><label for="rem-body">Message ${hint("Remplacés à l'envoi : {nom}, {livres} (liste des livres et dates), {bibliotheque}, {date_retour}. Vide : modèle par défaut.")}</label>
           <textarea id="rem-body" name="body" rows="8" placeholder="${esc(REMINDER_DEFAULT.body)}">${esc(rem.body)}</textarea></div>
-        <div class="btn-row"><button class="btn btn-primary" type="submit">Enregistrer le message</button><button class="btn" type="button" id="rem-reset">Modèle par défaut</button></div>
+        <div class="btn-row"><button class="btn btn-primary" type="submit"><span class="hide-mobile">Enregistrer le message</span><span class="show-mobile">Enregistrer</span></button><button class="btn" type="button" id="rem-reset"><span class="hide-mobile">Modèle par défaut</span><span class="show-mobile">Par défaut</span></button></div>
       </form>
 
       <h2>Bouton Scanner</h2>
@@ -6171,7 +6326,7 @@
           <label class="check"><input type="checkbox" name="resetCodes"> Codes repartant de 1 ${hint('Les anciennes étiquettes ne seront plus reconnues.')}</label>
           <div class="field" style="margin-top:12px"><label for="empty-confirm">Pour confirmer, tape le nom de la bibliothèque : <strong>${esc(s.libraryName)}</strong></label>
             <input id="empty-confirm" name="confirm" autocomplete="off"></div>
-          <button class="btn btn-danger" type="submit">Vider la bibliothèque</button>
+          <button class="btn btn-danger" type="submit"><span class="hide-mobile">Vider la bibliothèque</span><span class="show-mobile">Vider</span></button>
         </form>
       </div>`;
 
@@ -6348,7 +6503,7 @@
       if (box) box.innerHTML = missingPills(m, null);
     }).catch(() => {
       const box = $('#missing-summary');
-      if (box) box.innerHTML = '<a class="btn btn-small" href="#/incomplete">Voir les fiches incomplètes</a>';
+      if (box) box.innerHTML = '<a class="btn btn-small" href="#/incomplete"><span class="hide-mobile">Voir les fiches incomplètes</span><span class="show-mobile">Voir</span></a>';
     });
     // Classement : un onglet par liste, charge a la demande (dernier onglet memorise).
     const termKey = `mll-terms-${LIBRARY.slug}`;
