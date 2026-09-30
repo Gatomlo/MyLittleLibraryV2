@@ -10,11 +10,10 @@ const auth = require('./lib/auth');
 const archives = require('./lib/archives');
 const { registerWishes } = require('./lib/wishes');
 const { registerInvitations } = require('./lib/invitations');
-const media = require('./lib/media');
 const security = require('./lib/security');
 const compression = require('compression');
 const crypto = require('crypto');
-const { createLibraryRouter, findLibrary, mediaUrl, str, intOrNull } = require('./lib/library-api');
+const { createLibraryRouter, findLibrary, mediaUrl } = require('./lib/library-api');
 
 // Erreur imprevue hors d'une requete : lance seul, le serveur la consigne et s'arrete
 // (un processus dans un etat inconnu ne doit pas continuer a ecrire dans les bases).
@@ -34,7 +33,7 @@ if (require.main === module) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const { httpError, asyncHandler: h } = require('./lib/util');
+const { httpError, asyncHandler: h, str, intOrNull } = require('./lib/util');
 
 app.disable('x-powered-by');
 app.use(security.headers);
