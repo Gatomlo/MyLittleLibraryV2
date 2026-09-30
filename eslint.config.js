@@ -5,7 +5,7 @@ const globals = require('globals');
 
 const rules = {
   ...js.configs.recommended.rules,
-  'no-unused-vars': ['error', { args: 'after-used', argsIgnorePattern: '^_', caughtErrors: 'none', ignoreRestSiblings: true }],
+  'no-unused-vars': ['error', { args: 'after-used', argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none', ignoreRestSiblings: true }],
   'no-empty': ['error', { allowEmptyCatch: true }],
   'no-useless-escape': 'off',
   'no-control-regex': 'off',

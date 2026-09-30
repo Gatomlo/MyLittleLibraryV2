@@ -1,0 +1,255 @@
+// Etiquettes — module de l'interface (organisation : public/app/README.md).
+import './souhaits.js';
+import { LIB, state } from './etat.js';
+import { $, $$, view, esc, hint, mediaSrc, api, toast, debounce } from './utilitaires.js';
+import { scanCopy } from './scanner.js';
+import { route } from './routage.js';
+
+// Formats de planches A4 courants (dimensions en mm). Les marges peuvent etre
+// ajustees a la main si l'imprimante decale legerement l'impression.
+const LABEL_PRESETS = {
+  L7160: { name: 'Avery L7160 · 3×7 · 63,5×38,1 mm', cols: 3, rows: 7, width: 63.5, height: 38.1, top: 15.15, left: 7.2, hPitch: 66.04, vPitch: 38.1 },
+  L7159: { name: 'Avery L7159 · 3×8 · 63,5×33,9 mm', cols: 3, rows: 8, width: 63.5, height: 33.9, top: 13.1, left: 7.2, hPitch: 66.04, vPitch: 33.9 },
+  L7163: { name: 'Avery L7163 · 2×7 · 99,1×38,1 mm', cols: 2, rows: 7, width: 99.1, height: 38.1, top: 15.15, left: 4.65, hPitch: 101.6, vPitch: 38.1 },
+  L7651: { name: 'Avery L7651 · 5×13 · 38,1×21,2 mm', cols: 5, rows: 13, width: 38.1, height: 21.2, top: 10.7, left: 4.7, hPitch: 40.6, vPitch: 21.2 },
+  A70x37: { name: 'Planche 3×8 · 70×37 mm (bord à bord)', cols: 3, rows: 8, width: 70, height: 37, top: 0.5, left: 0, hPitch: 70, vPitch: 37 },
+  A70x36: { name: 'Planche 3×8 · 70×36 mm', cols: 3, rows: 8, width: 70, height: 36, top: 4.5, left: 0, hPitch: 70, vPitch: 36 },
+  A70x42: { name: 'Planche 3×7 · 70×42,3 mm (bord à bord)', cols: 3, rows: 7, width: 70, height: 42.3, top: 0.4, left: 0, hPitch: 70, vPitch: 42.3 },
+  A105x37: { name: 'Planche 2×8 · 105×37 mm', cols: 2, rows: 8, width: 105, height: 37, top: 0.5, left: 0, hPitch: 105, vPitch: 37 },
+};
+const LAYOUT_FIELDS = [['cols', 'Colonnes'], ['rows', 'Lignes'], ['width', 'Largeur (mm)'], ['height', 'Hauteur (mm)'],
+  ['left', 'Marge gauche (mm)'], ['top', 'Marge haut (mm)'], ['hPitch', 'Pas horizontal (mm)'], ['vPitch', 'Pas vertical (mm)']];
+
+// Selection des etiquettes : par defaut toutes celles en attente (nouveaux
+// exemplaires, codes regeneres) ; sinon une selection manuelle construite par
+// recherche (titre, auteur, code) ou par scan, sans longue liste a cocher.
+async function viewLabels() {
+  const [settings, pending] = await Promise.all([api('/api/settings'), api('/api/labels/pending')]);
+  const layout = Object.assign({ preset: 'L7160', showLogo: true, showName: true, showTitle: true, showAuthor: true, guides: true }, LABEL_PRESETS.L7160, settings.labelLayout || {});
+  const sel = state.labels;
+  let start = 1;
+  let data = null;
+
+  view().innerHTML = `
+    <div class="page-head"><div><h1>Étiquettes ${hint('Planches A4 autocollantes, avec QR code à scanner pour les prêts et retours.')}</h1></div></div>
+    <div class="label-layout">
+      <div>
+        <div class="card">
+          <h3 style="margin-top:0">Quoi imprimer ?</h3>
+          <div class="seg">
+            <button type="button" data-mode="pending">En attente (${pending.length})</button>
+            <button type="button" data-mode="manual">Sélection (<span id="manual-count">0</span>)</button>
+          </div>
+          <div id="mode-body"></div>
+          <p class="summary-line" id="summary"></p>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Format de planche</h3>
+          <div class="field"><select id="preset">
+            ${Object.entries(LABEL_PRESETS).map(([k, p]) => `<option value="${k}" ${layout.preset === k ? 'selected' : ''}>${p.name}</option>`).join('')}
+            <option value="custom" ${layout.preset === 'custom' ? 'selected' : ''}>Personnalisé</option>
+          </select></div>
+          <details id="dims"><summary class="small" style="cursor:pointer;margin-bottom:10px">Dimensions et marges</summary>
+            <div class="grid-2">${LAYOUT_FIELDS.map(([k, label]) => `<div class="field"><label>${label}</label><input type="number" step="0.01" data-dim="${k}" value="${layout[k]}"></div>`).join('')}</div>
+          </details>
+          <div class="field"><label>Commencer à la case n° ${hint('Pour réutiliser une planche déjà entamée.')}</label><input type="number" id="start" min="1" value="1"></div>
+          <label class="check"><input type="checkbox" id="opt-logo" ${layout.showLogo ? 'checked' : ''}> Logo</label>
+          <label class="check"><input type="checkbox" id="opt-name" ${layout.showName ? 'checked' : ''}> Nom de la bibliothèque</label>
+          <label class="check"><input type="checkbox" id="opt-title" ${layout.showTitle ? 'checked' : ''}> Titre du livre</label>
+          <label class="check"><input type="checkbox" id="opt-author" ${layout.showAuthor ? 'checked' : ''}> Auteur(s)</label>
+          <label class="check"><input type="checkbox" id="opt-guides" ${layout.guides ? 'checked' : ''}> Contours dans l'aperçu</label>
+          <div class="btn-row" style="margin-top:14px">
+            <button class="btn btn-primary" id="print">Imprimer</button>${hint('Dans la fenêtre d\'impression : format A4, marges « Aucune », échelle 100 % (« Taille réelle »).')}
+          </div>
+        </div>
+      </div>
+      <div class="sheets" id="sheets"></div>
+    </div>`;
+
+  function selectedCodes() {
+    return sel.mode === 'pending' ? pending.map((p) => p.code) : sel.manual.map((m) => m.code);
+  }
+
+  function addManual(items) {
+    let added = 0;
+    for (const it of items) {
+      if (!sel.manual.some((m) => m.code === it.code)) { sel.manual.push({ code: it.code, title: it.title }); added++; }
+    }
+    return added;
+  }
+
+  // Liste compacte des etiquettes en attente, regroupees par livre.
+  function groupedHtml(list) {
+    const groups = new Map();
+    list.forEach((p) => { if (!groups.has(p.title)) groups.set(p.title, []); groups.get(p.title).push(p.code); });
+    return Array.from(groups).map(([title, codes]) => `<div class="sel-row"><span class="grow">${esc(title)}</span><span class="small muted code">${codes.map(esc).join(', ')}</span></div>`).join('');
+  }
+
+  function renderMode() {
+    $$('.seg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === sel.mode));
+    $('#manual-count').textContent = sel.manual.length;
+    const body = $('#mode-body');
+    if (sel.mode === 'pending') {
+      body.innerHTML = pending.length ? `
+        <details><summary class="small" style="cursor:pointer;margin-bottom:8px">Voir le détail</summary>
+          <div class="sel-list">${groupedHtml(pending)}</div></details>
+        <div class="btn-row" style="margin-top:10px"><button class="btn btn-small" type="button" id="customize">Personnaliser</button>${hint('Nouveaux exemplaires et codes régénérés, pas encore imprimés. Personnaliser : copie cette liste dans « Sélection » pour la modifier.')}</div>`
+        : '<p class="muted small">Aucune étiquette en attente. Utilise « Sélection » pour réimprimer des étiquettes.</p>';
+      const cz = $('#customize');
+      if (cz) cz.onclick = () => { sel.manual = []; addManual(pending); sel.mode = 'manual'; renderMode(); refresh(); };
+      return;
+    }
+    body.innerHTML = `
+      <div class="isbn-row">
+        <input type="search" id="lbl-q" placeholder="Titre, auteur ou code…" autocomplete="off">
+        <button class="btn" type="button" id="lbl-scan" title="Scanner une étiquette">Scanner</button>
+      </div>
+      <div id="lbl-results"></div>
+      <div class="btn-row small" style="margin:10px 0 8px">
+        ${pending.length ? `<button class="btn btn-small" type="button" id="add-pending">+ Les ${pending.length} en attente</button>` : ''}
+        ${sel.manual.length ? '<button class="btn btn-small btn-danger" type="button" id="clear">Vider</button>' : ''}
+      </div>
+      ${sel.manual.length ? `<div class="sel-list">${sel.manual.map((m, i) => `
+        <div class="sel-row"><span class="code">${esc(m.code)}</span><span class="grow muted">${esc(m.title || '')}</span>
+          <button type="button" data-rm="${i}" aria-label="Retirer">×</button></div>`).join('')}</div>`
+        : '<p class="muted small">Recherche un livre (titre, auteur) ou un code pour l\'ajouter, ou scanne une étiquette existante.</p>'}`;
+    const q = $('#lbl-q');
+    q.addEventListener('input', debounce(async () => {
+      const out = $('#lbl-results');
+      if (!q.value.trim()) { out.innerHTML = ''; return; }
+      const results = await api(`/api/labels/search?q=${encodeURIComponent(q.value)}`).catch(() => []);
+      out.innerHTML = results.length ? `<div class="search-results">${results.map((b, i) => `
+        <div class="sel-row"><span class="grow"><strong>${esc(b.title)}</strong> <span class="muted">${esc(b.authors)}</span></span>
+          <button type="button" class="add" data-add-book="${i}">+ ${b.copies.length > 1 ? `${b.copies.length} ex.` : esc(b.copies[0].code)}</button></div>
+        ${b.copies.length > 1 ? b.copies.map((c, j) => `<div class="sel-row" style="padding-left:22px"><span class="grow code small">${esc(c.code)}${c.location ? ` <span class="muted">· ${esc(c.location)}</span>` : ''}</span>
+          <button type="button" class="add" data-add-copy="${i}:${j}">+</button></div>`).join('') : ''}`).join('')}</div>`
+        : '<p class="small muted" style="margin-top:6px">Aucun résultat.</p>';
+      $$('[data-add-book]', out).forEach((btn) => {
+        btn.onclick = () => { const b = results[Number(btn.dataset.addBook)]; addManual(b.copies.map((c) => ({ code: c.code, title: b.title }))); renderMode(); refresh(); };
+      });
+      $$('[data-add-copy]', out).forEach((btn) => {
+        btn.onclick = () => { const [i, j] = btn.dataset.addCopy.split(':').map(Number); addManual([{ code: results[i].copies[j].code, title: results[i].title }]); renderMode(); refresh(); };
+      });
+    }, 250));
+    $('#lbl-scan').onclick = async () => {
+      const code = await scanCopy();
+      if (!code) return;
+      try {
+        const r = await api(`/api/copies/by-code/${encodeURIComponent(code)}`);
+        addManual([{ code: r.copy.code, title: r.book.title }]);
+        renderMode();
+        refresh();
+      } catch (err) { toast(err.message, 'error'); }
+    };
+    const ap = $('#add-pending');
+    if (ap) ap.onclick = () => { addManual(pending); renderMode(); refresh(); };
+    const cl = $('#clear');
+    if (cl) cl.onclick = () => { sel.manual = []; renderMode(); refresh(); };
+    $$('[data-rm]').forEach((btn) => { btn.onclick = () => { sel.manual.splice(Number(btn.dataset.rm), 1); renderMode(); refresh(); }; });
+  }
+
+  function readLayout() {
+    LAYOUT_FIELDS.forEach(([k]) => { layout[k] = parseFloat($(`[data-dim="${k}"]`).value) || 0; });
+    layout.cols = Math.max(1, Math.round(layout.cols));
+    layout.rows = Math.max(1, Math.round(layout.rows));
+    layout.showLogo = $('#opt-logo').checked;
+    layout.showName = $('#opt-name').checked;
+    layout.showTitle = $('#opt-title').checked;
+    layout.showAuthor = $('#opt-author').checked;
+    layout.guides = $('#opt-guides').checked;
+    start = Math.max(1, parseInt($('#start').value, 10) || 1);
+  }
+
+  const saveLayout = debounce(() => api('/api/settings', { method: 'PUT', body: { labelLayout: layout } }).catch(() => {}), 800);
+
+  function renderSheets() {
+    readLayout();
+    const target = $('#sheets');
+    const items = data ? data.items : [];
+    const perSheet = layout.cols * layout.rows;
+    const offset = Math.min(start - 1, perSheet - 1);
+    const sheets = items.length ? Math.ceil((items.length + offset) / perSheet) : 0;
+    $('#summary').textContent = items.length ? `${items.length} étiquette${items.length > 1 ? 's' : ''} · ${sheets} planche${sheets > 1 ? 's' : ''}` : '';
+    if (!items.length) { target.innerHTML = '<div class="empty">Rien à imprimer pour le moment.</div>'; return; }
+    const slots = Array(offset).fill(null).concat(items);
+    const small = layout.height < 26 || layout.width < 45;
+    const qrSize = Math.min(layout.height - 4, layout.width * 0.45);
+    // Echelle du texte et du logo : suit la place laissee a cote du QR code
+    // (reference : etiquette 63,5×38 mm), bornee pour rester lisible.
+    const k = Math.max(0.6, Math.min(2.5, Math.min(layout.height / 38, (layout.width - qrSize) / 35)));
+    const showName = layout.showName && data.libraryName;
+    const showLogo = layout.showLogo && data.logoUrl;
+    let html = '';
+    for (let s = 0; s < slots.length; s += perSheet) {
+      html += `<div class="sheet ${layout.guides ? 'show-guides' : ''}">`;
+      slots.slice(s, s + perSheet).forEach((item, i) => {
+        const col = i % layout.cols;
+        const row = Math.floor(i / layout.cols);
+        const pos = `left:${layout.left + col * layout.hPitch}mm;top:${layout.top + row * layout.vPitch}mm;width:${layout.width}mm;height:${layout.height}mm`;
+        if (!item) { html += `<div class="lbl blank" style="${pos}"></div>`; return; }
+        html += `<div class="lbl ${small ? 'small' : ''}" style="${pos};--k:${k.toFixed(3)}">
+          <div class="qr" style="width:${qrSize}mm;height:${qrSize}mm">${item.svg}</div>
+          <div class="info">
+            ${showName || showLogo ? `<div class="lib">${showLogo ? `<img src="${esc(mediaSrc(data.logoUrl))}" alt="">` : ''}${showName ? `<span>${esc(data.libraryName)}</span>` : ''}</div>` : ''}
+            ${layout.showTitle ? `<div class="ttl">${esc(item.title)}</div>` : ''}
+            ${layout.showAuthor && item.authors ? `<div class="aut">${esc(item.authors)}</div>` : ''}
+            <div class="cd">${esc(item.code)}</div>
+          </div>
+        </div>`;
+      });
+      html += '</div>';
+    }
+    target.innerHTML = html;
+  }
+
+  let fetchToken = 0;
+  async function refresh() {
+    const codes = selectedCodes();
+    const token = ++fetchToken;
+    const result = codes.length
+      ? await api('/api/labels', { method: 'POST', body: { codes, baseUrl: location.origin + LIB + '/' } })
+      : { items: [] };
+    if (token === fetchToken) { data = result; renderSheets(); }
+  }
+
+  $$('.seg button').forEach((btn) => {
+    btn.onclick = () => { sel.mode = btn.dataset.mode; renderMode(); refresh(); };
+  });
+  $('#preset').onchange = (e) => {
+    layout.preset = e.target.value;
+    const p = LABEL_PRESETS[e.target.value];
+    if (p) LAYOUT_FIELDS.forEach(([k]) => { $(`[data-dim="${k}"]`).value = p[k]; });
+    else $('#dims').open = true;
+    renderSheets();
+    saveLayout();
+  };
+  $$('[data-dim]').forEach((input) => input.addEventListener('input', () => { layout.preset = 'custom'; $('#preset').value = 'custom'; renderSheets(); saveLayout(); }));
+  ['#opt-logo', '#opt-name', '#opt-title', '#opt-author', '#opt-guides'].forEach((s) => { $(s).onchange = () => { renderSheets(); saveLayout(); }; });
+  $('#start').oninput = renderSheets;
+  $('#print').onclick = async () => {
+    if (!data || !data.items.length) return toast('Aucune étiquette sélectionnée.', 'error');
+    // Les planches sont copiees dans un conteneur enfant direct de <body> : la
+    // feuille de style d'impression masque tout le reste de la page.
+    let root = $('#print-root');
+    if (!root) { root = document.createElement('div'); root.id = 'print-root'; document.body.appendChild(root); }
+    root.innerHTML = $('#sheets').innerHTML;
+    await Promise.all($$('img', root).map((img) => (img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; }))));
+    window.print();
+    root.innerHTML = '';
+    const printed = data.items.map((i) => i.code);
+    if (confirm(`Les ${printed.length} étiquette(s) se sont-elles bien imprimées ?\nElles seront retirées de la liste d'attente.`)) {
+      await api('/api/labels/mark-printed', { method: 'POST', body: { codes: printed } });
+      if (sel.mode === 'manual') sel.manual = [];
+      sel.mode = 'pending';
+      toast('Étiquettes marquées comme imprimées.');
+      route();
+    }
+  };
+
+  // Rien en attente et rien de choisi : on ouvre directement la selection manuelle.
+  if (sel.mode === 'pending' && !pending.length) sel.mode = 'manual';
+  renderMode();
+  await refresh();
+}
+
+export { viewLabels };

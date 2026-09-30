@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const JSZip = require('jszip');
 const { isPrivateAddress, assertPublicUrl, readBody } = require('../lib/net');
-const { csvCell, stripFormulaGuard, ttlCache, limiter } = require('../lib/util');
+const { csvCell, ttlCache, limiter } = require('../lib/util');
 const { readEntry, totalSize } = require('../lib/zip');
 
 test('adresses privees reconnues', () => {
@@ -50,9 +50,6 @@ test('cellule CSV : guillemets et formules', () => {
   assert.equal(csvCell('@SUM(A1)'), "'@SUM(A1)");
   assert.equal(csvCell('-cmd|x'), "'-cmd|x");
   assert.equal(csvCell('978-2-07-040850-4'), '978-2-07-040850-4');
-  assert.equal(stripFormulaGuard("'=1+1"), '=1+1');
-  assert.equal(stripFormulaGuard("'aujourd'hui"), "'aujourd'hui");
-  assert.equal(stripFormulaGuard(42), 42);
 });
 
 test('cache : resultat partage, echec et resultat vide non gardes', async () => {

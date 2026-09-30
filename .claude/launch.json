@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start"],
       "port": 3000
+    },
+    {
+      "name": "demo",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/demo.js"],
+      "port": 3100
     }
   ]
 }

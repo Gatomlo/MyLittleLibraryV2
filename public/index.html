@@ -18,6 +18,34 @@
 <meta name="apple-mobile-web-app-title" content="{{TITLE}}">
 <link rel="preload" href="{{ASSETS}}/fonts/nunito-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="{{ASSETS}}/style.css">
+<!-- Modules de l'interface (public/app/) : annonces d'avance pour etre charges en parallele. -->
+<link rel="modulepreload" href="{{ASSETS}}/app/etat.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/utilitaires.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/scanner.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/entete.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/icones.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/routage.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/accueil-site.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/catalogue.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/fiche-livre.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/kobo.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/liseuse-epub.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/exemplaire.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/connexion.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/compte.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/administration.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/livre-formulaire.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/import.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/incompletes.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/prets.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/emprunteurs.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/accueil.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/souhaits.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/etiquettes.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/statistiques.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/reglages.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/installation.js">
+<link rel="modulepreload" href="{{ASSETS}}/app/main.js">
 <script nonce="{{NONCE}}">window.MLL = {{CONFIG}};</script>
 </head>
 <body>
@@ -43,6 +71,6 @@
 </header>
 <main class="shell" id="view" tabindex="-1"></main>
 <div class="toasts no-print" id="toasts" role="status" aria-live="polite"></div>
-<script src="{{ASSETS}}/app.js"></script>
+<script type="module" src="{{ASSETS}}/app/main.js"></script>
 </body>
 </html>
