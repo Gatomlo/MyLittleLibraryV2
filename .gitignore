@@ -4,6 +4,7 @@ npm-debug.log*
 .env
 .env.local
 .DS_Store
+.bash_history
 
 # Donnees runtime locales
 data/
