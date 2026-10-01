@@ -356,7 +356,14 @@ input[type="checkbox"], input[type="radio"] { width: auto; min-height: 0; paddin
 .search-scan > input { flex: 1; min-width: 0; }
 .search-scan > .btn { flex: none; }
 .books { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
-@media (max-width: 420px) { .books { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+/* Smartphone : une colonne, couverture a gauche et texte a droite. */
+@media (max-width: 599px) {
+  .books { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .books .book-card { flex-direction: row; }
+  .books .book-card .cover { width: 92px; flex: none; align-self: flex-start; }
+  .books .book-card .meta { min-width: 0; padding: 10px 12px; }
+  .books .book-card .cover-ribbon { top: 10px; right: -42px; font-size: 9px; padding: 2px 0; }
+}
 .book-card {
   display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   overflow: hidden; text-decoration: none; color: inherit; box-shadow: var(--shadow); transition: transform .18s ease, box-shadow .18s ease;
@@ -923,6 +930,7 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
 .home-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
 @media (max-width: 860px) { .home-cards { grid-template-columns: minmax(0, 1fr); } }
 .home-card { min-width: 0; }
+.home-cards > .card + .card { margin-top: 0; } /* la grille gere l'espacement (sinon cartes decalees) */
 .home-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .home-card-head h2 { margin: 0; font-size: 17px; flex: 1; min-width: 0; }
 .link-btn { border: 0; background: none; padding: 4px 6px; color: var(--accent); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; border-radius: 8px; }

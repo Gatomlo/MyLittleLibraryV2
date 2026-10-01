@@ -44,35 +44,39 @@ function todoItems(t) {
   ].filter((x) => x && x[0] > 0).map(([n, one, many, target, color]) => ({ n, label: n > 1 ? many : one, target, color }));
 }
 
-// Resume de chaque carte : valeur mise en avant, lignes, page ouverte (tuile smartphone).
+// Resume de chaque carte (tuile smartphone) : lignes et page ouverte. Seul l'objectif de
+// lecture garde une valeur mise en avant ; les listes de livres montrent au plus 3 titres,
+// « A faire » toutes les taches en attente.
+const TILE_TITLES = 3;
 function homeSummary(key, d) {
   const x = d[key];
+  const titles = (list, fmt = (b) => b.title) => list.slice(0, TILE_TITLES).map(fmt);
   switch (key) {
     case 'todo': {
       const items = todoItems(x);
-      return { value: items.length ? String(items.reduce((s, i) => s + i.n, 0)) : '✓', lines: items.length ? items.map((i) => `${i.n} · ${i.label.toLowerCase()}`) : ['Tout est à jour'], go: items[0] ? items[0].target : 'open' };
+      return { lines: items.length ? items.map((i) => `${i.n} ${i.label.toLowerCase()}`) : ['Tout est à jour'], go: items[0] ? items[0].target : 'open' };
     }
-    case 'reading': return { value: String(x.length), lines: x.length ? x.map((b) => `${b.title}${b.percent != null ? ` · ${b.percent} %` : ''}`) : ['Aucune lecture en cours'], go: 'reading' };
-    case 'forme': return { value: String(x.length), lines: x.length ? x.map((f) => `${f.book.title} : ${f.kind === 'back' ? 'disponible' : 'ajouté'}`) : ['Rien de neuf pour toi'], go: x[0] ? `#/book/${x[0].book.id}` : '#/' };
+    case 'reading': return { lines: x.length ? titles(x, (b) => `${b.title}${b.percent != null ? ` · ${b.percent} %` : ''}`) : ['Aucune lecture en cours'], go: 'reading' };
+    case 'forme': return { lines: x.length ? titles(x, (f) => `${f.book.title} : ${f.kind === 'back' ? 'disponible' : 'ajouté'}`) : ['Rien de neuf pour toi'], go: x[0] ? `#/book/${x[0].book.id}` : '#/' };
     case 'due': {
       const late = x.filter((l) => l.overdue).length;
-      return { value: String(late || x.length), sub: late ? 'en retard' : 'à venir', lines: x.length ? x.map((l) => `${l.book.title} · ${l.overdue ? `${daysLate(l.dueAt)} j de retard` : fmtDay(l.dueAt)}`) : ['Aucune échéance proche'], go: late ? 'overdue' : 'open' };
+      return { lines: x.length ? titles(x, (l) => `${l.book.title} · ${l.overdue ? `${daysLate(l.dueAt)} j de retard` : fmtDay(l.dueAt)}`) : ['Aucune échéance proche'], go: late ? 'overdue' : 'open' };
     }
-    case 'wishes': return { value: String(x.count), lines: x.items.length ? x.items.map((w) => w.title) : ['Aucun souhait'], go: '#/wishes' };
-    case 'news': return { value: String(x.month), sub: 'ce mois-ci', lines: x.items.map((b) => b.title), go: 'recent' };
+    case 'wishes': return { lines: x.items.length ? titles(x.items) : ['Aucun souhait'], go: '#/wishes' };
+    case 'news': return { lines: x.items.length ? titles(x.items) : ['Aucun livre pour le moment'], go: 'recent' };
     case 'goal': return x.goal
       ? { value: `${x.read}/${x.goal}`, lines: [x.ahead >= 0 ? `▲ ${plural(x.ahead, 'livre', 'livres')} d'avance` : `▼ ${plural(-x.ahead, 'livre', 'livres')} de retard`, `${x.pages.toLocaleString('fr-BE')} pages en ${x.year}`], go: '#/stats' }
-      : { value: String(x.read), sub: `lu${x.read > 1 ? 's' : ''} en ${x.year}`, lines: ['Aucun objectif défini'], go: '#/stats' };
-    case 'series': return { value: String(x.length), lines: x.length ? x.map((b) => `${b.title} · tome ${b.number}`) : ['Aucun tome suivant'], go: x[0] ? `#/book/${x[0].id}` : '#/' };
-    case 'toread': return { value: String(x.length), sub: x.filter((b) => b.free).length ? `dont ${x.filter((b) => b.free).length} dispo` : '', lines: x.length ? x.map((b) => b.title) : ['Pile vide'], go: 'toread' };
-    case 'rate': return { value: String(x.length), lines: x.length ? x.map((b) => b.title) : ['Tout est noté'], go: x[0] ? `#/book/${x[0].id}` : '#/' };
-    case 'idea': return x ? { value: '', lines: [x.title, x.authors].filter(Boolean), go: `#/book/${x.id}` } : { value: '', lines: ['Aucune idée pour le moment'], go: '#/' };
-    case 'topwishes': return { value: String(x.length), lines: x.length ? x.map((g) => `${g.title} · ${plural(g.count, 'membre', 'membres')}`) : ['Aucun souhait'], go: '#/wishes' };
-    case 'activity': return { value: String(x.loans.now), sub: 'prêts en 7 j', lines: [`${x.returns.now} retours`, `${plural(x.books.now, 'livre ajouté', 'livres ajoutés')}`, `${plural(x.borrowers.now, 'nouvel emprunteur', 'nouveaux emprunteurs')}`], go: 'open' };
+      : { lines: [`${plural(x.read, 'livre lu', 'livres lus')} en ${x.year}`, 'Aucun objectif défini'], go: '#/stats' };
+    case 'series': return { lines: x.length ? titles(x, (b) => `${b.title} · tome ${b.number}`) : ['Aucun tome suivant'], go: x[0] ? `#/book/${x[0].id}` : '#/' };
+    case 'toread': return { lines: x.length ? titles(x) : ['Pile vide'], go: 'toread' };
+    case 'rate': return { lines: x.length ? titles(x) : ['Tout est noté'], go: x[0] ? `#/book/${x[0].id}` : '#/' };
+    case 'idea': return x ? { lines: [x.title, x.authors].filter(Boolean), go: `#/book/${x.id}` } : { lines: ['Aucune idée pour le moment'], go: '#/' };
+    case 'topwishes': return { lines: x.length ? titles(x, (g) => `${g.title} · ${plural(g.count, 'membre', 'membres')}`) : ['Aucun souhait'], go: '#/wishes' };
+    case 'activity': return { lines: [`${plural(x.loans.now, 'prêt', 'prêts')} en 7 j`, `${plural(x.returns.now, 'retour', 'retours')}`, `${plural(x.books.now, 'livre ajouté', 'livres ajoutés')}`], go: 'open' };
     case 'kobo': return x.length
-      ? { value: String(x[0].books), sub: 'livres', lines: [x[0].name, x[0].lastScanAt ? `scan du ${fmtDate(x[0].lastScanAt)}` : 'jamais scannée', ...(x[0].pending ? [`${x[0].pending} en attente`] : [])], go: `#/kobo/${x[0].id}` }
-      : { value: '', lines: ['Aucune liseuse à ton nom'], go: '#/kobo' };
-    default: return { value: '', lines: [], go: '#/' };
+      ? { lines: [x[0].name, x[0].lastScanAt ? `scan du ${fmtDate(x[0].lastScanAt)}` : 'jamais scannée', ...(x[0].pending ? [`${x[0].pending} en attente`] : [])], go: `#/kobo/${x[0].id}` }
+      : { lines: ['Aucune liseuse à ton nom'], go: '#/kobo' };
+    default: return { lines: [], go: '#/' };
   }
 }
 
@@ -235,9 +239,9 @@ async function viewDashboard() {
           ${HOME_LINKS[c.key] ? `<button type="button" class="link-btn" data-home-go="${HOME_LINKS[c.key][0]}">${HOME_LINKS[c.key][1]}</button>` : ''}</div>
         ${homeCardBody(c.key, d)}</section>`).join('')}</div>
     <nav class="home-tiles" id="home-tiles" aria-label="Accueil">${shown.map((c, i) => { const s = homeSummary(c.key, d); return `
-        <button type="button" class="home-tile" data-home-go="${esc(s.go)}" style="${colorVars(HOME_META[c.key].color)}" ${foldTiles && i >= HOME_PHONE_TILES ? 'data-extra hidden' : ''}>
+        <button type="button" class="home-tile" data-home-go="${esc(s.go)}" data-lines="${s.lines.length}"${s.value ? ' data-value' : ''} style="${colorVars(HOME_META[c.key].color)}" ${foldTiles && i >= HOME_PHONE_TILES ? 'data-extra hidden' : ''}>
           <span class="tile-head"><span class="h-icon" aria-hidden="true">${icon(HOME_META[c.key].icon, 16)}</span><span class="tile-label">${esc(c.label)}</span></span>
-          <span class="tile-value">${esc(s.value)}${s.sub ? ` <small>${esc(s.sub)}</small>` : ''}</span>
+          ${s.value ? `<span class="tile-value">${esc(s.value)}${s.sub ? ` <small>${esc(s.sub)}</small>` : ''}</span>` : ''}
           <span class="tile-lines">${s.lines.map((l) => `<span>${esc(l)}</span>`).join('')}</span>
         </button>`; }).join('')}
         ${foldTiles ? '<button type="button" class="home-tile home-more" id="home-more" aria-expanded="false"></button>' : ''}</nav>`
@@ -276,21 +280,22 @@ function fitHome() {
   const tiles = $('#home-tiles');
   const phone = window.matchMedia(HOME_PHONE_QUERY).matches;
   if (!tiles || !phone) { document.body.classList.remove('home-fit'); if (tiles) tiles.style.height = ''; return; }
-  // Une seule colonne. Trop de cartes pour l'ecran : hauteur minimale par tuile et
-  // la page defile (sinon elle tient dans l'ecran, sans defilement).
+  // Une seule colonne. Chaque tuile a la hauteur de toutes ses lignes (au moins MIN) ;
+  // si tout tient, la place restante est partagee, sinon la page defile.
   const visible = Array.from(tiles.children).filter((t) => !t.hidden);
   const n = visible.length;
   const MIN = 68;
   const GAP = 8;
+  const LINE = 16.2; // 12px x 1.35 (.tile-lines)
+  const more = $('#home-more');
+  const mins = visible.map((t) => (t === more ? 40 : Math.max(MIN, Math.ceil(46 + (t.hasAttribute('data-value') ? 26 : 0) + Number(t.dataset.lines || 0) * LINE))));
   const h = (window.visualViewport ? window.visualViewport.height : window.innerHeight) - (tiles.getBoundingClientRect().top + window.scrollY) - 12;
-  const needed = n * MIN + (n - 1) * GAP;
+  const needed = mins.reduce((a, b) => a + b, 0) + (n - 1) * GAP;
   const fits = needed <= h;
   document.body.classList.toggle('home-fit', fits && !!$('.home'));
   tiles.style.setProperty('--cols', 1);
-  // « Voir tout » : une ligne basse, les tuiles se partagent le reste.
-  const more = $('#home-more');
-  tiles.style.gridTemplateRows = more ? `repeat(${n - 1}, minmax(0, 1fr)) 40px` : '';
-  tiles.style.setProperty('--rows', n);
+  // « Voir tout » : une ligne basse fixe, les tuiles se partagent le reste.
+  tiles.style.gridTemplateRows = visible.map((t, i) => (t === more ? '40px' : `minmax(${mins[i]}px, 1fr)`)).join(' ');
   tiles.style.height = `${fits ? Math.max(120, Math.floor(h)) : needed}px`;
   // Petites tuiles : chiffre a cote du titre, pour garder des lignes de detail.
   tiles.classList.remove('compact');

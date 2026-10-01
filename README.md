@@ -154,7 +154,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   bibliothécaires et gestionnaires : Souhaits les plus demandés (regroupés par livre, « Très envie » d'abord, ajout au catalogue en un
   clic pour tous les membres concernés) et Activité de la semaine (prêts, retours, ajouts, emprunteurs vs semaine
   précédente). Chaque compte choisit ses cartes et leur ordre (menu du compte > « Personnaliser l'accueil », par bibliothèque). Sur
-  smartphone : tuiles résumées sur une seule colonne, les 6 premières puis « Voir tout » ; une tuile ouvre la page.
+  smartphone : tuiles résumées sur une seule colonne (toutes les tâches à faire, au plus 3 titres par liste, chiffre seulement pour l'objectif), les 6 premières puis « Voir tout » ; une tuile ouvre la page. Catalogue sur smartphone : une fiche par ligne, couverture à gauche.
 - **Souhaits** (lien « Souhaits », tout compte connecté) : liste de livres souhaités propre à chaque compte
   (hors bibliothèque) ; ajout par ISBN (tapé ou scanné) ou par titre (choix de l'édition), notes, « Très envie » (cœur cliquable dans la liste,
   filtre « Très envie seulement », aussi appliqué à l'export).
