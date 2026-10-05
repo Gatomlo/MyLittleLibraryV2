@@ -40,8 +40,8 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   — epub, pdf… — seul ou en plus des exemplaires papier, sans code, étiquette ni prêt ;
   à l'import : Type = Papier, Numérique ou Papier + numérique ; fichier epub facultatif, lisible dans la
   liseuse intégrée ; droits réglés pour toute la bibliothèque — voir le fichier, le lire en ligne, le
-  télécharger — chacun pour tout le monde, les comptes, les gestionnaires ou les administrateurs ; import de
-  plusieurs fichiers epub : Ajout multiple > Fichiers epub ; ISBN lu dans les métadonnées ou, à défaut, dans la page de copyright), **liseuses Kobo** (branchées en USB : liste
+  télécharger — chacun pour tout le monde, les comptes, les gestionnaires ou les administrateurs ; ajout d'un livre
+  depuis un fichier epub : Ajouter un livre > Depuis un epub (fiche pré-remplie à vérifier), ou fichier joint à la case Version numérique ; plusieurs fichiers : Ajout multiple > Fichiers epub ; ISBN lu dans les métadonnées ou, à défaut, dans la page de copyright), **liseuses Kobo** (branchées en USB : liste
   de leurs livres avec fiche / fichier présents dans la bibliothèque, création ou rattachement de fiche avec
   copie du fichier, statuts de lecture du propriétaire, envoi de livres avec série et tome ; copie directe
   sur la liseuse avec Chrome, téléchargement avec Firefox ; suppression d'un livre de la liseuse avec Chrome) et statuts de lecture

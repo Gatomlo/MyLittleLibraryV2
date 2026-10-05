@@ -7,6 +7,7 @@ import { icon, iconText } from './icones.js';
 import { loadCategories, combo, loadMembers } from './catalogue.js';
 import { isbnFromCell, chipField } from './import.js';
 import { wishSrc } from './souhaits.js';
+import { sendRaw, uploadEpub } from './fiche-livre.js';
 
 async function viewBookForm(id) {
   const editing = !!id;
@@ -30,7 +31,9 @@ async function viewBookForm(id) {
   view().innerHTML = `
     <p><a href="${fromIncomplete || (editing ? `#/book/${b.id}` : '#/')}">← ${fromIncomplete ? 'Fiches incomplètes' : editing ? 'Retour à la fiche' : 'Catalogue'}</a></p>
     ${editing ? '<h1>Modifier le livre</h1>' : `<div class="page-head"><div><h1>Ajouter un livre</h1></div>
-      <div class="btn-row"><a class="btn hide-mobile" href="#/import">Ajout multiple</a></div></div>`}
+      <div class="btn-row">${features().ebooks ? `<label class="btn" title="Créer la fiche d'après les informations d'un fichier epub">
+          <input type="file" id="epub-one" accept=".epub,application/epub+zip" hidden>Depuis un epub</label>` : ''}
+        <a class="btn hide-mobile" href="#/import">Ajout multiple</a></div></div>`}
     <div class="card" style="margin:14px 0">
       <label for="isbn-search">Rechercher par ISBN ou titre ${hint('Scanne ou tape l\'ISBN pour pré-remplir la fiche. Sans ISBN : tape le titre et l\'auteur, ou « Titre + auteur » reprend ceux de la fiche, puis choisis l\'édition.')}</label>
       <div class="isbn-row">
@@ -97,7 +100,9 @@ async function viewBookForm(id) {
           <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist></div>
       </div>
       ${features().ebooks ? `<div class="field"><label class="check"><input type="checkbox" name="ebook" id="ebook">
-        <span>Version numérique ${hint('Exemplaire numérique (epub, pdf…), sans code, étiquette ni prêt.')}</span></label></div>` : ''}`}
+        <span>Version numérique ${hint('Exemplaire numérique (epub, pdf…), sans code, étiquette ni prêt.')}</span></label></div>
+      <div class="field" id="ebook-file-field" hidden><label for="ebook-file">Fichier epub ${hint('Facultatif (100 Mo max).')}</label>
+        <input type="file" id="ebook-file" accept=".epub,application/epub+zip"></div>` : ''}`}
       ${members.length > 1 || editing ? `<div class="field"><label>Lecteurs ${hint('Comptes qui lisent, liront ou ont lu ce livre.')}</label>
         <div class="btn-row">${members.map((m) => `<label class="check"><input type="checkbox" data-reader="${m.id}" ${(editing ? (b.readers || []).some((r) => r.id === m.id) : m.id === state.user.id) ? 'checked' : ''}> ${m.id === state.user.id ? 'Moi' : esc(m.username)}</label>`).join('')}</div></div>` : ''}
       <div class="field"><label for="notes">Notes internes ${hint('Visibles uniquement par les gestionnaires.')}</label><textarea id="notes" name="notes" style="min-height:70px">${esc(b.notes)}</textarea></div>
@@ -293,6 +298,36 @@ async function viewBookForm(id) {
     lookup(isbn);
   }
 
+  // Un seul epub : fiche creee d'apres le fichier (comme l'ajout multiple), puis ouverte
+  // en modification pour la verifier ; fiche deja presente : ouverte telle quelle.
+  const epubOne = $('#epub-one');
+  if (epubOne) epubOne.onchange = async () => {
+    const file = epubOne.files[0];
+    if (!file) return;
+    const label = epubOne.parentElement;
+    label.style.opacity = '.55';
+    label.style.pointerEvents = 'none';
+    epubOne.disabled = true;
+    try {
+      if (file.size > 100 * 1024 * 1024) throw new Error('Fichier trop lourd (100 Mo max).');
+      const r = await sendRaw('/api/import/epub', 'POST', file, 'application/epub+zip', { 'X-File-Name': encodeURIComponent(file.name) });
+      if (r.status === 'created') {
+        toast('Fiche créée d’après le fichier : vérifie-la.');
+        go(`#/book/${r.bookId}/edit`);
+      } else {
+        toast(r.status === 'attached' ? 'Livre déjà au catalogue : fichier ajouté à sa fiche.' : 'Livre déjà au catalogue avec un fichier epub.');
+        go(`#/book/${r.bookId}`);
+      }
+    } catch (err) {
+      toast(err.message, 'error');
+      label.style.opacity = '';
+      label.style.pointerEvents = '';
+      epubOne.disabled = false;
+      epubOne.value = '';
+    }
+  };
+  if (f.ebook) f.ebook.onchange = () => { $('#ebook-file-field').hidden = !f.ebook.checked; };
+
   f.onsubmit = async (e) => {
     e.preventDefault();
     addCat();
@@ -320,6 +355,12 @@ async function viewBookForm(id) {
       else {
         const codes = saved.copies.filter((c) => c.format !== 'ebook').map((c) => c.code);
         toast(codes.length ? `Livre ajouté : ${codes.join(', ')}. Étiquette(s) en attente d'impression.` : 'Livre ajouté.');
+        const file = body.ebook && $('#ebook-file').files[0];
+        const ebookCopy = file && saved.copies.find((c) => c.format === 'ebook');
+        if (ebookCopy) {
+          btn.textContent = 'Envoi du fichier…';
+          await uploadEpub(ebookCopy.id, file).catch((err) => toast(`Fichier non envoyé : ${err.message}`, 'error'));
+        }
         if (wish) {
           for (const wid of wish.ids || [wish.id]) {
             await gapi(`/api/wishes/${wid}/added`, { method: 'POST', body: { library: LIBRARY.id, bookId: saved.id } })
