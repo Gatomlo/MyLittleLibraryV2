@@ -183,6 +183,21 @@ test('accueil, statistiques, souhaits', async () => {
   const st = ok(await ctx.users.lecteur.get(`${api}/stats/user/${ctx.users.lecteur.id}`));
   assert.deepEqual(st.goals.map((g) => g.key), ['books', 'pages', 'maxToRead']);
   assert.equal(st.goals.find((g) => g.key === 'maxToRead').kind, 'max');
+  // Partage des statistiques : avec certains membres seulement, puis avec tous.
+  const { lecteur, lecteur2, bibliothecaire } = ctx.users;
+  const statsOf = (u) => u.get(`${api}/stats/user/${lecteur.id}`);
+  assert.equal((await statsOf(lecteur2)).status, 403);
+  const some = ok(await lecteur.put(`${api}/stats/prefs`, { shareMode: 'some', shareWith: [lecteur2.id, ctx.users.etranger.id] }));
+  assert.equal(some.shareMode, 'some');
+  assert.deepEqual(some.shareWith, [lecteur2.id]); // compte hors bibliotheque ignore
+  ok(await statsOf(lecteur2));
+  assert.equal((await statsOf(bibliothecaire)).status, 403);
+  assert.ok(ok(await lecteur2.get(`${api}/stats/overview`)).shared.some((m) => m.id === lecteur.id));
+  assert.ok(!ok(await bibliothecaire.get(`${api}/stats/overview`)).shared.some((m) => m.id === lecteur.id));
+  ok(await lecteur.put(`${api}/stats/prefs`, { shareMode: 'all' }));
+  ok(await statsOf(bibliothecaire));
+  ok(await lecteur.put(`${api}/stats/prefs`, { shareMode: 'none' }));
+  assert.equal((await statsOf(lecteur2)).status, 403);
   const l = ctx.users.lecteur;
   const lq = `library=${ctx.lib.id}`;
   const w = ok(await l.post('/api/wishes', { title: 'Souhait', authors: 'Un auteur', library: ctx.lib.id, coverData: `data:image/png;base64,${png().toString('base64')}` }));

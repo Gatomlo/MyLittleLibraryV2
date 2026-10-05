@@ -2,7 +2,7 @@
 import './etiquettes.js';
 import { features } from './etat.js';
 import { $, $$, view, esc, hint, mediaSrc, api, toast } from './utilitaires.js';
-import { starsHtml } from './catalogue.js';
+import { starsHtml, combo } from './catalogue.js';
 
 // Tableau de bord : anneau d'objectif, cartes chiffres avec tendance, donut de
 // repartition, colonnes et courbe mensuelles (infobulle au survol), podiums avec
@@ -197,6 +197,7 @@ async function viewStats() {
   }
   const ov = await api('/api/stats/overview');
   if (statsState.who !== 'me' && statsState.who !== 'library' && !ov.shared.some((m) => String(m.id) === statsState.who)) statsState.who = 'me';
+  const member = ov.shared.find((m) => String(m.id) === statsState.who);
   view().innerHTML = `
     <div class="stats-head">
       <div><h1>Statistiques</h1><p class="muted small" id="st-sub"></p></div>
@@ -204,8 +205,9 @@ async function viewStats() {
     </div>
     <div class="stats-tabs" id="st-tabs">
       <button data-who="me" class="${statsState.who === 'me' ? 'active' : ''}"><span class="tab-avatar">${initials(ov.me.username)}</span>Mes statistiques</button>
-      ${ov.shared.map((m) => `<button data-who="${m.id}" class="${statsState.who === String(m.id) ? 'active' : ''}"><span class="tab-avatar">${initials(m.username)}</span>${esc(m.username)}</button>`).join('')}
       <button data-who="library" class="${statsState.who === 'library' ? 'active' : ''}"><span class="tab-avatar">🏛</span>Bibliothèque</button>
+      ${ov.shared.length ? `<div class="stats-member-pick"><label for="st-member" class="sr-only">Statistiques partagées par un membre</label>
+        <input type="search" id="st-member" class="${member ? 'active' : ''}" placeholder="Statistiques d'un membre (${ov.shared.length})…" value="${member ? esc(member.username) : ''}"></div>` : ''}
     </div>
     <div id="st-body"><p class="muted">Calcul…</p></div>`;
   $$('[data-period]').forEach((b) => {
@@ -215,13 +217,22 @@ async function viewStats() {
       renderStatsBody(ov);
     };
   });
-  $$('#st-tabs [data-who]').forEach((b) => {
-    b.onclick = () => {
-      statsState.who = b.dataset.who;
-      $$('#st-tabs button').forEach((x) => x.classList.toggle('active', x === b));
-      renderStatsBody(ov);
-    };
-  });
+  const pick = $('#st-member');
+  const show = (who) => {
+    statsState.who = who;
+    $$('#st-tabs button').forEach((x) => x.classList.toggle('active', x.dataset.who === who));
+    if (pick) {
+      const m = ov.shared.find((x) => String(x.id) === who);
+      pick.value = m ? m.username : '';
+      pick.classList.toggle('active', !!m);
+    }
+    renderStatsBody(ov);
+  };
+  $$('#st-tabs [data-who]').forEach((b) => { b.onclick = () => show(b.dataset.who); });
+  if (pick) {
+    combo(pick, ov.shared.map((m) => ({ id: m.id, label: m.username })), (it) => show(String(it.id)), { emptyText: 'Aucun membre' });
+    pick.addEventListener('focus', () => pick.select());
+  }
   await renderStatsBody(ov);
 }
 
@@ -270,9 +281,14 @@ function prefsHtml(ov) {
   return `<h2>Mes lectures ${hint('Réglages propres à cette bibliothèque : partage de tes statistiques, objectifs de l\'année et délai avant de signaler une lecture qui traîne.')}</h2>
   <div class="card">
     <div class="grid-3">
-      <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="pf-share" ${p.shareStats ? 'checked' : ''} ${ov.member ? '' : 'disabled'}> Partager mes statistiques avec les membres de la bibliothèque</label>${ov.member ? '' : hint('Réservé aux comptes liés à cette bibliothèque.')}</div>
+      <div class="field"><label for="pf-share">Partager mes statistiques ${hint(ov.member ? 'Les membres choisis les voient dans Statistiques (sans pouvoir les modifier).' : 'Réservé aux comptes liés à cette bibliothèque.')}</label>
+        <select id="pf-share" ${ov.member ? '' : 'disabled'}>${[['none', 'Avec personne'], ['all', 'Avec tous les membres'], ['some', 'Avec certains membres']]
+          .map(([v, l]) => `<option value="${v}" ${p.shareMode === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="field"><label>Signaler une lecture en cours après (jours)</label><input type="number" id="pf-stale" min="1" max="3650" value="${p.staleDays}"></div>
     </div>
+    <fieldset class="plain" id="pf-share-with" ${p.shareMode === 'some' ? '' : 'hidden'}><legend class="small muted">Membres qui voient mes statistiques :</legend>
+      ${(ov.members || []).length ? `<div class="check-grid">${ov.members.map((m) => `<label class="check"><input type="checkbox" data-share-with="${m.id}" ${(p.shareWith || []).includes(m.id) ? 'checked' : ''}> ${esc(m.username)}</label>`).join('')}</div>`
+        : '<p class="small muted">Aucun autre membre dans cette bibliothèque.</p>'}</fieldset>
     <h3>Objectifs de l'année ${hint('Laisse vide pour ne pas suivre un objectif. Ils s\'affichent dans Statistiques et dans la carte « Objectif de lecture » de l\'accueil.')}</h3>
     <div class="grid-3">
       <div class="field"><label for="pf-goal">Livres à lire</label><input type="number" id="pf-goal" min="1" max="1000" placeholder="aucun" value="${p.yearlyGoal || ''}"></div>
@@ -289,7 +305,11 @@ function bindPrefs(ov) {
       toast('Réglages enregistrés.');
     } catch (err) { toast(err.message, 'error'); }
   };
-  $('#pf-share').onchange = (e) => save({ shareStats: e.target.checked });
+  $('#pf-share').onchange = (e) => {
+    $('#pf-share-with').hidden = e.target.value !== 'some';
+    save({ shareMode: e.target.value });
+  };
+  $$('[data-share-with]').forEach((c) => { c.onchange = () => save({ shareWith: $$('[data-share-with]:checked').map((x) => Number(x.dataset.shareWith)) }); });
   $('#pf-goal').onchange = (e) => save({ yearlyGoal: e.target.value || null });
   $$('[data-goal]').forEach((inp) => { inp.onchange = () => save({ goals: { [inp.dataset.goal]: inp.value === '' ? null : inp.value } }); });
   $('#pf-stale').onchange = (e) => save({ staleDays: e.target.value });

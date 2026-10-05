@@ -19,7 +19,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   bibliothécaire (catalogue, ajouts, prêts, emprunteurs et étiquettes, sans les réglages)
   ou lecteur (catalogue en lecture seule, avec ses statuts de lecture, souhaits, statistiques et liseuse ;
   ni ajout ni prêt). **Liens d'invitation** (Administration › Comptes) : un lien par bibliothèque et par rôle,
-  valable 7, 30 ou 90 jours ; la personne choisit son identifiant et son mot de passe (ou rejoint avec son compte). Réglages personnels de lecture (partage des statistiques, objectif annuel) dans « Mon compte ». Bibliothèque par
+  valable 7, 30 ou 90 jours ; la personne choisit son identifiant et son mot de passe (ou rejoint avec son compte). Réglages personnels de lecture (partage des statistiques avec personne, tous les membres ou certains membres ; objectifs de l'année) dans « Mon compte ». Bibliothèque par
   défaut ouverte à la connexion ; le menu du compte permet de basculer.
   La racine du site n'affiche que la page de connexion.
 - **Catalogue public** (lecture seule, sans connexion) : recherche, filtre par
