@@ -5,7 +5,8 @@ import { $, $$, view, esc, hint, mediaSrc, api, gapi, toast, go, debounce, image
 import { openCoverSearch, scanIsbn } from './scanner.js';
 import { icon, iconText } from './icones.js';
 import { loadCategories, combo, loadMembers, memberPicker } from './catalogue.js';
-import { isbnFromCell, chipField, markEpubChecked } from './import.js';
+import { isbnFromCell, chipField } from './import.js';
+import { markImportChecked } from './import-suivi.js';
 import { wishSrc } from './souhaits.js';
 import { sendRaw, uploadEpub } from './fiche-livre.js';
 
@@ -376,7 +377,7 @@ async function viewBookForm(id) {
         }
       }
       if (fromIncomplete) sessionStorageTake('mll-after-edit');
-      if (fromIncomplete === '#/import') markEpubChecked(saved.id);
+      if (fromIncomplete === '#/import') markImportChecked(saved.id);
       go(fromIncomplete || `#/book/${saved.id}`);
     } catch (err) {
       $('#form-err').innerHTML = `<div class="error-box">${esc(err.message)}</div>`;

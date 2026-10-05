@@ -795,6 +795,9 @@ html.standalone body { overscroll-behavior-y: none; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px) scale(.96); } to { opacity: 1; transform: none; } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 #view > * { animation: rise .25s ease-out both; }
+/* L'animation (transform) fait de chaque bloc un contexte d'empilement : le bloc qui a le
+   focus (liste deroulante ouverte) doit passer devant les blocs suivants. */
+#view > :focus-within { position: relative; z-index: 20; }
 /* Pastille d'icone devant le titre de page (ajoutee par decorateTitle dans app.js). */
 h1 .h-icon {
   display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; margin-right: 12px; vertical-align: -9px;
@@ -1031,5 +1034,5 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
 .member-picker .combo { max-width: 360px; }
 
 /* Resultats d'un import epub : action Verifier, lignes deja verifiees attenuees. */
-.epub-action { white-space: nowrap; text-align: right; }
-.epub-checked td:first-child, .epub-checked td:nth-child(2) { opacity: .6; }
+.hist-action { white-space: nowrap; text-align: right; }
+.hist-checked td:first-child, .hist-checked td:nth-child(2) { opacity: .6; }

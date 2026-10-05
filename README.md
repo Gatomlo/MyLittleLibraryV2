@@ -41,7 +41,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   à l'import : Type = Papier, Numérique ou Papier + numérique ; fichier epub facultatif, lisible dans la
   liseuse intégrée ; droits réglés pour toute la bibliothèque — voir le fichier, le lire en ligne, le
   télécharger — chacun pour tout le monde, les comptes, les gestionnaires ou les administrateurs ; ajout d'un livre
-  depuis un fichier epub : Ajouter un livre > Depuis un epub (fiche pré-remplie à vérifier), ou fichier joint à la case Version numérique ; plusieurs fichiers : Ajout multiple > Fichiers epub, avec la liste des résultats gardée dans l'onglet, un bouton Vérifier par fiche, retour à la liste après enregistrement et suivi des fiches vérifiées ; ISBN lu dans les métadonnées ou, à défaut, dans la page de copyright), **liseuses Kobo** (branchées en USB : liste
+  depuis un fichier epub : Ajouter un livre > Depuis un epub (fiche pré-remplie à vérifier), ou fichier joint à la case Version numérique ; plusieurs fichiers : Ajout multiple > Fichiers epub, par vagues (nouveaux fichiers ajoutés à la file pendant l'envoi) ; ISBN lu dans les métadonnées ou, à défaut, dans la page de copyright), **liseuses Kobo** (branchées en USB : liste
   de leurs livres avec fiche / fichier présents dans la bibliothèque, création ou rattachement de fiche avec
   copie du fichier, statuts de lecture du propriétaire, envoi de livres avec série et tome ; copie directe
   sur la liseuse avec Chrome, téléchargement avec Firefox ; suppression d'un livre de la liseuse avec Chrome) et statuts de lecture
@@ -100,6 +100,11 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   Option « ISBN déjà au catalogue › Mettre à jour la fiche » (fichier complet) : les
   colonnes remplies du fichier écrasent celles de la fiche existante (repérée par la
   colonne « ID fiche » des exports, sinon par l'ISBN) ; aucun exemplaire créé.
+- **Suivi des imports** (bas de la page Ajout multiple) : historique commun aux scans,
+  listes d'ISBN, fichiers et epub, gardé dans le navigateur (partagé entre onglets) jusqu'à
+  effacement ; on peut importer par vagues et vérifier les fiches des précédentes en même
+  temps. Filtres À vérifier / En cours / Erreurs / Vérifiées, bouton Vérifier (retour au
+  suivi après enregistrement, fiche cochée), ✓ pour cocher sans ouvrir, « Retirer les vérifiées ».
 - **Export** (Réglages > Exporter) : inventaire `.xlsx` / `.csv`, une ligne par livre
   avec tous les champs, le nombre d'exemplaires et leurs codes — mêmes colonnes que
   l'import (+ « ID fiche »), donc réimportable (y compris dans une autre bibliothèque).
