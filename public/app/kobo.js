@@ -6,6 +6,7 @@ import { iconText, renderNav } from './icones.js';
 import { route } from './routage.js';
 import { searchPicker, loadMembers } from './catalogue.js';
 import { uploadEpub } from './fiche-livre.js';
+import { historyAdd, historyUpdate } from './import-suivi.js';
 
 // La liseuse branchee est lue par le navigateur. Chrome (et Edge) : dossier ouvert en
 // lecture/ecriture (File System Access). Ailleurs (Firefox) : dossier choisi par un
@@ -385,6 +386,8 @@ async function viewKoboDevice(id) {
   const f = koboState.filter;
   const items = d.items.filter((i) => f === 'all' || (f === 'nobook' && !i.book) || (f === 'nofile' && i.book && !i.book.hasFile));
   const toCopy = d.items.filter((i) => i.book && !i.book.hasFile && i.path && !i.pending);
+  // Livres affiches (filtres compris) sans fiche : fiches creees d'un coup.
+  const toCreate = items.filter((i) => !i.book);
   const reading = (i) => {
     if (i.pending) return '<span class="badge badge-muted">Envoyé, en attente d\'import</span>';
     const main = i.readStatus === 2 ? '<span class="badge badge-ok">Lu</span>'
@@ -400,6 +403,7 @@ async function viewKoboDevice(id) {
       <p class="small muted">${d.owner ? `Propriétaire : ${esc(d.owner.username)}` : 'Sans propriétaire'} · ${d.books} livre(s) · scan du ${d.lastScanAt ? fmtDate(d.lastScanAt) : '—'}${d.firmware ? ` · firmware ${esc(d.firmware)}` : ''}</p></div>
       <div class="btn-row">
         <button class="btn btn-primary" id="kobo-rescan">${connected() ? 'Rescanner' : '<span class="hide-mobile">Brancher et scanner</span><span class="show-mobile">Brancher</span>'}</button>
+        ${toCreate.length > 1 && canManage() ? `<button class="btn" id="kobo-create-all"><span class="hide-mobile">Créer les ${toCreate.length} fiches</span><span class="show-mobile">Créer (${toCreate.length})</span></button>` : ''}
         ${toCopy.length && canManage() ? `<button class="btn" id="kobo-copy-all"><span class="hide-mobile">Copier les ${toCopy.length} fichier(s) manquant(s)</span><span class="show-mobile">Copier (${toCopy.length})</span></button>` : ''}
         ${mine ? '<button class="btn" id="kobo-edit">Modifier</button>' : ''}
       </div></div>
@@ -490,6 +494,29 @@ async function viewKoboDevice(id) {
       koboReturn = { deviceId: d.id, name: d.name, bookId: out.book.id };
       go(`#/book/${out.book.id}`);
     });
+  });
+  // Creation en serie : chaque fiche va dans le suivi des imports (Ajout multiple) pour
+  // etre verifiee ensuite ; fichier copie si la liseuse est branchee.
+  const createAll = $('#kobo-create-all');
+  if (createAll) createAll.onclick = busy(async (btn) => {
+    if (!confirm(`Créer ${toCreate.length} fiche(s) d'après les informations de la liseuse ? Tu pourras les vérifier dans Ajout multiple › Suivi des imports.`)) return;
+    const ids = historyAdd('kobo', toCreate.map((i) => i.title));
+    let ok = 0;
+    let failed = 0;
+    for (const [n, i] of toCreate.entries()) {
+      btn.textContent = `Création ${n + 1} / ${toCreate.length}…`;
+      try {
+        const out = await api(`/api/kobo/items/${i.id}/create`, { method: 'POST', body: {} });
+        historyUpdate(ids[n], { status: 'created', bookId: out.book.id, title: out.book.title });
+        ok++;
+        if (connected()) await copyFile(i, out).catch(() => { failed++; });
+      } catch (err) {
+        historyUpdate(ids[n], { status: 'error', error: err.message });
+        failed++;
+      }
+    }
+    toast(`${ok} fiche(s) créée(s)${failed ? `, ${failed} échec(s)` : ''}. À vérifier dans Ajout multiple › Suivi des imports.`, failed ? 'error' : undefined);
+    route();
   });
   const copyAll = $('#kobo-copy-all');
   if (copyAll) copyAll.onclick = busy(async (btn) => {

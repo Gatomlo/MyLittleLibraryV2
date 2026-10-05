@@ -3,7 +3,7 @@ import './livre-formulaire.js';
 import { LIB } from './etat.js';
 import { $$, esc, hint, sessionStorageSet } from './utilitaires.js';
 
-// Historique des imports (epub, scan, liste d'ISBN, fichier), garde dans le navigateur
+// Historique des imports (epub, scan, liste d'ISBN, fichier, fiches creees depuis une liseuse), garde dans le navigateur
 // (localStorage : partage entre onglets, conserve jusqu'a ce qu'on l'efface). On peut
 // importer par vagues et verifier les fiches au fur et a mesure. Ligne : { id, source,
 // name, status, bookId, title, error, checked, tab }. Chaque ecriture relit la liste et
@@ -11,7 +11,7 @@ import { $$, esc, hint, sessionStorageSet } from './utilitaires.js';
 // status : pending | sending | created | attached | copies | updated | unchanged | skipped | error.
 const KEY = `mll-import-history:${LIB}`;
 const MAX_ROWS = 3000;
-const SOURCES = { epub: 'Epub', scan: 'Scan', isbn: 'ISBN', full: 'Fichier' };
+const SOURCES = { epub: 'Epub', scan: 'Scan', isbn: 'ISBN', full: 'Fichier', kobo: 'Liseuse' };
 const STATUS = {
   created: '<span class="badge badge-ok">Ajouté</span>',
   attached: '<span class="badge badge-ok">Fichier ajouté à la fiche</span>',
