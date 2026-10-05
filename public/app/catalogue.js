@@ -611,7 +611,29 @@ async function loadBooks(append) {
   if (more) more.onclick = () => { c.page++; loadBooks(true); };
 }
 
+// Choix de plusieurs comptes (lecteurs d'un livre...) : pastilles retirables et liste
+// deroulante avec recherche des autres comptes, lisible meme avec beaucoup de membres.
+// box : conteneur vide ; selected : identifiants choisis. Renvoie { get, add }.
+function memberPicker(box, members, selected, { onChange = () => {}, placeholder = 'Ajouter un lecteur…', none = 'Aucun lecteur' } = {}) {
+  const ids = new Set(selected);
+  const name = (m) => (m.id === state.user.id ? 'Moi' : m.username);
+  box.classList.add('member-picker');
+  box.innerHTML = `<div class="member-chips"></div><input type="search" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}">`;
+  const chips = box.querySelector('.member-chips');
+  const input = box.querySelector('input');
+  const draw = () => {
+    chips.innerHTML = members.filter((m) => ids.has(m.id)).map((m) => `<span class="chip chip-reader">${esc(name(m))}<button type="button" data-id="${m.id}" aria-label="Retirer ${esc(name(m))}">×</button></span>`).join('')
+      || `<span class="small muted">${esc(none)}</span>`;
+    chips.querySelectorAll('button').forEach((b) => { b.onclick = () => { ids.delete(Number(b.dataset.id)); draw(); onChange([...ids]); }; });
+  };
+  const add = (id) => { ids.add(id); draw(); onChange([...ids]); };
+  combo(input, members.map((m) => ({ id: m.id, label: name(m) })), (it) => { input.value = ''; add(it.id); },
+    { emptyText: 'Aucun autre compte', skip: (it) => ids.has(it.id) });
+  draw();
+  return { get: () => [...ids], add };
+}
+
 export {
-  loadCategories, combo, searchPicker, ALL_CATALOG_CARD, CATALOG_CARD_LABELS, ALL_CATALOG_FILTERS, CATALOG_FILTER_LABELS, accordionize,
+  loadCategories, combo, searchPicker, memberPicker, ALL_CATALOG_CARD, CATALOG_CARD_LABELS, ALL_CATALOG_FILTERS, CATALOG_FILTER_LABELS, accordionize,
   loadMembers, forgetMembers, viewCatalog, starsHtml,
 };

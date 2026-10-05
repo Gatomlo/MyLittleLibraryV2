@@ -1024,3 +1024,8 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
 .goal-row.goal-late .goal-bar span { background: var(--warn); }
 .goal-row.goal-over .goal-bar span { background: var(--danger); }
 .goals-panel { margin-bottom: 16px; }
+
+/* Choix de plusieurs comptes (memberPicker) : pastilles puis champ de recherche. */
+.member-picker .member-chips { display: flex; flex-wrap: wrap; align-items: center; min-height: 28px; margin-bottom: 4px; }
+.member-picker .chip-reader { background: var(--grape-soft); color: var(--grape); }
+.member-picker .combo { max-width: 360px; }

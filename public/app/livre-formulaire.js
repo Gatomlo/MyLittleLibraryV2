@@ -4,7 +4,7 @@ import { LIBRARY, state, pending, features } from './etat.js';
 import { $, $$, view, esc, hint, mediaSrc, api, gapi, toast, go, debounce, imageToDataUrl, sessionStorageTake } from './utilitaires.js';
 import { openCoverSearch, scanIsbn } from './scanner.js';
 import { icon, iconText } from './icones.js';
-import { loadCategories, combo, loadMembers } from './catalogue.js';
+import { loadCategories, combo, loadMembers, memberPicker } from './catalogue.js';
 import { isbnFromCell, chipField } from './import.js';
 import { wishSrc } from './souhaits.js';
 import { sendRaw, uploadEpub } from './fiche-livre.js';
@@ -104,13 +104,15 @@ async function viewBookForm(id) {
       <div class="field" id="ebook-file-field" hidden><label for="ebook-file">Fichier epub ${hint('Facultatif (100 Mo max).')}</label>
         <input type="file" id="ebook-file" accept=".epub,application/epub+zip"></div>` : ''}`}
       ${members.length > 1 || editing ? `<div class="field"><label>Lecteurs ${hint('Comptes qui lisent, liront ou ont lu ce livre.')}</label>
-        <div class="btn-row">${members.map((m) => `<label class="check"><input type="checkbox" data-reader="${m.id}" ${(editing ? (b.readers || []).some((r) => r.id === m.id) : m.id === state.user.id) ? 'checked' : ''}> ${m.id === state.user.id ? 'Moi' : esc(m.username)}</label>`).join('')}</div></div>` : ''}
+        <div id="readers-pick"></div></div>` : ''}
       <div class="field"><label for="notes">Notes internes ${hint('Visibles uniquement par les gestionnaires.')}</label><textarea id="notes" name="notes" style="min-height:70px">${esc(b.notes)}</textarea></div>
       <div id="form-err"></div>
       <div class="btn-row"><button class="btn btn-primary" type="submit">${icon('check', 16)}${editing ? 'Enregistrer' : 'Ajouter<span class="hide-mobile"> au catalogue</span>'}</button></div>
     </form>`;
 
   const f = $('#book-form');
+  // Lecteurs : pastilles + liste deroulante (nouveau livre : soi par defaut).
+  const readersPick = $('#readers-pick') ? memberPicker($('#readers-pick'), members, editing ? (b.readers || []).map((r) => r.id) : [state.user.id]) : null;
 
   function renderCover() {
     const src = form.cover.data || form.cover.remoteUrl || (form.cover.removed ? '' : form.cover.url);
@@ -277,7 +279,7 @@ async function viewBookForm(id) {
     ['isbn', 'title', 'subtitle', 'authors', 'publisher', 'year'].forEach((k) => { if (wish[k] && f[k]) f[k].value = wish[k]; });
     if (wish.notes && f.notes) f.notes.value = wish.notes;
     const owners = wish.owners || [wish.owner];
-    owners.forEach((o) => { const reader = $(`[data-reader="${o.id}"]`, f); if (reader) reader.checked = true; });
+    owners.forEach((o) => { if (readersPick && members.some((m) => m.id === o.id)) readersPick.add(o.id); });
     // Couverture du souhait : adresse en ligne, ou image enregistree (relue puis envoyee avec la fiche).
     if (/^https?:/i.test(wish.coverUrl || '')) { form.cover.remoteUrl = wish.coverUrl; form.cover.url = wish.coverUrl; renderCover(); }
     else if (wish.coverUrl) {
@@ -348,7 +350,7 @@ async function viewBookForm(id) {
       body.location = f.location.value;
       body.ebook = !!(f.ebook && f.ebook.checked);
     }
-    if ($$('[data-reader]', f).length) body.readers = $$('[data-reader]', f).filter((x) => x.checked).map((x) => Number(x.dataset.reader));
+    if (readersPick) body.readers = readersPick.get();
     try {
       const saved = await api(editing ? `/api/books/${b.id}` : '/api/books', { method: editing ? 'PUT' : 'POST', body });
       if (editing) toast('Fiche enregistrée.');

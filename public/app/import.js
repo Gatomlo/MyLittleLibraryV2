@@ -4,7 +4,7 @@ import { LIB, ASSETS, state, features } from './etat.js';
 import { $, $$, view, esc, hint, api, toast, go, loadScript } from './utilitaires.js';
 import { decodePhoto, startCamera, isbnFromScan } from './scanner.js';
 import { onLeave, leavePage } from './routage.js';
-import { combo, loadMembers } from './catalogue.js';
+import { combo, loadMembers, memberPicker } from './catalogue.js';
 import { sendRaw } from './fiche-livre.js';
 
 // Deux modes : une liste d'ISBN (fiches completees automatiquement), ou un
@@ -264,7 +264,7 @@ async function viewImport() {
       ${features().readingStatus ? `<div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="opt-toread" ${s.toRead ? 'checked' : ''}>
         « À lire » pour moi ${hint('Marque les nouveaux livres « À lire » dans ton statut de lecture.')}</label></div>` : ''}
       ${members.length ? `<div class="field"><label>Lecteurs ${hint(`Comptes qui lisent ou liront ces livres (ajoutés aussi aux livres déjà au catalogue).${s.mode === 'full' ? ' La colonne « Lecteurs » du fichier, si elle est remplie, est prioritaire. En mise à jour, seule la colonne compte.' : ''}`)}</label>
-        <div class="btn-row">${members.map((m) => `<label class="check"><input type="checkbox" data-reader="${m.id}" ${s.readers.includes(m.id) ? 'checked' : ''}> ${m.id === state.user.id ? 'Moi' : esc(m.username)}</label>`).join('')}</div></div>` : ''}
+        <div id="import-readers"></div></div>` : ''}
     </div>
     <datalist id="loc-list">${locations.map((l) => `<option value="${esc(l)}">`).join('')}</datalist>`;
 
@@ -273,9 +273,7 @@ async function viewImport() {
     if ($('#itag-input')) chipField('itag', s.tags, (t) => '#' + t);
     const toRead = $('#opt-toread');
     if (toRead) toRead.onchange = () => { s.toRead = toRead.checked; };
-    $$('[data-reader]').forEach((cb) => {
-      cb.onchange = () => { s.readers = $$('[data-reader]').filter((x) => x.checked).map((x) => Number(x.dataset.reader)); };
-    });
+    if ($('#import-readers')) memberPicker($('#import-readers'), members, s.readers, { onChange: (ids) => { s.readers = ids; } });
     $('#opt-dup').onchange = (e) => { s.dup = e.target.value; };
   };
   if (s.mode === 'scan') {

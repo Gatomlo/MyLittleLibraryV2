@@ -12,12 +12,12 @@ charge directement ces fichiers (`<script type="module" src="…/app/main.js">` 
 | `routage.js` | Table des routes (`#/…`), droits par route, `onLeave` / `leavePage` |
 | `accueil-site.js` | Racine du site : liste des bibliothèques |
 | `accueil.js` | Accueil personnalisé d'une bibliothèque (`#/home`) |
-| `catalogue.js`, `fiche-livre.js`, `livre-formulaire.js` | Catalogue et filtres, fiche d'un livre, ajout et modification |
+| `catalogue.js`, `fiche-livre.js`, `livre-formulaire.js` | Catalogue et filtres (et aides partagées : `combo` liste avec recherche, `memberPicker` choix de plusieurs comptes, `accordionize` sections repliables), fiche d'un livre, ajout et modification |
 | `exemplaire.js`, `prets.js`, `emprunteurs.js` | Page d'un exemplaire (cible du QR code), prêts, emprunteurs |
 | `import.js`, `incompletes.js`, `etiquettes.js` | Ajout multiple et import de fichiers, fiches incomplètes, étiquettes |
 | `kobo.js`, `liseuse-epub.js` | Liseuses Kobo (USB), lecture des epub en ligne (`vendor/epub.min.js`) |
 | `souhaits.js`, `statistiques.js` | Listes de souhaits, statistiques de lecture |
-| `connexion.js`, `compte.js`, `administration.js`, `reglages.js` | Connexion et invitations, mon compte, administration du site, réglages d'une bibliothèque |
+| `connexion.js`, `compte.js`, `administration.js`, `reglages.js` | Connexion et invitations, mon compte (sections repliables, dont Mes partages : statistiques et liste de souhaits), administration du site, réglages d'une bibliothèque |
 | `installation.js`, `main.js` | Installation sur l'écran d'accueil ; démarrage (point d'entrée) |
 
 ## Règles

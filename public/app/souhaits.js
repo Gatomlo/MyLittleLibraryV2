@@ -4,7 +4,7 @@ import { ROOT, LIBRARY, state, pending } from './etat.js';
 import { $, $$, view, esc, hint, gapi, toast, go, imageToDataUrl } from './utilitaires.js';
 import { openCoverSearch, scanIsbn } from './scanner.js';
 import { icon, iconText } from './icones.js';
-import { combo } from './catalogue.js';
+import { combo, memberPicker } from './catalogue.js';
 import { initials } from './statistiques.js';
 
 // Liste de souhaits de chaque compte dans la bibliotheque ouverte (API globale /api/wishes?library=).
@@ -53,10 +53,7 @@ async function viewWishes() {
     </div>
     <div class="card" id="wish-list" aria-live="polite"><p class="muted">Chargement…</p></div>
     ${exportHtml('only-mobile')}
-    <details class="card wish-share" id="wish-share">
-      <summary>${icon('share', 16)}<strong>Partager ma liste</strong> <span class="small muted" id="share-sum"></span></summary>
-      <div id="share-body" style="margin-top:12px"></div>
-    </details>`;
+    <p class="wish-share"><a href="#/account">${icon('share', 16)}Partager ma liste</a> <span class="small muted">(Mon compte › Mes partages)</span></p>`;
   const setSelected = (list) => { wishState.owners = list; viewWishes(); };
   $$('[data-owner]').forEach((btn) => {
     btn.onclick = () => {
@@ -130,7 +127,6 @@ async function viewWishes() {
       } catch (err) { toast(err.message, 'error'); }
     };
   });
-  shareSection();
 }
 
 // Vignette d'un souhait (image en ligne ou enregistree ; retiree si elle ne charge pas).
@@ -167,23 +163,22 @@ function wishItemHtml(w, { me, manager, multi }) {
   </li>`;
 }
 
-// Partage de sa liste avec d'autres comptes (cases a cocher, enregistre a chaque changement).
-async function shareSection() {
-  const box = $('#share-body');
-  if (!box) return;
+// Partage de sa liste avec d'autres comptes (section « Mes partages » de Mon compte) :
+// liste deroulante a selection multiple, enregistree a chaque changement.
+async function wishShareSection(box) {
   const { viewers, candidates } = await gapi('/api/wishes/shares');
-  const sum = () => { const n = $$('[data-viewer]:checked', box).length; $('#share-sum').textContent = n ? `avec ${n} compte${n > 1 ? 's' : ''}` : 'non partagée'; };
-  box.innerHTML = candidates.length ? `<fieldset class="plain"><legend class="small muted">Ces comptes pourront voir ta liste (sans la modifier) :</legend>
-      <div class="check-grid">${candidates.map((c) => `<label class="check"><input type="checkbox" data-viewer="${c.id}" ${viewers.includes(c.id) ? 'checked' : ''}> ${esc(c.username)}</label>`).join('')}</div></fieldset>`
-    : '<p class="small muted">Aucun autre compte dans tes bibliothèques.</p>';
-  sum();
-  box.onchange = async () => {
-    try {
-      await gapi('/api/wishes/shares', { method: 'PUT', body: { viewerIds: $$('[data-viewer]:checked', box).map((x) => Number(x.dataset.viewer)) } });
-      sum();
-      toast('Partage enregistré.');
-    } catch (err) { toast(err.message, 'error'); }
-  };
+  if (!candidates.length) { box.innerHTML = '<p class="small muted">Aucun autre compte dans tes bibliothèques.</p>'; return; }
+  box.innerHTML = '<div id="wish-share-pick"></div>';
+  memberPicker($('#wish-share-pick', box), candidates, viewers, {
+    placeholder: 'Ajouter un compte…',
+    none: 'Non partagée',
+    onChange: async (ids) => {
+      try {
+        await gapi('/api/wishes/shares', { method: 'PUT', body: { viewerIds: ids } });
+        toast('Partage enregistré.');
+      } catch (err) { toast(err.message, 'error'); }
+    },
+  });
 }
 
 // Ajout ou modification d'un souhait. Recherche par ISBN (tape ou scanne) ou par
@@ -318,4 +313,4 @@ function wishDialog(w, preset) {
   });
 }
 
-export { wishState, wishSrc, viewWishes, wishDialog };
+export { wishState, wishSrc, viewWishes, wishDialog, wishShareSection };
