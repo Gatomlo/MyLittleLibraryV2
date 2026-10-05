@@ -1029,3 +1029,7 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
 .member-picker .member-chips { display: flex; flex-wrap: wrap; align-items: center; min-height: 28px; margin-bottom: 4px; }
 .member-picker .chip-reader { background: var(--grape-soft); color: var(--grape); }
 .member-picker .combo { max-width: 360px; }
+
+/* Resultats d'un import epub : action Verifier, lignes deja verifiees attenuees. */
+.epub-action { white-space: nowrap; text-align: right; }
+.epub-checked td:first-child, .epub-checked td:nth-child(2) { opacity: .6; }

@@ -22,10 +22,13 @@ async function viewBook(id) {
     ['Catégories', book.categories.map((c) => `<span class="chip">${esc(c.name)}</span>`).join('')],
     ['Tags', (book.tags || []).map((t) => `<a href="#/" class="chip chip-tag" data-tag="${t.id}">#${esc(t.name)}</a>`).join('')],
   ].filter(([, v]) => v);
+  // Ouverte depuis une liste qui donne un retour (resultats d'un import epub).
+  let back = null;
+  try { const r = JSON.parse(sessionStorage.getItem('mll-after-edit') || 'null'); if (r && r.id === book.id && r.label) back = r; } catch (e) { /* rien */ }
   view().innerHTML = `
     ${koboReturn && koboReturn.bookId === book.id
       ? `<div class="btn-row" style="margin-bottom:12px"><a class="btn btn-primary" href="#/kobo/${koboReturn.deviceId}">← Retour à la liseuse ${esc(koboReturn.name)}</a></div>`
-      : '<p><a href="#/">← Catalogue</a></p>'}
+      : `<p><a href="${esc(back ? back.hash : '#/')}">← ${esc(back ? back.label : 'Catalogue')}</a></p>`}
     <div class="book-detail">
       <div>${coverHtml(book)}</div>
       <div>

@@ -1,7 +1,7 @@
 // Import de listes de livres — module de l'interface (organisation : public/app/README.md).
 import './livre-formulaire.js';
 import { LIB, ASSETS, state, features } from './etat.js';
-import { $, $$, view, esc, hint, api, toast, go, loadScript } from './utilitaires.js';
+import { $, $$, view, esc, hint, api, toast, go, loadScript, sessionStorageSet, sessionStorageTake } from './utilitaires.js';
 import { decodePhoto, startCamera, isbnFromScan } from './scanner.js';
 import { onLeave, leavePage } from './routage.js';
 import { combo, loadMembers, memberPicker } from './catalogue.js';
@@ -155,8 +155,46 @@ function importOptions(extra) {
 
 const importState = { mode: 'scan', text: '', fileName: '', rows: null, mapping: [], items: [], results: null, running: false, stop: false, batch: [], cats: [], tags: [], toRead: false, readers: null };
 
+// Resultats des imports epub, gardes pour l'onglet (sessionStorage) : on peut ouvrir une
+// fiche, la verifier puis revenir a la liste. Ligne : { name, status, bookId, title,
+// error, checked } ; status : pending | sending | created | attached | skipped | error.
+const EPUB_KEY = `mll-epub-import:${LIB}`;
+function epubResults() {
+  try { return JSON.parse(sessionStorage.getItem(EPUB_KEY) || '[]'); } catch (e) { return []; }
+}
+function saveEpubResults(rows) {
+  try { sessionStorage.setItem(EPUB_KEY, JSON.stringify(rows)); } catch (e) { /* stockage indisponible */ }
+}
+// Fiche enregistree depuis la liste (formulaire du livre) : marquee verifiee.
+function markEpubChecked(bookId) {
+  const rows = epubResults();
+  rows.forEach((r) => { if (r.bookId === bookId) r.checked = true; });
+  saveEpubResults(rows);
+}
+// Retour a la liste depuis la fiche ou son formulaire (meme mecanisme que Fiches incompletes).
+const EPUB_BACK = { hash: '#/import', label: 'Résultats de l\'import' };
+
+const EPUB_LABELS = {
+  created: '<span class="badge badge-ok">Ajouté</span>',
+  attached: '<span class="badge badge-ok">Fichier ajouté à la fiche</span>',
+  skipped: '<span class="badge badge-muted">Déjà présent</span>',
+};
+function epubRowHtml(r, i) {
+  let state;
+  if (r.status === 'pending') state = '<span class="small muted">En attente…</span>';
+  else if (r.status === 'sending') state = '<span class="small muted">Envoi…</span>';
+  else if (r.status === 'error') state = `<span class="badge badge-warn">Erreur</span> <span class="small">${esc(r.error || '')}</span>`;
+  else {
+    state = `${EPUB_LABELS[r.status] || ''} <a href="#/book/${r.bookId}" data-epub-open="${i}">${esc(r.title)}</a>`;
+  }
+  const action = r.bookId ? (r.checked
+    ? '<span class="badge badge-ok">✓ Vérifiée</span>'
+    : `<a class="btn btn-small" href="#/book/${r.bookId}/edit" data-epub-open="${i}">Vérifier</a>`) : '';
+  return `<tr class="${r.checked ? 'epub-checked' : ''}"><td class="small">${esc(r.name)}</td><td>${state}</td><td class="epub-action">${action}</td></tr>`;
+}
+
 // Import de fichiers epub : un fichier par requete, a la suite (fiche creee, ou fichier
-// ajoute a la fiche existante).
+// ajoute a la fiche existante). Les nouveaux resultats s'ajoutent en tete de la liste.
 function renderEpubImport(body) {
   body.innerHTML = `
     <div class="card">
@@ -167,6 +205,28 @@ function renderEpubImport(body) {
     <div id="epub-results"></div>`;
   const input = $('#epub-files', body);
   const goBtn = $('#epub-go', body);
+  const out = $('#epub-results', body);
+  let rows = epubResults();
+  const draw = () => {
+    if (!rows.length) { out.innerHTML = ''; return; }
+    const toCheck = rows.filter((r) => r.bookId);
+    const done = toCheck.filter((r) => r.checked).length;
+    out.innerHTML = `<div class="card">
+      <div class="page-head" style="margin-bottom:8px"><div><strong>Résultats</strong>
+        ${toCheck.length ? `<span class="small muted"> · ${done} / ${toCheck.length} fiche(s) vérifiée(s)</span>` : ''}</div>
+        ${importState.running ? '' : '<div class="btn-row"><button class="btn btn-small" type="button" id="epub-clear">Effacer la liste</button></div>'}</div>
+      <div class="table-wrap"><table><tbody>${rows.map(epubRowHtml).join('')}</tbody></table></div></div>`;
+    $$('[data-epub-open]', out).forEach((a) => {
+      a.onclick = () => {
+        const r = rows[Number(a.dataset.epubOpen)];
+        sessionStorageSet('mll-after-edit', JSON.stringify({ id: r.bookId, ...EPUB_BACK }));
+        sessionStorageSet('mll-import-mode', 'epub');
+      };
+    });
+    if ($('#epub-clear', out)) $('#epub-clear', out).onclick = () => { rows = []; saveEpubResults(rows); draw(); };
+  };
+  const update = () => { saveEpubResults(rows); draw(); };
+  draw();
   input.onchange = () => {
     goBtn.disabled = !input.files.length;
     goBtn.textContent = input.files.length ? `Importer ${input.files.length} fichier(s)` : 'Importer';
@@ -176,29 +236,24 @@ function renderEpubImport(body) {
     goBtn.disabled = true;
     input.disabled = true;
     importState.running = true;
-    const out = $('#epub-results', body);
-    const LABELS = {
-      created: '<span class="badge badge-ok">Ajouté</span>',
-      attached: '<span class="badge badge-ok">Fichier ajouté à la fiche</span>',
-      skipped: '<span class="badge badge-muted">Déjà présent</span>',
-    };
-    const rows = files.map((f) => ({ name: f.name, html: '<span class="small muted">En attente…</span>' }));
-    const draw = () => {
-      out.innerHTML = `<div class="card table-wrap"><table><tbody>${rows.map((r) => `<tr><td class="small">${esc(r.name)}</td><td>${r.html}</td></tr>`).join('')}</tbody></table></div>`;
-    };
+    const added = files.map((f) => ({ name: f.name, status: 'pending' }));
+    rows = added.concat(rows);
+    update();
     for (const [n, f] of files.entries()) {
-      rows[n].html = '<span class="small muted">Envoi…</span>';
-      draw();
+      const row = added[n];
+      row.status = 'sending';
+      update();
       try {
         if (f.size > 100 * 1024 * 1024) throw new Error('Fichier trop lourd (100 Mo max).');
         const r = await sendRaw('/api/import/epub', 'POST', f, 'application/epub+zip', { 'X-File-Name': encodeURIComponent(f.name) });
-        rows[n].html = `${LABELS[r.status] || ''} <a href="#/book/${r.bookId}">${esc(r.title)}</a>`;
+        Object.assign(row, { status: r.status, bookId: r.bookId, title: r.title });
       } catch (err) {
-        rows[n].html = `<span class="badge badge-warn">Erreur</span> <span class="small">${esc(err.message)}</span>`;
+        Object.assign(row, { status: 'error', error: err.message });
       }
-      draw();
+      update();
     }
     importState.running = false;
+    update();
     input.value = '';
     input.disabled = false;
     goBtn.textContent = 'Importer';
@@ -208,6 +263,8 @@ function renderEpubImport(body) {
 
 async function viewImport() {
   const s = importState;
+  // Retour depuis une fiche ouverte dans les resultats epub : onglet Fichiers epub.
+  if (sessionStorageTake('mll-import-mode') === 'epub') s.mode = 'epub';
   const [locations, allCats, allTags, members] = await Promise.all([
     api('/api/locations').catch(() => []),
     api('/api/categories').catch(() => []),
@@ -705,4 +762,4 @@ async function runImport(onlyIndexes) {
   toast('Import terminé.');
 }
 
-export { normHeader, isbnFromCell, chipField, viewImport, warnBeforeLeaving };
+export { normHeader, isbnFromCell, chipField, viewImport, warnBeforeLeaving, markEpubChecked };

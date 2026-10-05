@@ -5,7 +5,7 @@ import { $, $$, view, esc, hint, mediaSrc, api, gapi, toast, go, debounce, image
 import { openCoverSearch, scanIsbn } from './scanner.js';
 import { icon, iconText } from './icones.js';
 import { loadCategories, combo, loadMembers, memberPicker } from './catalogue.js';
-import { isbnFromCell, chipField } from './import.js';
+import { isbnFromCell, chipField, markEpubChecked } from './import.js';
 import { wishSrc } from './souhaits.js';
 import { sendRaw, uploadEpub } from './fiche-livre.js';
 
@@ -25,11 +25,16 @@ async function viewBookForm(id) {
   const b = book || { isbn: '', title: '', subtitle: '', authors: '', publisher: '', collection: '', series: '', seriesNumber: '', year: '', pages: '', summary: '', notes: '', categories: [], coverUrl: null, format: 'physical' };
   const form = { categories: b.categories.map((c) => c.name), tags: (b.tags || []).map((t) => t.name), cover: { url: b.coverUrl ? mediaSrc(b.coverUrl) : '', remoteUrl: '', data: '', removed: false } };
 
-  // Ouvert depuis "Fiches incompletes" : retour a cette liste.
+  // Ouvert depuis une liste (Fiches incompletes, resultats d'un import epub) : retour a
+  // cette liste ({ id, hash, label } dans sessionStorage).
   let fromIncomplete = null;
-  try { const r = JSON.parse(sessionStorage.getItem('mll-after-edit') || 'null'); if (editing && r && r.id === b.id) fromIncomplete = r.hash; } catch (e) { /* rien */ }
+  let backLabel = 'Fiches incomplètes';
+  try {
+    const r = JSON.parse(sessionStorage.getItem('mll-after-edit') || 'null');
+    if (editing && r && r.id === b.id) { fromIncomplete = r.hash; if (r.label) backLabel = r.label; }
+  } catch (e) { /* rien */ }
   view().innerHTML = `
-    <p><a href="${fromIncomplete || (editing ? `#/book/${b.id}` : '#/')}">← ${fromIncomplete ? 'Fiches incomplètes' : editing ? 'Retour à la fiche' : 'Catalogue'}</a></p>
+    <p><a href="${fromIncomplete || (editing ? `#/book/${b.id}` : '#/')}">← ${fromIncomplete ? esc(backLabel) : editing ? 'Retour à la fiche' : 'Catalogue'}</a></p>
     ${editing ? '<h1>Modifier le livre</h1>' : `<div class="page-head"><div><h1>Ajouter un livre</h1></div>
       <div class="btn-row">${features().ebooks ? `<label class="btn" title="Créer la fiche d'après les informations d'un fichier epub">
           <input type="file" id="epub-one" accept=".epub,application/epub+zip" hidden>Depuis un epub</label>` : ''}
@@ -371,6 +376,7 @@ async function viewBookForm(id) {
         }
       }
       if (fromIncomplete) sessionStorageTake('mll-after-edit');
+      if (fromIncomplete === '#/import') markEpubChecked(saved.id);
       go(fromIncomplete || `#/book/${saved.id}`);
     } catch (err) {
       $('#form-err').innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
