@@ -4,6 +4,7 @@ import { state, pending } from './etat.js';
 import { $, $$, view, esc, mediaSrc, fmtDate, api, toast, fmtDay, loanCache, go, coverHtml, availabilityBadge } from './utilitaires.js';
 import { icon, colorVars } from './icones.js';
 import { wishState, wishSrc, wishDialog } from './souhaits.js';
+import { goalRowsHtml } from './statistiques.js';
 
 // Cartes choisies et ordonnees par chaque compte (lib/home.js). Grand ecran : cartes
 // detaillees. Smartphone : tuiles resumees qui tiennent dans l'ecran, sans defilement
@@ -66,7 +67,7 @@ function homeSummary(key, d) {
     case 'news': return { lines: x.items.length ? titles(x.items) : ['Aucun livre pour le moment'], go: 'recent' };
     case 'goal': return x.goal
       ? { value: `${x.read}/${x.goal}`, lines: [x.ahead >= 0 ? `▲ ${plural(x.ahead, 'livre', 'livres')} d'avance` : `▼ ${plural(-x.ahead, 'livre', 'livres')} de retard`, `${x.pages.toLocaleString('fr-BE')} pages en ${x.year}`], go: '#/stats' }
-      : { lines: [`${plural(x.read, 'livre lu', 'livres lus')} en ${x.year}`, 'Aucun objectif défini'], go: '#/account' };
+      : { lines: [`${plural(x.read, 'livre lu', 'livres lus')} en ${x.year}`, x.others.length ? `${x.others.filter((g) => g.ok).length}/${x.others.length} objectif(s) atteint(s)` : 'Aucun objectif défini'], go: x.others.length ? '#/stats' : '#/account' };
     case 'series': return { lines: x.length ? titles(x, (b) => `${b.title} · tome ${b.number}`) : ['Aucun tome suivant'], go: x[0] ? `#/book/${x[0].id}` : '#/' };
     case 'toread': return { lines: x.length ? titles(x) : ['Pile vide'], go: 'toread' };
     case 'rate': return { lines: x.length ? titles(x) : ['Tout est noté'], go: x[0] ? `#/book/${x[0].id}` : '#/' };
@@ -123,7 +124,8 @@ function homeCardBody(key, d) {
       : '<p class="muted">Aucun souhait pour le moment.</p>'}<button class="btn btn-small" type="button" id="home-wish-add" style="margin-top:8px">${icon('add', 16)}Ajouter un souhait</button>`;
     case 'news': return shelfHtml(x.items, 'Aucun livre pour le moment.');
     case 'goal': {
-      if (!x.goal) return `<p><strong>${plural(x.read, 'livre lu', 'livres lus')} en ${x.year}</strong></p><p class="muted">Aucun objectif défini. <a href="#/account">Définir mon objectif</a></p>`;
+      const others = x.others.length ? goalRowsHtml(x.others) : '';
+      if (!x.goal) return `<p><strong>${plural(x.read, 'livre lu', 'livres lus')} en ${x.year}</strong></p>${others || '<p class="muted">Aucun objectif défini. <a href="#/account">Définir mes objectifs</a></p>'}`;
       const p = Math.min(1, x.read / x.goal);
       const c = 2 * Math.PI * 40;
       return `<div class="home-goal"><svg class="ring" viewBox="0 0 100 100" width="92" height="92" role="img" aria-label="${x.read} livres lus sur ${x.goal}">
@@ -131,7 +133,7 @@ function homeCardBody(key, d) {
           <text x="50" y="57" text-anchor="middle">${x.read}</text></svg>
         <div><p><strong>${x.read} livre${x.read > 1 ? 's' : ''} lu${x.read > 1 ? 's' : ''} sur ${x.goal}</strong></p>
           <p class="${x.ahead >= 0 ? 'good' : 'bad'}">${x.ahead >= 0 ? `▲ ${plural(x.ahead, 'livre', 'livres')} d'avance` : `▼ ${plural(-x.ahead, 'livre', 'livres')} de retard`}</p>
-          <p class="small muted">${x.pages.toLocaleString('fr-BE')} pages en ${x.year}</p></div></div>`;
+          <p class="small muted">${x.pages.toLocaleString('fr-BE')} pages en ${x.year}</p></div></div>${others}`;
     }
     case 'series': return shelfHtml(x, 'Aucun tome suivant : les séries que tu lis ou as lues apparaîtront ici quand leur tome suivant est dans la bibliothèque.',
       { avail: true, sub: (b) => `${b.series} · tome ${b.number}` });

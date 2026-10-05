@@ -1007,3 +1007,15 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
   .home-hello { flex-basis: auto; }
   .home-hello p { display: none; }
 }
+
+/* Objectifs de l'annee : une ligne par objectif (Statistiques, carte de l'accueil). */
+.goal-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+.goals-panel .goal-list { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 24px; }
+.goal-head { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; margin-bottom: 4px; }
+.goal-bar { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.goal-bar span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.goal-row.goal-ok .goal-bar span { background: var(--ok); }
+.goal-row.goal-ok .goal-head span { color: var(--ok); font-weight: 700; }
+.goal-row.goal-late .goal-bar span { background: var(--warn); }
+.goal-row.goal-over .goal-bar span { background: var(--danger); }
+.goals-panel { margin-bottom: 16px; }

@@ -244,15 +244,40 @@ async function renderStatsBody(ov) {
   body.classList.remove('loading');
 }
 
+// Objectifs de l'annee (hors nombre de livres) : champ du formulaire et aide.
+const GOAL_FIELDS = [
+  ['pages', 'Pages à lire', 'Total des pages des livres terminés cette année (nombre de pages des fiches).'],
+  ['maxToRead', 'Pile « À lire » : maximum', 'Nombre de livres marqués « À lire » à ne pas dépasser.'],
+  ['categories', 'Catégories différentes', 'Nombre de catégories différentes parmi les livres terminés cette année.'],
+  ['series', 'Séries à terminer', 'Séries dont tu as lu tous les tomes présents dans la bibliothèque, le dernier cette année.'],
+];
+
+// Avancement des objectifs (liste goals de goalProgress) : une ligne par objectif.
+function goalRowsHtml(goals) {
+  return `<ul class="goal-list">${goals.map((g) => {
+    const pct = Math.min(100, Math.round((g.done / Math.max(g.target, 1)) * 100));
+    const cls = g.ok ? 'goal-ok' : g.kind === 'max' ? 'goal-over' : g.expected != null && g.done < g.expected ? 'goal-late' : '';
+    return `<li class="goal-row ${cls}"><div class="goal-head"><span>${g.ok ? '✓ ' : ''}${esc(g.label)}</span>
+        <strong>${fmt(g.done)} <span class="muted">/ ${g.kind === 'max' ? 'max ' : ''}${fmt(g.target)}</span></strong></div>
+      <div class="goal-bar" role="img" aria-label="${esc(g.label)} : ${g.done} sur ${g.target}"><span style="width:${pct}%"></span></div></li>`;
+  }).join('')}</ul>`;
+}
+
 // Reglages personnels de lecture (par bibliotheque), affiches dans « Mon compte ».
 function prefsHtml(ov) {
   const p = ov.prefs;
-  return `<h2>Mes lectures ${hint('Réglages propres à cette bibliothèque : partage de tes statistiques, objectif annuel et délai avant de signaler une lecture qui traîne.')}</h2>
+  const goals = p.goals || {};
+  return `<h2>Mes lectures ${hint('Réglages propres à cette bibliothèque : partage de tes statistiques, objectifs de l\'année et délai avant de signaler une lecture qui traîne.')}</h2>
   <div class="card">
     <div class="grid-3">
       <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="pf-share" ${p.shareStats ? 'checked' : ''} ${ov.member ? '' : 'disabled'}> Partager mes statistiques avec les membres de la bibliothèque</label>${ov.member ? '' : hint('Réservé aux comptes liés à cette bibliothèque.')}</div>
-      <div class="field"><label>Objectif de l'année (livres)</label><input type="number" id="pf-goal" min="1" max="1000" placeholder="aucun" value="${p.yearlyGoal || ''}"></div>
       <div class="field"><label>Signaler une lecture en cours après (jours)</label><input type="number" id="pf-stale" min="1" max="3650" value="${p.staleDays}"></div>
+    </div>
+    <h3>Objectifs de l'année ${hint('Laisse vide pour ne pas suivre un objectif. Ils s\'affichent dans Statistiques et dans la carte « Objectif de lecture » de l\'accueil.')}</h3>
+    <div class="grid-3">
+      <div class="field"><label for="pf-goal">Livres à lire</label><input type="number" id="pf-goal" min="1" max="1000" placeholder="aucun" value="${p.yearlyGoal || ''}"></div>
+      ${GOAL_FIELDS.map(([k, label, help]) => `<div class="field"><label for="pf-${k}">${label} ${hint(help)}</label>
+        <input type="number" id="pf-${k}" data-goal="${k}" min="0" placeholder="aucun" value="${goals[k] ?? ''}"></div>`).join('')}
     </div>
   </div>`;
 }
@@ -266,6 +291,7 @@ function bindPrefs(ov) {
   };
   $('#pf-share').onchange = (e) => save({ shareStats: e.target.checked });
   $('#pf-goal').onchange = (e) => save({ yearlyGoal: e.target.value || null });
+  $$('[data-goal]').forEach((inp) => { inp.onchange = () => save({ goals: { [inp.dataset.goal]: inp.value === '' ? null : inp.value } }); });
   $('#pf-stale').onchange = (e) => save({ staleDays: e.target.value });
 }
 
@@ -285,7 +311,7 @@ function userStatsHtml(s, mine) {
       <p class="small muted">${fmt(g.expected)} attendu(s) à ce jour</p></div></div>`;
   } else {
     goalCard = `<div class="goal-card">${ring(0, String(g.done), `lus en ${g.year}`)}
-      <div><p class="small muted">${mine ? 'Fixe un objectif annuel dans « Mes réglages » pour suivre ta progression.' : 'Pas d\'objectif annuel.'}</p></div></div>`;
+      <div><p class="small muted">${mine ? 'Fixe tes objectifs de l\'année dans « Mon compte » pour suivre ta progression.' : 'Pas d\'objectif annuel.'}</p></div></div>`;
   }
 
   const records = [
@@ -305,6 +331,7 @@ function userStatsHtml(s, mine) {
       </div>
     </div>
 
+    ${(s.goals || []).some((x) => x.key !== 'books') ? panel(`Objectifs ${g.year}`, goalRowsHtml(s.goals.filter((x) => x.key !== 'books')), 'goals-panel') : ''}
     <div class="dash-grid">
       ${panel('Répartition', donut([
         { label: 'Lus', value: c.read, color: '--cat-1' },
@@ -394,4 +421,4 @@ function libraryStatsHtml(s) {
     ${features().ebooks ? `<div class="dash-grid">${panel('Catégories du fonds', rankList(F.byCategory))}</div>` : ''}`;
 }
 
-export { initials, viewStats, prefsHtml, bindPrefs };
+export { initials, viewStats, prefsHtml, bindPrefs, goalRowsHtml };

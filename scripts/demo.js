@@ -70,7 +70,7 @@ async function seed(base) {
     headers: { 'Content-Type': 'application/epub+zip', 'X-File-Name': encodeURIComponent('demonstration.epub') },
     body: await epub('Livre numérique de démonstration', 'Ada Lovelace'),
   });
-  await call('POST', '/api/wishes', { title: 'Un livre souhaité', authors: 'Quelqu\'un', priority: true });
+  await call('POST', '/api/wishes', { title: 'Un livre souhaité', authors: 'Quelqu\'un', priority: true, library: library.id });
   return library.slug;
 }
 

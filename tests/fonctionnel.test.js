@@ -176,6 +176,13 @@ test('accueil, statistiques, souhaits', async () => {
   assert.ok(Array.isArray(home.cards));
   ok(await a.get(`${api}/stats/overview`));
   ok(await a.get(`${api}/stats/library`));
+  // Objectifs de l'annee : enregistres, puis suivis dans les statistiques et l'accueil.
+  const prefs = ok(await ctx.users.lecteur.put(`${api}/stats/prefs`, { yearlyGoal: 12, goals: { pages: 3000, maxToRead: 5, categories: '', series: 2 } }));
+  assert.deepEqual(prefs.goals, { pages: 3000, maxToRead: 5, categories: null, series: 2 });
+  assert.equal(ok(await ctx.users.lecteur.put(`${api}/stats/prefs`, { goals: { series: null } })).goals.pages, 3000);
+  const st = ok(await ctx.users.lecteur.get(`${api}/stats/user/${ctx.users.lecteur.id}`));
+  assert.deepEqual(st.goals.map((g) => g.key), ['books', 'pages', 'maxToRead']);
+  assert.equal(st.goals.find((g) => g.key === 'maxToRead').kind, 'max');
   const l = ctx.users.lecteur;
   const lq = `library=${ctx.lib.id}`;
   const w = ok(await l.post('/api/wishes', { title: 'Souhait', authors: 'Un auteur', library: ctx.lib.id, coverData: `data:image/png;base64,${png().toString('base64')}` }));
