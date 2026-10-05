@@ -177,16 +177,28 @@ test('accueil, statistiques, souhaits', async () => {
   ok(await a.get(`${api}/stats/overview`));
   ok(await a.get(`${api}/stats/library`));
   const l = ctx.users.lecteur;
-  const w = ok(await l.post('/api/wishes', { title: 'Souhait', authors: 'Quelqu\'un', coverData: `data:image/png;base64,${png().toString('base64')}` }));
-  const mine = ok(await l.get('/api/wishes'));
+  const lq = `library=${ctx.lib.id}`;
+  const w = ok(await l.post('/api/wishes', { title: 'Souhait', authors: 'Un auteur', library: ctx.lib.id, coverData: `data:image/png;base64,${png().toString('base64')}` }));
+  const mine = ok(await l.get(`/api/wishes?${lq}`));
   assert.equal(mine.length, 1);
   assert.match(mine[0].coverUrl, /^api\/wishes\/image\/wish-[0-9a-f]{12}\.png$/);
   assert.equal((await l.get(`/${mine[0].coverUrl}`, { buffer: true })).status, 200);
+  // Sans bibliotheque, ou bibliotheque dont le compte n'est pas membre : refuse.
+  assert.equal((await l.get('/api/wishes')).status, 400);
+  assert.equal((await ctx.users.etranger.get(`/api/wishes?${lq}`)).status, 400);
+  assert.equal((await ctx.users.etranger.post('/api/wishes', { title: 'X', library: ctx.lib.id })).status, 400);
   // Un autre lecteur ne le voit ni ne le modifie ; un gestionnaire le voit dans sa bibliotheque.
-  assert.equal(ok(await ctx.users.lecteur2.get(`/api/wishes?owners=${ctx.users.lecteur.id}`)).length, 0);
+  assert.equal(ok(await ctx.users.lecteur2.get(`/api/wishes?owners=${ctx.users.lecteur.id}&${lq}`)).length, 0);
   assert.equal((await ctx.users.lecteur2.put(`/api/wishes/${w.id}`, { title: 'Vol' })).status, 403);
-  assert.equal(ok(await ctx.users.gestionnaire.get(`/api/wishes?owners=${ctx.users.lecteur.id}&library=${ctx.lib.id}`)).length, 1);
-  assert.match((await l.get('/api/wishes/export.csv')).body, /Souhait/);
+  assert.equal(ok(await ctx.users.gestionnaire.get(`/api/wishes?owners=${ctx.users.lecteur.id}&${lq}`)).length, 1);
+  assert.match((await l.get(`/api/wishes/export.csv?${lq}`)).body, /Souhait/);
+  // Souhaits propres a la bibliotheque : absents d'une autre.
+  const own = ok(await a.post('/api/wishes', { title: 'Souhait admin', library: ctx.lib.id }));
+  const other = ok(await a.post('/api/admin/libraries', { name: 'Autre souhaits', slug: 'autre-souhaits' }));
+  assert.equal(ok(await a.get(`/api/wishes?library=${other.id}`)).length, 0);
+  assert.equal(ok(await a.get(`/api/wishes?${lq}`)).length, 1);
+  ok(await a.del(`/api/wishes/${own.id}`));
+  ok(await a.del(`/api/admin/libraries/${other.id}?confirm=${encodeURIComponent(other.name)}`));
   ok(await l.del(`/api/wishes/${w.id}`));
 });
 

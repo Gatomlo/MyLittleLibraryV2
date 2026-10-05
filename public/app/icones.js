@@ -160,7 +160,7 @@ function openMenu() {
     <a class="menu-item" href="#/kobo">${icon('kobo')}Toutes les liseuses</a>` : ''}
     <div class="menu-sep"></div>
     <a class="menu-item" href="#/account">${icon('user')}Mon compte</a>
-    <a class="menu-item" href="#/wishes">${icon('wish')}Mes souhaits</a>
+    ${LIBRARY ? `<a class="menu-item" href="#/wishes">${icon('wish')}Mes souhaits</a>` : ''}
     ${LIBRARY ? `<button class="menu-item" type="button" id="menu-home-custom">${icon('home')}Personnaliser l'accueil</button>` : ''}
     ${canInstall() ? `<button class="menu-item" type="button" id="install-app">${icon('install')}Installer l'application</button>` : ''}
     ${u.role === 'admin' ? `<a class="menu-item" href="#/admin">${icon('admin')}Administration</a>` : ''}

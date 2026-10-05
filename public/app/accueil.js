@@ -66,7 +66,7 @@ function homeSummary(key, d) {
     case 'news': return { lines: x.items.length ? titles(x.items) : ['Aucun livre pour le moment'], go: 'recent' };
     case 'goal': return x.goal
       ? { value: `${x.read}/${x.goal}`, lines: [x.ahead >= 0 ? `▲ ${plural(x.ahead, 'livre', 'livres')} d'avance` : `▼ ${plural(-x.ahead, 'livre', 'livres')} de retard`, `${x.pages.toLocaleString('fr-BE')} pages en ${x.year}`], go: '#/stats' }
-      : { lines: [`${plural(x.read, 'livre lu', 'livres lus')} en ${x.year}`, 'Aucun objectif défini'], go: '#/stats' };
+      : { lines: [`${plural(x.read, 'livre lu', 'livres lus')} en ${x.year}`, 'Aucun objectif défini'], go: '#/account' };
     case 'series': return { lines: x.length ? titles(x, (b) => `${b.title} · tome ${b.number}`) : ['Aucun tome suivant'], go: x[0] ? `#/book/${x[0].id}` : '#/' };
     case 'toread': return { lines: x.length ? titles(x) : ['Pile vide'], go: 'toread' };
     case 'rate': return { lines: x.length ? titles(x) : ['Tout est noté'], go: x[0] ? `#/book/${x[0].id}` : '#/' };
@@ -123,7 +123,7 @@ function homeCardBody(key, d) {
       : '<p class="muted">Aucun souhait pour le moment.</p>'}<button class="btn btn-small" type="button" id="home-wish-add" style="margin-top:8px">${icon('add', 16)}Ajouter un souhait</button>`;
     case 'news': return shelfHtml(x.items, 'Aucun livre pour le moment.');
     case 'goal': {
-      if (!x.goal) return `<p><strong>${plural(x.read, 'livre lu', 'livres lus')} en ${x.year}</strong></p><p class="muted">Aucun objectif défini. <a href="#/stats">Définir mon objectif</a></p>`;
+      if (!x.goal) return `<p><strong>${plural(x.read, 'livre lu', 'livres lus')} en ${x.year}</strong></p><p class="muted">Aucun objectif défini. <a href="#/account">Définir mon objectif</a></p>`;
       const p = Math.min(1, x.read / x.goal);
       const c = 2 * Math.PI * 40;
       return `<div class="home-goal"><svg class="ring" viewBox="0 0 100 100" width="92" height="92" role="img" aria-label="${x.read} livres lus sur ${x.goal}">

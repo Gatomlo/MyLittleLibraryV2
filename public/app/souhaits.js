@@ -1,22 +1,26 @@
 // Souhaits — module de l'interface (organisation : public/app/README.md).
 import './accueil.js';
-import { ROOT, LIBRARY, state, pending, canManage } from './etat.js';
+import { ROOT, LIBRARY, state, pending } from './etat.js';
 import { $, $$, view, esc, hint, gapi, toast, go, imageToDataUrl } from './utilitaires.js';
 import { openCoverSearch, scanIsbn } from './scanner.js';
 import { icon, iconText } from './icones.js';
 import { combo } from './catalogue.js';
 import { initials } from './statistiques.js';
 
-// Liste de souhaits de chaque compte (hors bibliotheque, API globale /api/wishes).
+// Liste de souhaits de chaque compte dans la bibliotheque ouverte (API globale /api/wishes?library=).
 // Sa liste et celles partagees avec soi : pastilles (plusieurs listes a la fois).
 // Bibliothecaire ou gestionnaire de la bibliotheque ouverte : listes de ses membres,
 // choisies dans une liste deroulante avec recherche (un compte, ou toutes).
 const wishState = { owners: null, priority: false };
 // Image d'un souhait : adresse en ligne, ou chemin d'une image enregistree (relatif a la racine).
 const wishSrc = (url) => (/^(https?:|data:)/i.test(url) ? url : `${ROOT}/${url}`);
-const libParam = () => (LIBRARY && canManage() ? `library=${LIBRARY.id}` : '');
+const libParam = () => `library=${LIBRARY.id}`;
 
 async function viewWishes() {
+  if (!LIBRARY) {
+    view().innerHTML = `<h1>Mes souhaits</h1><div class="empty">Chaque bibliothèque a sa liste de souhaits : ouvre une bibliothèque pour voir la tienne.<br><br><a class="btn" href="#/">Mes bibliothèques</a></div>`;
+    return;
+  }
   const { owners, manager } = await gapi(`/api/wishes/owners?${libParam()}`);
   const me = state.user.id;
   const ids = new Set(owners.map((o) => o.id));
@@ -72,7 +76,7 @@ async function viewWishes() {
     input.addEventListener('focus', () => input.select());
   }
   $('#wish-prio').onclick = () => { wishState.priority = !wishState.priority; viewWishes(); };
-  const q = `owners=${selected.join(',')}${wishState.priority ? '&priority=1' : ''}${libParam() ? '&' + libParam() : ''}`;
+  const q = `owners=${selected.join(',')}${wishState.priority ? '&priority=1' : ''}&${libParam()}`;
   $$('[data-wish-export]').forEach((a) => { a.href = `${ROOT}/api/wishes/export.${a.dataset.wishExport}?${q}`; });
   $('#wish-add').onclick = async () => { if (await wishDialog()) viewWishes(); };
 
@@ -303,7 +307,7 @@ function wishDialog(w, preset) {
     f.onsubmit = async (e) => {
       e.preventDefault();
       const body = { title: f.title.value, authors: f.authors.value, publisher: f.publisher.value, year: f.year.value, isbn: f.isbn.value,
-        notes: f.notes.value, priority: f.priority.checked, coverUrl: cover, coverData: coverData || undefined };
+        notes: f.notes.value, priority: f.priority.checked, coverUrl: cover, coverData: coverData || undefined, library: LIBRARY && LIBRARY.id };
       try {
         await gapi(editing ? `/api/wishes/${w.id}` : '/api/wishes', { method: editing ? 'PUT' : 'POST', body });
         toast(editing ? 'Souhait enregistré.' : 'Ajouté à tes souhaits.');
