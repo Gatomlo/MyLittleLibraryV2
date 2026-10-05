@@ -10,10 +10,11 @@ import { wishSrc } from './souhaits.js';
 
 async function viewBookForm(id) {
   const editing = !!id;
-  const [book, cats, locations, publishers, collections, allSeries, allTags, members] = await Promise.all([
+  const [book, cats, locations, allAuthors, publishers, collections, allSeries, allTags, members] = await Promise.all([
     editing ? api(`/api/books/${id}`) : null,
     loadCategories(),
     api('/api/locations'),
+    api('/api/values/authors').catch(() => []),
     api('/api/values/publishers').catch(() => []),
     api('/api/public/collections').catch(() => []),
     api('/api/public/series').catch(() => []),
@@ -55,7 +56,7 @@ async function viewBookForm(id) {
       </div>
       <div class="field"><label for="title">Titre *</label><input id="title" name="title" required value="${esc(b.title)}"></div>
       <div class="field"><label for="subtitle">Sous-titre</label><input id="subtitle" name="subtitle" value="${esc(b.subtitle)}"></div>
-      <div class="field"><label for="authors">Auteur(s)</label><input id="authors" name="authors" placeholder="Séparés par des virgules" value="${esc(b.authors)}"></div>
+      <div class="field"><label for="authors">Auteur(s)</label><input id="authors" name="authors" placeholder="Séparés par des virgules" value="${esc(b.authors)}" autocomplete="off"></div>
       <div class="grid-2">
         <div class="field"><label for="publisher">Éditeur</label><input id="publisher" name="publisher" value="${esc(b.publisher)}" autocomplete="off"></div>
         <div class="field"><label for="isbn">ISBN</label><input id="isbn" name="isbn" inputmode="numeric" value="${esc(b.isbn)}"></div>
@@ -113,6 +114,18 @@ async function viewBookForm(id) {
     $('#cover-remove').hidden = !src;
   }
   renderCover();
+  // Auteurs : plusieurs noms separes par des virgules ; la liste filtre sur le nom en
+  // cours de saisie (apres la derniere virgule) et masque ceux deja choisis.
+  const authorParts = () => f.authors.value.split(',').map((a) => a.trim());
+  const authorsCombo = combo(f.authors, allAuthors.map((c) => ({ label: c.name, hint: String(c.count) })), (it) => {
+    const done = authorParts().slice(0, -1).filter(Boolean);
+    f.authors.value = [...done, it.label].join(', ') + ', ';
+    authorsCombo.open(true);
+  }, {
+    emptyText: 'Nouvel auteur',
+    query: (v) => v.split(',').pop().trim(),
+    skip: (it) => authorParts().slice(0, -1).some((a) => a.toLowerCase() === it.label.toLowerCase()),
+  });
   // Editeur, collection, serie : liste deroulante filtrante des valeurs existantes (ou nom libre).
   combo(f.publisher, publishers.map((c) => ({ label: c.name, hint: String(c.count) })), (it) => { f.publisher.value = it.label; },
     { emptyText: 'Nouvel éditeur' });
@@ -287,7 +300,7 @@ async function viewBookForm(id) {
     const btn = $('button[type=submit]', f);
     btn.disabled = true;
     const body = {
-      isbn: f.isbn.value, title: f.title.value, subtitle: f.subtitle.value, authors: f.authors.value,
+      isbn: f.isbn.value, title: f.title.value, subtitle: f.subtitle.value, authors: authorParts().filter(Boolean).join(', '),
       publisher: f.publisher.value, collection: f.collection.value, series: f.series.value, seriesNumber: f.seriesNumber.value, year: f.year.value, pages: f.pages.value, summary: f.summary.value,
       notes: f.notes.value, categories: form.categories,
       tags: features().tags ? form.tags : undefined,

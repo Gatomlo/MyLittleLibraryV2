@@ -14,8 +14,9 @@ async function loadCategories() {
 // Liste deroulante filtrante : un clic dans le champ ouvre la liste complete, la
 // saisie la restreint (sans tenir compte des accents), fleches + Entree ou clic pour
 // choisir. items : [{ label, hint? }] ; onSelect(item) au choix.
+// query(valeur) : texte filtrant (ex. dernier nom d'une liste a virgules) ; skip(item) : element masque.
 const foldText = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-function combo(input, items, onSelect, { emptyText = 'Aucun résultat', showAllOnFocus = true } = {}) {
+function combo(input, items, onSelect, { emptyText = 'Aucun résultat', showAllOnFocus = true, query = (v) => v, skip = () => false } = {}) {
   input.removeAttribute('list');
   input.setAttribute('autocomplete', 'off');
   input.setAttribute('role', 'combobox');
@@ -33,7 +34,7 @@ function combo(input, items, onSelect, { emptyText = 'Aucun résultat', showAllO
 
   function render() {
     const q = foldText(filterText);
-    shown = items.filter((it) => !q || foldText(it.label).includes(q)).slice(0, 300);
+    shown = items.filter((it) => !skip(it) && (!q || foldText(it.label).includes(q))).slice(0, 300);
     active = shown.length ? Math.max(0, Math.min(active, shown.length - 1)) : -1;
     panel.innerHTML = shown.length
       ? shown.map((it, i) => `<div class="combo-item ${i === active ? 'active' : ''}" data-i="${i}"><span>${esc(it.label)}</span>${it.hint ? `<span class="combo-hint">${esc(it.hint)}</span>` : ''}</div>`).join('')
@@ -42,7 +43,7 @@ function combo(input, items, onSelect, { emptyText = 'Aucun résultat', showAllO
     if (el) el.scrollIntoView({ block: 'nearest' });
   }
   function open(all) {
-    filterText = all ? '' : input.value;
+    filterText = all ? '' : query(input.value);
     active = -1;
     render();
     panel.hidden = false;
@@ -56,7 +57,7 @@ function combo(input, items, onSelect, { emptyText = 'Aucun résultat', showAllO
   }
   input.addEventListener('focus', () => open(showAllOnFocus));
   input.addEventListener('click', () => { if (panel.hidden) open(showAllOnFocus); });
-  input.addEventListener('input', () => { filterText = input.value; active = 0; render(); panel.hidden = false; });
+  input.addEventListener('input', () => { filterText = query(input.value); active = 0; render(); panel.hidden = false; });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); if (panel.hidden) open(true); else { active = Math.min(active + 1, shown.length - 1); render(); } }
     else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); render(); }
@@ -69,7 +70,7 @@ function combo(input, items, onSelect, { emptyText = 'Aucun résultat', showAllO
     if (item) choose(Number(item.dataset.i));
   });
   input.addEventListener('blur', () => setTimeout(close, 120));
-  return { setItems(list) { items = list; if (!panel.hidden) render(); }, close };
+  return { setItems(list) { items = list; if (!panel.hidden) render(); }, close, open };
 }
 
 // Filtre avec liste deroulante filtrante (categories, collections, tags du
