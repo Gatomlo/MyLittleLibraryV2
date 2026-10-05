@@ -921,8 +921,6 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
 .home-hello { flex: 1 1 240px; min-width: 0; }
 .home-hello h1 { margin: 0; }
 .home-hello p { margin: 2px 0 0; }
-.home-search { display: flex; gap: 8px; flex: 1 1 300px; max-width: 460px; min-width: 0; }
-.home-search input { flex: 1; min-width: 0; }
 .home .h-icon, .home-order .h-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 10px; flex-shrink: 0; background: var(--cs, var(--accent-soft)); color: var(--c, var(--accent)); }
 .home h1 .h-icon { width: 40px; height: 40px; border-radius: 13px; }
 /* Cartes toutes de meme largeur : deux colonnes egales (une seule en dessous de 860 px),
@@ -985,7 +983,6 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
   .home-hello h1 { font-size: 20px; }
   .home h1 .h-icon { width: 30px; height: 30px; border-radius: 10px; }
   .home-hello p { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .home-search { flex: 1 1 0; max-width: none; }
   .hide-phone { display: none !important; }
   .home-cards { display: none; }
   .home-tiles { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows, 4), minmax(0, 1fr)); gap: 8px; min-height: 0; overflow: hidden; }

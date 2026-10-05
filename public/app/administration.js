@@ -217,7 +217,7 @@ async function adminLibraries() {
         <div class="grow">
           <strong>${esc(l.name)}</strong>
           <div class="small"><a href="${esc(libUrl(l.slug))}">${esc(origin + l.slug)}/</a></div>
-          <div class="small muted">${l.books} livre(s) · ${l.copies} exemplaire(s) · ${l.users} compte(s) lié(s)</div>
+          <div class="small muted">Id ${l.id} · ${l.books} livre(s) · ${l.copies} exemplaire(s) · ${l.users} compte(s) lié(s)</div>
         </div>
         <button class="btn btn-small" data-edit-lib="${l.id}">Modifier</button>
         <button class="btn btn-small btn-danger" data-del-lib="${l.id}">Supprimer</button>

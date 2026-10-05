@@ -226,11 +226,6 @@ async function viewDashboard() {
   view().innerHTML = `<div class="home">
     <div class="home-head">
       <div class="home-hello"><h1>Bonjour ${esc(state.user.username)}</h1><p class="muted">${esc(sub.charAt(0).toUpperCase() + sub.slice(1))}</p></div>
-      <form class="home-search" role="search" id="home-search">
-        <label for="home-q" class="sr-only">Rechercher dans le catalogue</label>
-        <input type="search" id="home-q" placeholder="Titre, auteur, ISBN…" autocomplete="off">
-        <button class="btn btn-primary" type="submit" aria-label="Rechercher">${icon('search', 16)}<span class="hide-phone">Rechercher</span></button>
-      </form>
     </div>
     ${shown.length ? `
     <div class="home-cards">${shown.map((c) => `<section class="card home-card" aria-labelledby="hc-${c.key}">
@@ -247,7 +242,6 @@ async function viewDashboard() {
         ${foldTiles ? '<button type="button" class="home-tile home-more" id="home-more" aria-expanded="false"></button>' : ''}</nav>`
     : `<div class="empty">Toutes les cartes sont masquées.<br><br><button class="btn" type="button" id="home-custom-2"><span class="hide-mobile">Choisir les cartes</span><span class="show-mobile">Choisir</span></button></div>`}
   </div>`;
-  $('#home-search').onsubmit = (e) => { e.preventDefault(); openCatalog({ q: $('#home-q').value.trim() }); };
   if ($('#home-custom-2')) $('#home-custom-2').onclick = openHomeCustomize;
   $$('[data-home-go]').forEach((b) => { b.onclick = () => homeGo(b.dataset.homeGo); });
   if ($('#home-wish-add')) $('#home-wish-add').onclick = async () => { if (await wishDialog()) viewDashboard(); };
