@@ -10,10 +10,11 @@ import { wishSrc } from './souhaits.js';
 
 async function viewBookForm(id) {
   const editing = !!id;
-  const [book, cats, locations, collections, allSeries, allTags, members] = await Promise.all([
+  const [book, cats, locations, publishers, collections, allSeries, allTags, members] = await Promise.all([
     editing ? api(`/api/books/${id}`) : null,
     loadCategories(),
     api('/api/locations'),
+    api('/api/values/publishers').catch(() => []),
     api('/api/public/collections').catch(() => []),
     api('/api/public/series').catch(() => []),
     features().tags ? api('/api/tags').catch(() => []) : [],
@@ -56,7 +57,7 @@ async function viewBookForm(id) {
       <div class="field"><label for="subtitle">Sous-titre</label><input id="subtitle" name="subtitle" value="${esc(b.subtitle)}"></div>
       <div class="field"><label for="authors">Auteur(s)</label><input id="authors" name="authors" placeholder="Séparés par des virgules" value="${esc(b.authors)}"></div>
       <div class="grid-2">
-        <div class="field"><label for="publisher">Éditeur</label><input id="publisher" name="publisher" value="${esc(b.publisher)}"></div>
+        <div class="field"><label for="publisher">Éditeur</label><input id="publisher" name="publisher" value="${esc(b.publisher)}" autocomplete="off"></div>
         <div class="field"><label for="isbn">ISBN</label><input id="isbn" name="isbn" inputmode="numeric" value="${esc(b.isbn)}"></div>
       </div>
       <div class="field"><label for="collection">Collection ${hint('Collection de l\'éditeur : Folio, Pocket Science-fiction…')}</label><input id="collection" name="collection" placeholder="facultatif" value="${esc(b.collection || '')}" autocomplete="off"></div>
@@ -112,7 +113,9 @@ async function viewBookForm(id) {
     $('#cover-remove').hidden = !src;
   }
   renderCover();
-  // Collection : liste deroulante filtrante des collections existantes (ou nom libre).
+  // Editeur, collection, serie : liste deroulante filtrante des valeurs existantes (ou nom libre).
+  combo(f.publisher, publishers.map((c) => ({ label: c.name, hint: String(c.count) })), (it) => { f.publisher.value = it.label; },
+    { emptyText: 'Nouvel éditeur' });
   combo(f.collection, collections.map((c) => ({ label: c.name, hint: String(c.count) })), (it) => { f.collection.value = it.label; },
     { emptyText: 'Nouvelle collection' });
   combo(f.series, allSeries.map((c) => ({ label: c.name, hint: String(c.count) })), (it) => { f.series.value = it.label; },
