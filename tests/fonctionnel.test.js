@@ -123,6 +123,12 @@ test('selection : modification et suppression en masse, classement', async () =>
   assert.ok(ok(await a.get(`${api}/values/authors`)).some((v) => v.name === 'Jules Verne'));
   const cats = ok(await a.get(`${api}/categories`));
   assert.ok(cats.find((c) => c.name === 'Aventure').count === 2);
+  // Tri inverse (reverse=1) : titre Z -> A, ajout du plus ancien, tomes en ordre decroissant.
+  const titles = async (qs) => ok(await a.get(`${api}/books?q=Masse&${qs}`)).items.map((b) => b.title);
+  assert.deepEqual(await titles('sort=title'), ['Masse 1', 'Masse 2']);
+  assert.deepEqual(await titles('sort=title&reverse=1'), ['Masse 2', 'Masse 1']);
+  assert.deepEqual(await titles('sort=recent'), ['Masse 2', 'Masse 1']);
+  assert.deepEqual(await titles('sort=recent&reverse=1'), ['Masse 1', 'Masse 2']);
   assert.equal(ok(await a.post(`${api}/books/bulk-delete`, { ids })).deleted, 2);
 });
 

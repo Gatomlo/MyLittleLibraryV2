@@ -138,6 +138,15 @@ function accordionize(container, storageKey) {
   });
 }
 
+// Sens du tri affiche sur le bouton (le serveur inverse avec reverse=1).
+function sortDirLabel(c) {
+  const [normal, reversed] = {
+    recent: ['↓ Récents', '↑ Anciens'],
+    year: ['↓ Récents', '↑ Anciens'],
+  }[c.sort] || ['↓ A–Z', '↑ Z–A'];
+  return c.reverse ? reversed : normal;
+}
+
 // Comptes membres de la bibliotheque (statuts de lecture, lecteurs).
 let membersCache = null;
 const loadMembers = () => (membersCache ? Promise.resolve(membersCache) : api('/api/members').then((m) => (membersCache = m)));
@@ -228,11 +237,12 @@ async function viewCatalog() {
           <option value="off" ${sel(c.kobo, 'off')}>Pas encore sur ${esc(kobo.device.name)}</option></select>`]);
   }
   if (show('sort')) {
-    controls.push(['sort', 'Tri', `<select id="sort">
+    controls.push(['sort', 'Tri', `<div class="sort-row"><select id="sort">
       <option value="title">Tri : titre</option>
       <option value="author" ${sel(c.sort, 'author')}>Tri : auteur</option>
-      <option value="recent" ${sel(c.sort, 'recent')}>Tri : ajout récent</option>
-      <option value="year" ${sel(c.sort, 'year')}>Tri : année</option></select>`]);
+      <option value="recent" ${sel(c.sort, 'recent')}>Tri : date d'ajout</option>
+      <option value="year" ${sel(c.sort, 'year')}>Tri : année</option></select>
+      <button type="button" class="btn sort-dir" id="sort-dir" aria-pressed="${!!c.reverse}" title="Inverser l'ordre">${esc(sortDirLabel(c))}</button></div>`]);
   }
 
   const toggle = controls.some(([k]) => k !== 'search') ? '<button class="btn filters-toggle" type="button" id="filters-toggle" aria-expanded="false">Filtres</button>' : '';
@@ -258,7 +268,7 @@ async function viewCatalog() {
   function renderToggle() {
     const btn = $('#filters-toggle');
     if (!btn) return;
-    const n = ['category', 'collection', 'series', 'tag', 'mine', 'reader', 'status', 'format', 'reading', 'opinion', 'rating', 'kobo'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0);
+    const n = ['category', 'collection', 'series', 'tag', 'mine', 'reader', 'status', 'format', 'reading', 'opinion', 'rating', 'kobo'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0) + (c.reverse ? 1 : 0);
     btn.textContent = n ? `Filtres · ${n}` : 'Filtres';
     btn.classList.toggle('btn-primary', n > 0);
   }
@@ -330,6 +340,12 @@ async function viewCatalog() {
   }
   if (canManage() || koboOn()) bindSelection(reload);
   if ($('#mine')) $('#mine').onchange = (e) => { c.mine = e.target.checked; reload(); };
+  const sortDir = $('#sort-dir');
+  const drawSortDir = () => { sortDir.textContent = sortDirLabel(c); sortDir.setAttribute('aria-pressed', String(!!c.reverse)); };
+  if (sortDir) {
+    sortDir.onclick = () => { c.reverse = !c.reverse; drawSortDir(); reload(); };
+    $('#sort').addEventListener('change', () => { c.sort = $('#sort').value; drawSortDir(); });
+  }
   [['#kobo-filter', 'kobo'], ['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#reader', 'reader'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion'], ['#rating', 'rating']].forEach(([selector, key]) => {
     const el = $(selector);
     if (el) el.addEventListener('change', (e) => { c[key] = e.target.value; reload(); });
@@ -547,6 +563,7 @@ function catalogParams(extra = {}) {
     q: show('search') ? c.q : '', category: c.category || '', status: show('availability') ? c.status || '' : '',
     sort: show('sort') ? c.sort : 'title', page: c.page, limit: 48,
   });
+  if (show('sort') && c.reverse) params.set('reverse', '1');
   if (c.collection) params.set('collection', c.collection);
   if (c.series) params.set('series', c.series);
   if (c.missing && canManage()) params.set('missing', c.missing);

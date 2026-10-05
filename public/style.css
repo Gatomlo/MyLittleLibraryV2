@@ -348,6 +348,7 @@ input[type="checkbox"], input[type="radio"] { width: auto; min-height: 0; paddin
 .filter-check { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; white-space: nowrap; }
 .filters > * { min-width: 0; }
 .filters > .search { grid-column: span 2; }
+.filters > .sort-row { grid-column: span 2; }
 /* Recherche seule sur sa ligne, filtres en dessous (grand ecran). */
 @media (min-width: 641px) { .filters-search-row > .search { grid-column: 1 / -1; } }
 @media (max-width: 420px) { .filters > .search { grid-column: 1 / -1; } }
@@ -775,7 +776,7 @@ html.standalone body { overscroll-behavior-y: none; }
   .page-head .btn-row { width: 100%; }
   .page-head .btn-row > .btn { flex: 1 1 auto; justify-content: center; }
   .filters { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
-  .filters > * { grid-column: 1 / -1; }
+  .filters > *, .filters > .sort-row { grid-column: 1 / -1; }
   .filters > .search { grid-column: 1; }
   .filters > .filters-toggle { grid-column: 2; display: inline-flex; }
   .filters > .filters-toggle:first-child { grid-column: 1 / -1; }
@@ -1036,3 +1037,8 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
 /* Resultats d'un import epub : action Verifier, lignes deja verifiees attenuees. */
 .hist-action { white-space: nowrap; text-align: right; }
 .hist-checked td:first-child, .hist-checked td:nth-child(2) { opacity: .6; }
+
+/* Tri du catalogue : liste + bouton de sens. */
+.sort-row { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.sort-row select { flex: 1; min-width: 0; }
+.sort-dir { white-space: nowrap; flex-shrink: 0; }
