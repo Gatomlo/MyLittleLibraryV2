@@ -407,7 +407,7 @@ input[type="checkbox"], input[type="radio"] { width: auto; min-height: 0; paddin
 .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 14px 0; font-size: 14px; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; }
-.summary { white-space: pre-line; }
+.summary { white-space: pre-line; text-align: justify; hyphens: auto; }
 
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
