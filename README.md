@@ -130,7 +130,9 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **Interface** : thème coloré (police Nunito, couleur par page, icônes dans le menu et
   devant les titres), clair ou sombre selon l'appareil. Un manifeste par bibliothèque (nom et page de départ).
 - **Exemplaires** : chaque exemplaire a un code unique (`BIB-00001`…), un
-  emplacement et son étiquette.
+  emplacement et son étiquette. « Transférer » (fenêtre Modifier de l'exemplaire) le
+  déplace, avec son code et ses prêts, vers une autre fiche (erreur d'étiquetage, fiche
+  en double) ; la fiche d'origine vidée peut être supprimée dans la foulée.
 - **Prêts** : scan du QR de l'étiquette → prêter (emprunteur choisi ou créé à la
   volée) ou enregistrer le retour. Historique par livre et par emprunteur.
 - **Bouton Scanner** (en-tête ; Réglages > Exemplaires et prêts > Bouton Scanner) : lit le QR de

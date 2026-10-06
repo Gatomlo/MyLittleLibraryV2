@@ -94,6 +94,22 @@ test('pret, retard, retour, reservation', async () => {
   assert.equal((await a.del(`${api}/borrowers/${borrowers[0].id}`)).status, 409);
 });
 
+test('exemplaire transfere vers une autre fiche', async () => {
+  const src = ok(await a.post(`${api}/books`, { title: 'Fiche en double', copies: 2 }));
+  const dst = ok(await a.post(`${api}/books`, { title: 'Bonne fiche', copies: 1 }));
+  const code = src.copies[0].code;
+  const r = ok(await a.post(`${api}/copies/${src.copies[0].id}/move`, { bookId: dst.id }));
+  assert.equal(r.sourceId, src.id);
+  assert.equal(r.sourceCopies, 1);
+  assert.equal(r.book.id, dst.id);
+  assert.ok(r.book.copies.some((c) => c.code === code), 'le code suit l\'exemplaire');
+  assert.equal(ok(await a.get(`${api}/books/${src.id}`)).copies.length, 1);
+  assert.equal((await a.post(`${api}/copies/${src.copies[0].id}/move`, { bookId: dst.id })).status, 409);
+  assert.equal((await a.post(`${api}/copies/${src.copies[1].id}/move`, { bookId: 999999 })).status, 404);
+  assert.equal(ok(await a.post(`${api}/copies/${src.copies[1].id}/move`, { bookId: dst.id })).sourceCopies, 0);
+  ok(await a.post(`${api}/books/bulk-delete`, { ids: [src.id, dst.id] }));
+});
+
 test('import ligne a ligne, doublons et export', async () => {
   const first = ok(await a.post(`${api}/import/book`, { title: '=SOMME(A1:A9)', authors: 'Formule', fillFromIsbn: false, copies: 2, categories: 'Test; Import' }));
   assert.equal(first.status, 'created');

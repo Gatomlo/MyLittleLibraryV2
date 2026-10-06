@@ -4,7 +4,7 @@ import { state, LIBRARY, LIB, isMember, canManage, features } from './etat.js';
 import { $, $$, view, esc, hint, fmtDate, api, toast, go, debounce } from './utilitaires.js';
 import { iconText, renderNav } from './icones.js';
 import { route } from './routage.js';
-import { searchPicker, loadMembers } from './catalogue.js';
+import { searchPicker, loadMembers, pickBookDialog } from './catalogue.js';
 import { uploadEpub } from './fiche-livre.js';
 import { historyAdd, historyUpdate } from './import-suivi.js';
 
@@ -479,37 +479,6 @@ async function viewKobo() {
   });
 }
 
-// Choix d'une fiche existante (recherche dans le catalogue).
-function pickBookDialog(item) {
-  return new Promise((resolve) => {
-    const backdrop = document.createElement('div');
-    backdrop.className = 'modal-backdrop';
-    backdrop.innerHTML = `
-      <div class="modal">
-        <h2>Rattacher à une fiche</h2>
-        <p class="small muted">${esc(item.title)}${item.authors ? ` · ${esc(item.authors)}` : ''}</p>
-        <div class="field"><input type="search" id="pick-q" value="${esc(item.title)}" placeholder="Titre, auteur, ISBN…"></div>
-        <div id="pick-results" class="pick-list"></div>
-        <div class="btn-row"><button class="btn" type="button" data-close>Annuler</button></div>
-      </div>`;
-    document.body.appendChild(backdrop);
-    const close = (v) => { backdrop.remove(); resolve(v); };
-    backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(null); });
-    const search = async () => {
-      const q = $('#pick-q', backdrop).value.trim();
-      const r = await api(`/api/books?q=${encodeURIComponent(q)}&limit=20`).catch(() => ({ items: [] }));
-      $('#pick-results', backdrop).innerHTML = r.items.length ? r.items.map((b) => `
-        <button type="button" class="pick-row" data-pick="${b.id}"><strong>${esc(b.title)}</strong>
-          <span class="small muted">${esc(b.authors || '')}${b.series ? ` · ${esc(b.series)}${b.seriesNumber ? ` #${esc(b.seriesNumber)}` : ''}` : ''}</span></button>`).join('')
-        : '<p class="small muted">Aucune fiche trouvée.</p>';
-      $$('[data-pick]', backdrop).forEach((btn) => { btn.onclick = () => close(Number(btn.dataset.pick)); });
-    };
-    $('#pick-q', backdrop).oninput = debounce(search, 250);
-    search();
-    $('#pick-q', backdrop).focus();
-  });
-}
-
 function editKoboDialog(d, members) {
   const backdrop = document.createElement('div');
   backdrop.className = 'modal-backdrop';
@@ -800,7 +769,7 @@ async function viewKoboDevice(id) {
   $$('[data-link]').forEach((btn) => {
     btn.onclick = busy(async () => {
       const i = item(btn, 'link');
-      const bookId = await pickBookDialog(i);
+      const bookId = await pickBookDialog({ heading: 'Rattacher à une fiche', subtitle: `${i.title}${i.authors ? ` · ${i.authors}` : ''}`, query: i.title });
       if (!bookId) return;
       const out = await api(`/api/kobo/items/${i.id}/link`, { method: 'POST', body: { bookId } });
       if (canManage()) await copyFile(i, out);

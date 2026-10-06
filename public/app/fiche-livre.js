@@ -4,7 +4,7 @@ import { LIB, state, isMember, canManage, features, statusesOn, READING_LABELS, 
 import { $, $$, view, esc, hint, fmtDate, api, toast, go, coverHtml, availabilityBadge } from './utilitaires.js';
 import { iconText } from './icones.js';
 import { route } from './routage.js';
-import { starsHtml } from './catalogue.js';
+import { starsHtml, pickBookDialog } from './catalogue.js';
 import { kobo, koboOn, koboReturn, busy, pushToKobo } from './kobo.js';
 
 async function viewBook(id) {
@@ -329,7 +329,7 @@ function bindAdminBook(book) {
     go('#/labels');
   };
   $$('[data-edit-copy]').forEach((btn) => {
-    btn.onclick = () => editCopyDialog(book.copies.find((c) => c.id === Number(btn.dataset.editCopy)));
+    btn.onclick = () => editCopyDialog(book.copies.find((c) => c.id === Number(btn.dataset.editCopy)), book);
   });
 }
 
@@ -347,7 +347,7 @@ async function uploadEpub(copyId, file) {
   return sendRaw(`/api/copies/${copyId}/file`, 'PUT', file, 'application/epub+zip', { 'X-File-Name': encodeURIComponent(file.name) });
 }
 
-async function editCopyDialog(copy) {
+async function editCopyDialog(copy, book = null) {
   const locations = await api('/api/locations').catch(() => []);
   const backdrop = document.createElement('div');
   backdrop.className = 'modal-backdrop';
@@ -365,7 +365,8 @@ async function editCopyDialog(copy) {
       <div class="btn-row">
         <button class="btn btn-primary" type="submit">Enregistrer</button>
         <button class="btn" type="button" data-close>Annuler</button>
-        ${copy.id ? '<button class="btn btn-danger" type="button" data-delete style="margin-left:auto">Supprimer</button>' : ''}
+        ${copy.id && book ? `<button class="btn" type="button" data-move style="margin-left:auto" title="Transférer vers une autre fiche">${iconText('move', 'Transférer')}</button>` : ''}
+        ${copy.id ? `<button class="btn btn-danger" type="button" data-delete ${book ? '' : 'style="margin-left:auto"'}>Supprimer</button>` : ''}
       </div>
     </form>`;
   document.body.appendChild(backdrop);
@@ -375,6 +376,7 @@ async function editCopyDialog(copy) {
     if (!confirm(copy.format === 'ebook' ? "Supprimer l'exemplaire numérique ?" : `Supprimer l'exemplaire ${copy.code} et son historique de prêts ?`)) return;
     try { await api(`/api/copies/${copy.id}`, { method: 'DELETE' }); close(); toast('Exemplaire supprimé.'); route(); } catch (err) { toast(err.message, 'error'); }
   };
+  if (copy.id && book) $('[data-move]', backdrop).onclick = () => moveCopy(copy, book, close);
   $('form', backdrop).onsubmit = async (e) => {
     e.preventDefault();
     const f = e.target;
@@ -405,4 +407,21 @@ async function editCopyDialog(copy) {
   };
 }
 
+// Transfert d'un exemplaire (et de son code, ses prets) vers une autre fiche : erreur
+// d'etiquetage ou fiche en double. Fiche d'origine vide : sa suppression est proposee.
+async function moveCopy(copy, book, closeDialog) {
+  const label = copy.format === 'ebook' ? "l'exemplaire numérique" : `l'exemplaire ${copy.code}`;
+  const target = await pickBookDialog({ heading: `Transférer ${label}`, subtitle: `Depuis « ${book.title} »`, query: book.title, exclude: book.id });
+  if (!target) return;
+  try {
+    const r = await api(`/api/copies/${copy.id}/move`, { method: 'POST', body: { bookId: target } });
+    closeDialog();
+    toast(`${copy.format === 'ebook' ? 'Exemplaire numérique' : `Exemplaire ${copy.code}`} transféré vers « ${r.book.title} ».`);
+    if (!r.sourceCopies && confirm(`« ${book.title} » n'a plus d'exemplaire. Supprimer cette fiche ?`)) {
+      await api(`/api/books/${book.id}`, { method: 'DELETE' });
+      toast('Fiche vide supprimée.');
+    }
+    go(`#/book/${r.book.id}`);
+  } catch (err) { toast(err.message, 'error'); }
+}
 export { viewBook, FILE_LEVELS, sendRaw, uploadEpub };

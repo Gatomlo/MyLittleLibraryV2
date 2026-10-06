@@ -691,8 +691,40 @@ function memberPicker(box, members, selected, { onChange = () => {}, placeholder
   draw();
   return { get: () => [...ids], add };
 }
+// Choix d'une fiche existante (recherche dans le catalogue).
+// exclude : fiche a ne pas proposer. Renvoie l'id choisi ou null.
+function pickBookDialog({ heading, subtitle = '', query = '', exclude = null }) {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="modal">
+        <h2>${esc(heading)}</h2>
+        ${subtitle ? `<p class="small muted">${esc(subtitle)}</p>` : ''}
+        <div class="field"><input type="search" id="pick-q" value="${esc(query)}" placeholder="Titre, auteur, ISBN…"></div>
+        <div id="pick-results" class="pick-list"></div>
+        <div class="btn-row"><button class="btn" type="button" data-close>Annuler</button></div>
+      </div>`;
+    document.body.appendChild(backdrop);
+    const close = (v) => { backdrop.remove(); resolve(v); };
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(null); });
+    const search = async () => {
+      const q = $('#pick-q', backdrop).value.trim();
+      const r = await api(`/api/books?q=${encodeURIComponent(q)}&limit=20`).catch(() => ({ items: [] }));
+      const items = r.items.filter((b) => b.id !== exclude);
+      $('#pick-results', backdrop).innerHTML = items.length ? items.map((b) => `
+        <button type="button" class="pick-row" data-pick="${b.id}"><strong>${esc(b.title)}</strong>
+          <span class="small muted">${esc(b.authors || '')}${b.series ? ` · ${esc(b.series)}${b.seriesNumber ? ` #${esc(b.seriesNumber)}` : ''}` : ''}</span></button>`).join('')
+        : '<p class="small muted">Aucune fiche trouvée.</p>';
+      $$('[data-pick]', backdrop).forEach((btn) => { btn.onclick = () => close(Number(btn.dataset.pick)); });
+    };
+    $('#pick-q', backdrop).oninput = debounce(search, 250);
+    search();
+    $('#pick-q', backdrop).focus();
+  });
+}
 
 export {
-  loadCategories, combo, searchPicker, memberPicker, ALL_CATALOG_CARD, CATALOG_CARD_LABELS, ALL_CATALOG_FILTERS, CATALOG_FILTER_LABELS, accordionize,
+  loadCategories, combo, searchPicker, memberPicker, pickBookDialog, ALL_CATALOG_CARD, CATALOG_CARD_LABELS, ALL_CATALOG_FILTERS, CATALOG_FILTER_LABELS, accordionize,
   loadMembers, forgetMembers, viewCatalog, starsHtml,
 };
