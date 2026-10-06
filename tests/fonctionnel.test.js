@@ -325,3 +325,31 @@ test('vidage de la bibliotheque avec copie de securite', async () => {
   const b = ok(await a.post(`${api}/books`, { title: 'Premier apres vidage', copies: 1 }));
   assert.equal(b.copies[0].code, 'BIB-00001');
 });
+
+test('envoi vers une liseuse : toutes les metadonnees de l\'epub remplacees par la fiche', () => {
+  const { rewriteOpf } = require('../lib/kobo');
+  const opf = `<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="uid">urn:isbn:9780000000002</dc:identifier><dc:identifier>calibre:123</dc:identifier>
+    <dc:title id="t">Ancien titre</dc:title><meta refines="#t" property="file-as">Titre, Ancien</meta>
+    <dc:creator id="c1">Vieil Auteur</dc:creator><meta refines="#c1" property="role">aut</meta><dc:contributor>calibre (7.0)</dc:contributor>
+    <dc:publisher>Ancien éditeur</dc:publisher><dc:date>1999-01-01</dc:date><dc:description>Ancien résumé</dc:description>
+    <dc:subject>Vieux sujet</dc:subject><dc:language>fr</dc:language>
+    <meta name="calibre:series" content="Ancienne série"/><meta name="calibre:rating" content="8"/><meta name="cover" content="img"/>
+    <meta property="dcterms:modified">2020-01-01T00:00:00Z</meta><meta property="rendition:layout">reflowable</meta>
+  </metadata><manifest/></package>`;
+  const out = rewriteOpf(opf, { id: 7, title: 'Nouveau $& titre', subtitle: 'Sous-titre', authors: 'Ada Lovelace, Alan Turing', publisher: 'Éditeur',
+    year: 2021, summary: 'Ligne 1\nLigne <2>', isbn: '9782070368228', series: 'Machines', series_number: '2', categories: ['Roman', 'SF'] });
+  for (const old of ['Ancien', 'Vieil', 'Vieux', '1999', 'calibre:123', 'calibre (7.0)', 'calibre:rating', '9780000000002', 'file-as']) assert.ok(!out.includes(old), old);
+  for (const kept of ['<dc:language>fr</dc:language>', '<meta name="cover" content="img"/>', 'dcterms:modified', 'rendition:layout',
+    '<dc:identifier id="uid">urn:isbn:9782070368228</dc:identifier>', '<dc:title id="mll-title">Nouveau $&amp; titre</dc:title>',
+    '<dc:title id="mll-subtitle">Sous-titre</dc:title>', '>Ada Lovelace</dc:creator>', '>Alan Turing</dc:creator>', '<dc:publisher>Éditeur</dc:publisher>',
+    '<dc:date>2021</dc:date>', '<dc:description>&lt;p&gt;Ligne 1&lt;/p&gt;&lt;p&gt;Ligne &amp;lt;2&amp;gt;&lt;/p&gt;</dc:description>',
+    '<dc:subject>Roman</dc:subject>', '<dc:subject>SF</dc:subject>', 'name="calibre:series" content="Machines"', 'name="calibre:series_index" content="2"']) {
+    assert.ok(out.includes(kept), kept);
+  }
+  assert.equal((out.match(/9782070368228/g) || []).length, 1);
+  // Champ vide dans la fiche : retire de l'epub.
+  const bare = rewriteOpf(opf, { id: 7, title: 'Seul' });
+  assert.ok(!/dc:creator|dc:publisher|dc:description|calibre:series/.test(bare));
+  assert.ok(bare.includes('<dc:identifier id="uid">urn:mll:7</dc:identifier>'));
+});
