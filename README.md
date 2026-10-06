@@ -194,7 +194,8 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   personnalisé), QR code + code + titre + nom et logo de la bibliothèque, case de
   départ pour réutiliser une planche entamée ; étiquettes de tranche au choix (code seul,
   écrit verticalement, de bas en haut ou de haut en bas, avec leur propre format de planche ;
-  n'enlèvent pas les livres de la liste d'attente). « Tout remettre à imprimer » (onglet En
+  après impression, proposition de retirer les livres de la liste d'attente, comme pour
+  les étiquettes complètes). « Tout remettre à imprimer » (onglet En
   attente) remet tous les exemplaires papier dans la liste d'attente, codes inchangés
   (impression par lots de 500).
 - **Réglages** (menu du compte), en trois groupes :

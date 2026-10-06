@@ -308,9 +308,12 @@ async function viewLabels() {
     window.print();
     root.innerHTML = '';
     const printed = data.items.map((i) => i.code);
-    // Etiquettes de tranche : en plus des etiquettes completes, la liste d'attente ne change pas.
-    if (kind === 'spine') return;
-    if (confirm(`Les ${printed.length} étiquette(s) se sont-elles bien imprimées ?\nElles seront retirées de la liste d'attente.`)) {
+    // Etiquettes de tranche : souvent imprimees en plus des completes, on demande
+    // donc explicitement s'il faut vider la liste d'attente.
+    const question = kind === 'spine'
+      ? `Les ${printed.length} étiquette(s) de tranche se sont-elles bien imprimées ?\nRetirer ces livres de la liste d'attente ? (Annuler si les étiquettes complètes restent à imprimer.)`
+      : `Les ${printed.length} étiquette(s) se sont-elles bien imprimées ?\nElles seront retirées de la liste d'attente.`;
+    if (confirm(question)) {
       await api('/api/labels/mark-printed', { method: 'POST', body: { codes: printed } });
       if (sel.mode === 'manual') sel.manual = [];
       sel.mode = 'pending';
