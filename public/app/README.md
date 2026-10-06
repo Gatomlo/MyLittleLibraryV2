@@ -18,7 +18,7 @@ charge directement ces fichiers (`<script type="module" src="…/app/main.js">` 
 | `kobo.js`, `liseuse-epub.js` | Liseuses Kobo (USB), lecture des epub en ligne (`vendor/epub.min.js`) |
 | `souhaits.js`, `statistiques.js` | Listes de souhaits, statistiques de lecture |
 | `connexion.js`, `compte.js`, `administration.js`, `reglages.js` | Connexion et invitations, mon compte (sections repliables, dont Mes partages : statistiques et liste de souhaits), administration du site, réglages d'une bibliothèque |
-| `installation.js`, `main.js` | Installation sur l'écran d'accueil ; démarrage (point d'entrée) |
+| `installation.js`, `main.js` | Installation sur l'écran d'accueil ; démarrage (point d'entrée) ; réglages et compte relus au retour au premier plan et aux changements de page (`refreshIfStale`, 30 s au plus) |
 
 ## Règles
 
