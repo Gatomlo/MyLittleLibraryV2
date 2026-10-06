@@ -359,8 +359,8 @@ async function viewCatalog() {
   await loadBooks(false);
 }
 
-// Vue liste (tablette / smartphone en paysage) : bouton visible seulement dans ce cas,
-// choix garde dans le navigateur.
+// Vue liste (ecrans d'au moins 600 px, ou le catalogue est en cartes) : choix garde
+// dans le navigateur.
 const VIEW_KEY = 'mll-catalog-view';
 const listView = () => { try { return localStorage.getItem(VIEW_KEY) === 'list'; } catch (e) { return false; } };
 function bindViewToggle() {

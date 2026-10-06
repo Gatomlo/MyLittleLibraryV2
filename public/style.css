@@ -1068,9 +1068,10 @@ body.selecting .fab-stack { display: none; }
 @media (max-width: 760px) { .fab-stack { opacity: 1; transform: none; pointer-events: auto; } }
 @media (max-width: 760px) { .shell:has(.books) { padding-bottom: calc(150px + env(safe-area-inset-bottom)); } }
 
-/* Vue liste : tablette et smartphone en paysage (ecran tactile), au choix. */
+/* Vue liste au choix, partout ou le catalogue est en cartes (au moins 600 px de large ;
+   en dessous, il est deja en liste). */
 .view-toggle { display: none; }
-@media (pointer: coarse) and (orientation: landscape) {
+@media (min-width: 600px) {
   .view-toggle { display: inline-flex; padding-left: 10px; padding-right: 10px; flex: none !important; }
   .books.books-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 8px; }
   .books.books-list .book-card { flex-direction: row; align-items: stretch; }
