@@ -1048,3 +1048,39 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
 .legend-link:hover span:first-of-type { text-decoration: underline; }
 .stats-book-list .list-item { color: inherit; text-decoration: none; align-items: center; }
 .stats-book-list .list-item:hover strong { text-decoration: underline; }
+
+/* ---------- Catalogue : boutons flottants et vue liste ---------- */
+/* Ajouter / Selectionner en icones : toujours sur smartphone, sinon une fois l'en-tete
+   sorti de l'ecran (classe fab-scrolled). Masques pendant une selection. */
+.fab-stack { position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 25;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  opacity: 0; transform: translateY(14px); pointer-events: none; transition: opacity .2s ease, transform .2s ease; }
+.fab-stack.fab-scrolled { opacity: 1; transform: none; pointer-events: auto; }
+.fab { width: 56px; height: 56px; border-radius: 50%; border: 0; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent); color: var(--accent-contrast); box-shadow: 0 8px 22px rgba(0, 0, 0, .28); cursor: pointer; text-decoration: none;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.fab:hover { filter: brightness(1.06); }
+.fab.fab-secondary { width: 46px; height: 46px; background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+body.selecting .fab-stack { display: none; }
+@media (max-width: 760px) { .fab-stack { opacity: 1; transform: none; pointer-events: auto; } }
+@media (max-width: 760px) { .shell:has(.books) { padding-bottom: calc(150px + env(safe-area-inset-bottom)); } }
+
+/* Vue liste : tablette et smartphone en paysage (ecran tactile), au choix. */
+.view-toggle { display: none; }
+@media (pointer: coarse) and (orientation: landscape) {
+  .view-toggle { display: inline-flex; padding-left: 10px; padding-right: 10px; flex: none !important; }
+  .books.books-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 8px; }
+  .books.books-list .book-card { flex-direction: row; align-items: stretch; }
+  .books.books-list .book-card:hover { transform: none; }
+  .books.books-list .book-card .cover { width: 58px; flex: none; align-self: flex-start; }
+  .books.books-list .book-card .cover-ribbon { display: none; }
+  .books.books-list .book-card .cover-fallback { font-size: 10px; padding: 4px; }
+  /* Titre sur sa ligne, le reste a la suite (pastilles, statut, disponibilite). */
+  .books.books-list .book-card .meta { min-width: 0; padding: 8px 12px; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .books.books-list .book-card .meta > * { margin: 0; }
+  .books.books-list .book-card .t { width: 100%; -webkit-line-clamp: 1; }
+  .books.books-list .book-card .a { -webkit-line-clamp: 1; max-width: 100%; }
+  .books.books-list .book-card .card-terms { margin: 0; }
+  .books.books-list .book-card .badge { margin-top: 0; }
+  .books.books-list .select-check { top: 4px; left: 4px; width: 22px; height: 22px; }
+}

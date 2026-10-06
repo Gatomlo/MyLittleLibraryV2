@@ -6,6 +6,7 @@ import { scanIsbn } from './scanner.js';
 import { onLeave } from './routage.js';
 import { kobo, koboOn, busy, pushManyToKobo } from './kobo.js';
 import { missingLabel } from './incompletes.js';
+import { icon } from './icones.js';
 
 async function loadCategories() {
   return api('/api/public/categories');
@@ -258,7 +259,10 @@ async function viewCatalog() {
   view().innerHTML = `
     <div class="page-head">
       <div><h1>Catalogue</h1></div>
-      ${canManage() ? '<div class="btn-row"><a class="btn hide-mobile" href="#/import">Ajout multiple</a><a class="btn btn-primary hide-mobile" href="#/add">+ Ajouter un livre</a></div>' : koboOn() ? '<div class="btn-row"></div>' : ''}
+      <div class="btn-row">
+        <button class="btn view-toggle" type="button" id="view-toggle"></button>
+        ${canManage() ? '<a class="btn btn-primary hide-mobile" href="#/add">+ Ajouter un livre</a>' : ''}
+      </div>
     </div>
     <div id="active-filters"></div>
     ${body}`;
@@ -339,6 +343,8 @@ async function viewCatalog() {
     });
   }
   if (canManage() || koboOn()) bindSelection(reload);
+  bindViewToggle();
+  bindFabs();
   if ($('#mine')) $('#mine').onchange = (e) => { c.mine = e.target.checked; reload(); };
   const sortDir = $('#sort-dir');
   const drawSortDir = () => { sortDir.textContent = sortDirLabel(c); sortDir.setAttribute('aria-pressed', String(!!c.reverse)); };
@@ -353,6 +359,43 @@ async function viewCatalog() {
   await loadBooks(false);
 }
 
+// Vue liste (tablette / smartphone en paysage) : bouton visible seulement dans ce cas,
+// choix garde dans le navigateur.
+const VIEW_KEY = 'mll-catalog-view';
+const listView = () => { try { return localStorage.getItem(VIEW_KEY) === 'list'; } catch (e) { return false; } };
+function bindViewToggle() {
+  const btn = $('#view-toggle');
+  const draw = () => {
+    const on = listView();
+    $('#books').classList.toggle('books-list', on);
+    btn.innerHTML = icon(on ? 'grid' : 'list', 18);
+    btn.title = on ? 'Afficher en cartes' : 'Afficher en liste';
+    btn.setAttribute('aria-label', btn.title);
+  };
+  btn.onclick = () => {
+    try { localStorage.setItem(VIEW_KEY, listView() ? 'cards' : 'list'); } catch (e) { /* stockage indisponible */ }
+    draw();
+  };
+  draw();
+}
+
+// Boutons flottants (icones) : Ajouter et Selectionner. Toujours sur smartphone ; sur
+// ordinateur et tablette, une fois les boutons de l'en-tete sortis de l'ecran.
+function bindFabs() {
+  const manage = canManage();
+  const selectBtn = $('#select-toggle');
+  if (!manage && !selectBtn) return;
+  const fab = document.createElement('div');
+  fab.className = 'fab-stack';
+  fab.innerHTML = `${selectBtn ? `<button class="fab fab-secondary" type="button" id="fab-select" title="Sélectionner" aria-label="Sélectionner">${icon('select', 22)}</button>` : ''}
+    ${manage ? `<a class="fab" href="#/add" title="Ajouter un livre" aria-label="Ajouter un livre">${icon('plus', 26)}</a>` : ''}`;
+  document.body.appendChild(fab);
+  if (selectBtn) $('#fab-select').onclick = () => selectBtn.click();
+  const io = new IntersectionObserver(([e]) => fab.classList.toggle('fab-scrolled', !e.isIntersecting));
+  io.observe($('.page-head'));
+  onLeave(() => { io.disconnect(); fab.remove(); });
+}
+
 // Selection de plusieurs livres (gestion) : bouton "Selectionner" (grand ecran) ou
 // appui long sur une couverture, puis clic sur les couvertures, ou "Tout
 // sélectionner" = tous les livres du filtre en cours ; puis modification ou
@@ -360,7 +403,6 @@ async function viewCatalog() {
 // Lecteur (liseuse branchee) : seulement l'envoi groupe vers la liseuse.
 function bindSelection(reload) {
   const head = $('.page-head .btn-row');
-  if (!head) return;
   const manage = canManage();
   head.insertAdjacentHTML('afterbegin', '<button class="btn hide-mobile" type="button" id="select-toggle">Sélectionner</button>');
   document.body.insertAdjacentHTML('beforeend', `<div class="select-bar" id="select-bar" hidden>

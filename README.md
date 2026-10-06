@@ -182,8 +182,10 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **Emprunteurs** : formulaire de création ouvert à la demande, champ libre « Informations ». Fiche d'un
   emprunteur : prêts en cours (retards), historique, « Prêter un livre » (scanner avec l'emprunteur pré-rempli,
   « Prêter un autre livre à … » pour enchaîner).
-- **Téléphone** : Sélectionner, Ajout multiple et Ajouter un livre masqués dans le catalogue
-  (ajout via le menu, sélection par appui long).
+- **Catalogue** : boutons flottants (icônes) Ajouter et Sélectionner, toujours sur téléphone,
+  et sur ordinateur / tablette dès que l'en-tête sort de l'écran ; Ajout multiple depuis la page
+  Ajouter. Tablette ou téléphone en paysage : vue liste au choix (bouton à côté de Sélectionner,
+  gardé dans le navigateur).
 - **Étiquettes** (menu du compte) : planches A4 (Avery L7160, L7159, L7163, L7651, 70×37…, ou format
   personnalisé), QR code + code + titre + nom et logo de la bibliothèque, case de
   départ pour réutiliser une planche entamée.
