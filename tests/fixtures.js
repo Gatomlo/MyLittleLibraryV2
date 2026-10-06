@@ -9,7 +9,9 @@ const { DatabaseSync } = require('node:sqlite');
 // Base KoboReader.sqlite minimale. books : [{ id, title, author, isbn, status, percent }].
 // withWal : base en mode journal (WAL) dont tout le contenu est encore dans le journal,
 // renvoyee comme { main, wal } (fichier principal illisible seul).
-function koboDb(books, { withWal = false } = {}) {
+// corrupt : 'index' (index de ContentType abime) ou 'table' (index et une page de la
+// table content, au milieu, abimes) ; 300 lignes de remplissage pour avoir plusieurs pages.
+function koboDb(books, { withWal = false, corrupt = null } = {}) {
   const file = path.join(os.tmpdir(), `mll-test-kobo-${crypto.randomBytes(6).toString('hex')}.sqlite`);
   const db = new DatabaseSync(file);
   if (withWal) db.exec('PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;');
@@ -22,6 +24,15 @@ function koboDb(books, { withWal = false } = {}) {
   for (const b of books) {
     ins.run(b.id, b.title, b.author || null, b.isbn || null, b.status || 0, b.percent || 0, '2026-01-02T10:00:00Z', b.id.replace(/[^a-zA-Z0-9]/g, '_'));
   }
+  let badPage = null;
+  if (corrupt) {
+    db.prepare('PRAGMA page_size').get();
+    const fill = db.prepare("INSERT INTO content (ContentID, ContentType, Title) VALUES (?, 9, ?)");
+    for (let i = 0; i < 300; i++) fill.run(`file:///mnt/onboard/chapitre${i}`, 'x'.repeat(300));
+    db.exec('CREATE INDEX content_type ON content (ContentType)');
+    const index = db.prepare("SELECT rootpage FROM sqlite_master WHERE name = 'content_type'").get().rootpage;
+    badPage = [index, ...(corrupt === 'table' ? [Math.floor(index * 0.75)] : [])];
+  }
   if (withWal) {
     const out = { main: fs.readFileSync(file), wal: fs.readFileSync(`${file}-wal`) };
     db.close();
@@ -31,6 +42,10 @@ function koboDb(books, { withWal = false } = {}) {
   db.close();
   const buffer = fs.readFileSync(file);
   fs.rmSync(file, { force: true });
+  if (badPage) {
+    const size = buffer.readUInt16BE(16) || 65536;
+    badPage.forEach((p) => buffer.fill(0xa5, (p - 1) * size, p * size));
+  }
   return buffer;
 }
 

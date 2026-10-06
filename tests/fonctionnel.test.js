@@ -243,6 +243,20 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   const badScan = await kscan({}, broken);
   assert.equal(badScan.status, 400);
   assert.match(badScan.body.error, /illisible/);
+  // Base en partie abimee (la liseuse fonctionne quand meme) : lue sans ses index, ou
+  // jusqu'a la partie abimee sans retirer les livres non lus.
+  const two = [{ id: `file:///mnt/onboard/${koboPath}`, title: 'Titre corrigé', author: 'Ada Lovelace' },
+    { id: 'file:///mnt/onboard/autre.epub', title: 'Autre livre' }];
+  const noIndex = ok(await kscan({}, koboDb(two, { corrupt: 'index' })));
+  assert.equal(noIndex.books, 2);
+  assert.equal(noIndex.warning, undefined);
+  const part = ok(await kscan({}, koboDb(two, { corrupt: 'table' })));
+  assert.equal(part.books, 2);
+  assert.match(part.warning, /abîmée/);
+  const truncated = koboDb(two);
+  const cut = await kscan({ 'X-Kobo-Db-Size': String(truncated.length + 10) }, truncated);
+  assert.equal(cut.status, 400);
+  assert.match(cut.body.error, /incomplète/);
   ok(await a.del(`${api}/kobo/devices/${dev.id}`));
   assert.equal(ok(await a.get(`${api}/kobo/devices`)).length, 0);
 

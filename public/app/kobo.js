@@ -229,15 +229,17 @@ async function scanKobo(root = null) {
     const wal = await src.file(`${KOBO_DB}-wal`);
     const walBusy = !!(wal && wal.size > 0);
     const write = !!(src.write && src.device && src.device.writeDb);
-    const headers = { 'X-Kobo-Version': encodeURIComponent(src.version), ...(walBusy ? { 'X-Kobo-Wal-Size': String(wal.size) } : {}),
+    const headers = { 'X-Kobo-Version': encodeURIComponent(src.version), 'X-Kobo-Db-Size': String(dbFile.size),
+      ...(walBusy ? { 'X-Kobo-Wal-Size': String(wal.size) } : {}),
       ...(write && !walBusy ? { 'X-Kobo-Write': '1' } : {}) };
     box.step(`Envoi de la base de la liseuse (${mb})…`, 0);
     const body = walBusy ? new Blob([dbFile, wal]) : dbFile;
-    const { dbUpdate, ...device } = await sendRawProgress('/api/kobo/scan', body, 'application/x-sqlite3', headers, (p) => {
+    const { dbUpdate, warning, ...device } = await sendRawProgress('/api/kobo/scan', body, 'application/x-sqlite3', headers, (p) => {
       if (p < 1) box.step(`Envoi de la base de la liseuse (${mb})… ${Math.round(p * 100)} %`, Math.round(p * 100));
       else box.step('Analyse des livres et rapprochement avec les fiches…');
     });
     src.device = device;
+    if (warning) toast(warning, 'error');
     if (dbUpdate && dbUpdate.error) toast(`Scan fait, mais informations des fiches non écrites dans la liseuse : ${dbUpdate.error}`, 'error');
     else if (dbUpdate) await applyDbUpdate(src, dbUpdate, dbFile, box);
     if (walBusy && write) toast('Informations des fiches non écrites dans la liseuse : sa base n\'est pas à jour. Éjecte-la proprement, rebranche-la puis rescanne.', 'error');
