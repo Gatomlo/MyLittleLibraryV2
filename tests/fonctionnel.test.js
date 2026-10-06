@@ -170,7 +170,7 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   const kobo = await ctx.users.lecteur.get(`${api}/kobo/books/${imp.bookId}/epub`, { buffer: true });
   assert.equal(kobo.status, 200);
   const koboPath = decodeURIComponent(kobo.headers.get('x-kobo-path'));
-  assert.match(koboPath, /^Bibliotheque\/Machines\/02 - Titre corrigé \[mll-\d+\.[0-9a-f]{6}\]\.epub$/);
+  assert.match(koboPath, /^Lovelace, Ada\/Titre corrige - Ada Lovelace \[mll-\d+\.[0-9a-f]{6}\]\.epub$/);
   const koboZip = await JSZip.loadAsync(kobo.body);
   const opf = await koboZip.file('OEBPS/content.opf').async('string');
   assert.ok(opf.includes('<dc:title>Titre corrigé</dc:title>'));
@@ -183,7 +183,8 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   ok(await a.put(`${api}/books/${imp.bookId}`, { ...fields, seriesNumber: '3' }));
   const kobo2 = await ctx.users.lecteur.get(`${api}/kobo/books/${imp.bookId}/epub`, { buffer: true });
   const koboPath2 = decodeURIComponent(kobo2.headers.get('x-kobo-path'));
-  assert.match(koboPath2, /^Bibliotheque\/Machines\/03 - Titre corrigé \[mll-\d+\.[0-9a-f]{6}\]\.epub$/);
+  assert.match(koboPath2, /^Lovelace, Ada\/Titre corrige - Ada Lovelace \[mll-\d+\.[0-9a-f]{6}\]\.epub$/);
+  assert.notEqual(koboPath2, koboPath); // empreinte changee avec le tome
   ok(await a.put(`${api}/books/${imp.bookId}`, { ...fields, seriesNumber: '2' }));
   const kobo3 = await ctx.users.lecteur.get(`${api}/kobo/books/${imp.bookId}/epub`, { buffer: true });
   assert.equal(decodeURIComponent(kobo3.headers.get('x-kobo-path')), koboPath);
@@ -227,7 +228,7 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   assert.equal(c.token, null);
   assert.equal(c.covers.length, 1);
   assert.match(c.covers[0].dir, /^\.kobo-images\/\d+\/\d+$/);
-  assert.ok(c.covers[0].prefix.startsWith('file____mnt_onboard_Bibliotheque_Machines'));
+  assert.ok(c.covers[0].prefix.startsWith('file____mnt_onboard_Lovelace__Ada_Titre_corrige'));
   ok(await a.post(`${api}/kobo/devices/${dev.id}/db/applied`, { covers: [c.covers[0].itemId] }));
   assert.equal(ok(await kscan({ 'X-Kobo-Write': '1' }, modified)).dbUpdate, null);
 

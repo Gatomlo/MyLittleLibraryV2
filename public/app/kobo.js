@@ -320,7 +320,7 @@ async function pushToKobo(bookId, { quiet = false, items = null, sync = !quiet }
     try { data = await res.json(); } catch (e) { /* reponse vide */ }
     throw new Error((data && data.error) || `Erreur ${res.status}`);
   }
-  let p = decodeURIComponent(res.headers.get('X-Kobo-Path') || 'Bibliotheque/livre.epub');
+  let p = decodeURIComponent(res.headers.get('X-Kobo-Path') || 'livre.epub');
   const blob = await res.blob();
   if (kobo && kobo.write) {
     const inPlace = writeDb() && onDevice.find((i) => i.path && !i.pending);
@@ -348,7 +348,7 @@ async function pushToKobo(bookId, { quiet = false, items = null, sync = !quiet }
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  if (!quiet) toast(`Fichier téléchargé : copie-le sur la liseuse (dossier Bibliotheque)${onDevice.length ? ' et supprime l\'ancien' : ''}.`);
+  if (!quiet) toast(`Fichier téléchargé : copie-le sur la liseuse (dossier de l\'auteur)${onDevice.length ? ' et supprime l\'ancien' : ''}.`);
   return true;
 }
 
