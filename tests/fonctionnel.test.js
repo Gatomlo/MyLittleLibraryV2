@@ -155,6 +155,9 @@ test('etiquettes : QR code et marquage', async () => {
   assert.match(labels.items[0].svg, /^<svg/);
   ok(await a.post(`${api}/labels/mark-printed`, { codes: [pending[0].code] }));
   assert.equal(ok(await a.get(`${api}/labels/pending`)).length, pending.length - 1);
+  const before = pending.length - 1;
+  assert.ok(ok(await a.post(`${api}/labels/reset`)).reset >= 1);
+  assert.ok(ok(await a.get(`${api}/labels/pending`)).length > before, 'etiquettes remises en attente');
 });
 
 test('epub : import, droits de lecture, envoi vers une liseuse', async () => {

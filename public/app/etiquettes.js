@@ -107,6 +107,16 @@ async function viewLabels() {
     return Array.from(groups).map(([title, codes]) => `<div class="sel-row"><span class="grow">${esc(title)}</span><span class="small muted code">${codes.map(esc).join(', ')}</span></div>`).join('');
   }
 
+  async function resetAll() {
+    if (!confirm('Remettre les étiquettes de tous les exemplaires papier dans la liste d\'attente ?\nLes codes ne changent pas.')) return;
+    try {
+      const r = await api('/api/labels/reset', { method: 'POST' });
+      sel.mode = 'pending';
+      toast(r.reset ? `${r.reset} étiquette(s) remise(s) en attente.` : 'Toutes les étiquettes étaient déjà en attente.');
+      route();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
   function renderMode() {
     $$('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === sel.mode));
     $('#manual-count').textContent = sel.manual.length;
@@ -115,8 +125,11 @@ async function viewLabels() {
       body.innerHTML = pending.length ? `
         <details><summary class="small" style="cursor:pointer;margin-bottom:8px">Voir le détail</summary>
           <div class="sel-list">${groupedHtml(pending)}</div></details>
-        <div class="btn-row" style="margin-top:10px"><button class="btn btn-small" type="button" id="customize">Personnaliser</button>${hint('Nouveaux exemplaires et codes régénérés, pas encore imprimés. Personnaliser : copie cette liste dans « Sélection » pour la modifier.')}</div>`
-        : '<p class="muted small">Aucune étiquette en attente. Utilise « Sélection » pour réimprimer des étiquettes.</p>';
+        <div class="btn-row" style="margin-top:10px"><button class="btn btn-small" type="button" id="customize">Personnaliser</button>${hint('Nouveaux exemplaires et codes régénérés, pas encore imprimés. Personnaliser : copie cette liste dans « Sélection » pour la modifier.')}
+          <button class="btn btn-small" type="button" id="reset-all">Tout remettre à imprimer</button></div>`
+        : `<p class="muted small">Aucune étiquette en attente. Utilise « Sélection » pour réimprimer des étiquettes.</p>
+          <div class="btn-row"><button class="btn btn-small" type="button" id="reset-all">Tout remettre à imprimer</button>${hint('Remet les étiquettes de tous les exemplaires papier dans « En attente », sans changer leurs codes.')}</div>`;
+      $('#reset-all').onclick = resetAll;
       const cz = $('#customize');
       if (cz) cz.onclick = () => { sel.manual = []; addManual(pending); sel.mode = 'manual'; renderMode(); refresh(); };
       return;
@@ -214,7 +227,9 @@ async function viewLabels() {
     const perSheet = layout.cols * layout.rows;
     const offset = Math.min(start - 1, perSheet - 1);
     const sheets = items.length ? Math.ceil((items.length + offset) / perSheet) : 0;
-    $('#summary').textContent = items.length ? `${items.length} étiquette${items.length > 1 ? 's' : ''} · ${sheets} planche${sheets > 1 ? 's' : ''}` : '';
+    const more = selectedCodes().length - items.length;
+    $('#summary').textContent = items.length ? `${items.length} étiquette${items.length > 1 ? 's' : ''} · ${sheets} planche${sheets > 1 ? 's' : ''}`
+      + (more > 0 ? ` · ${more} autre(s) au prochain lot` : '') : '';
     if (!items.length) { target.innerHTML = '<div class="empty">Rien à imprimer pour le moment.</div>'; return; }
     const slots = Array(offset).fill(null).concat(items);
     const small = layout.height < 26 || layout.width < 45;

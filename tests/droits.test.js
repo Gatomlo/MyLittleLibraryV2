@@ -58,7 +58,7 @@ test('lecteur : catalogue en lecture seule et ses statuts', async () => {
     ['GET', '/borrowers'], ['GET', '/loans'], ['POST', '/loans', { code: 'BIB-00001', borrowerName: 'x' }],
     ['GET', '/export/copies.csv'], ['POST', '/books/bulk-delete', { ids: [bookId] }], ['POST', '/categories', { name: 'x' }],
     ['PUT', '/settings', { loanDays: 5 }], ['POST', '/empty', { confirm: 'Test' }], ['GET', '/Borrowers'], ['GET', '/borrowers/'],
-    ['POST', '/copies/1/move', { bookId }],
+    ['POST', '/copies/1/move', { bookId }], ['POST', '/labels/reset'],
   ]) await check('lecteur', method, path, body, 403);
   const b = await check('lecteur', 'GET', `/books/${bookId}`, null, 200);
   assert.equal(b.body.history, undefined, 'pas d\'historique des prets pour un lecteur');
