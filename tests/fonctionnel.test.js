@@ -237,9 +237,26 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   const parts = koboDb([{ id: `file:///mnt/onboard/${koboPath}`, title: 'Titre corrigé', author: 'Ada Lovelace' },
     { id: 'file:///mnt/onboard/autre.epub', title: 'Autre livre' }], { withWal: true });
   assert.equal((await kscan({}, parts.main)).status, 400);
+  const backupsBefore = ok(await a.get(`${api}/kobo/devices/${dev.id}/backups`)).length;
   const withWal = ok(await kscan({ 'X-Kobo-Write': '1', 'X-Kobo-Wal-Size': String(parts.wal.length) }, Buffer.concat([parts.main, parts.wal])));
   assert.equal(withWal.books, 2);
-  assert.equal(withWal.dbUpdate, null);
+  // Journal reporte (comme Calibre) : base complete a ecrire, lisible sans journal.
+  assert.equal(withWal.dbUpdate.merged, true);
+  const merged = (await a.get(`${api}/kobo/devices/${dev.id}/db/${withWal.dbUpdate.token}`, { buffer: true })).body;
+  fs.writeFileSync(tmp, merged);
+  const mdb = new DatabaseSync(tmp, { readOnly: true });
+  assert.equal(mdb.prepare('SELECT COUNT(*) AS n FROM content').get().n, 2);
+  assert.equal(mdb.prepare('SELECT Series FROM content WHERE Title = ?').get('Titre corrigé').Series, 'Machines');
+  mdb.close();
+  ok(await a.post(`${api}/kobo/devices/${dev.id}/db/applied`, { token: withWal.dbUpdate.token }));
+  // Base saine de chaque scan gardee (une fois par contenu), jamais une base abimee.
+  const afterWal = ok(await a.get(`${api}/kobo/devices/${dev.id}/backups`));
+  assert.equal(afterWal.length, backupsBefore + 1);
+  assert.match(afterWal[0].name, /\.sqlite\.gz$/);
+  const restored = (await a.get(`${api}/kobo/devices/${dev.id}/backups/${afterWal[0].name}`, { buffer: true })).body;
+  assert.equal(restored.subarray(0, 15).toString(), 'SQLite format 3');
+  ok(await kscan({ 'X-Kobo-Wal-Size': String(parts.wal.length) }, Buffer.concat([parts.main, parts.wal])));
+  assert.equal(ok(await a.get(`${api}/kobo/devices/${dev.id}/backups`)).length, afterWal.length);
   const broken = Buffer.concat([modified.subarray(0, 100), Buffer.alloc(modified.length - 100, 7)]);
   const badScan = await kscan({}, broken);
   assert.equal(badScan.status, 400);
@@ -251,9 +268,11 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   const noIndex = ok(await kscan({}, koboDb(two, { corrupt: 'index' })));
   assert.equal(noIndex.books, 2);
   assert.equal(noIndex.warning, undefined);
+  const backupsHealthy = ok(await a.get(`${api}/kobo/devices/${dev.id}/backups`)).length;
   const part = ok(await kscan({}, koboDb(two, { corrupt: 'table' })));
   assert.equal(part.books, 2);
   assert.match(part.warning, /abîmée/);
+  assert.equal(ok(await a.get(`${api}/kobo/devices/${dev.id}/backups`)).length, backupsHealthy);
   const truncated = koboDb(two);
   const cut = await kscan({ 'X-Kobo-Db-Size': String(truncated.length + 10) }, truncated);
   assert.equal(cut.status, 400);

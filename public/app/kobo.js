@@ -231,7 +231,7 @@ async function scanKobo(root = null) {
     const write = !!(src.write && src.device && src.device.writeDb);
     const headers = { 'X-Kobo-Version': encodeURIComponent(src.version), 'X-Kobo-Db-Size': String(dbFile.size),
       ...(walBusy ? { 'X-Kobo-Wal-Size': String(wal.size) } : {}),
-      ...(write && !walBusy ? { 'X-Kobo-Write': '1' } : {}) };
+      ...(write ? { 'X-Kobo-Write': '1' } : {}) };
     box.step(`Envoi de la base de la liseuse (${mb})…`, 0);
     const body = walBusy ? new Blob([dbFile, wal]) : dbFile;
     const { dbUpdate, warning, ...device } = await sendRawProgress('/api/kobo/scan', body, 'application/x-sqlite3', headers, (p) => {
@@ -241,8 +241,7 @@ async function scanKobo(root = null) {
     src.device = device;
     if (warning) toast(warning, 'error');
     if (dbUpdate && dbUpdate.error) toast(`Scan fait, mais informations des fiches non écrites dans la liseuse : ${dbUpdate.error}`, 'error');
-    else if (dbUpdate) await applyDbUpdate(src, dbUpdate, dbFile, box);
-    if (walBusy && write) toast('Informations des fiches non écrites dans la liseuse : sa base n\'est pas à jour. Éjecte-la proprement, rebranche-la puis rescanne.', 'error');
+    else if (dbUpdate) await applyDbUpdate(src, dbUpdate, dbFile, walBusy ? wal : null, box);
   } finally { box.close(); }
   koboRemember(src);
   renderNav();
@@ -262,10 +261,15 @@ async function writeKoboDb(src, blob) {
   for (const x of ['-wal', '-shm', '-journal']) await src.removeFile(KOBO_DB + x);
 }
 
-async function applyDbUpdate(src, u, original, box) {
+// Journal non vide (ecriture laissee en suspens par la liseuse) : base complete
+// reecrite par l'appli et journal supprime, comme le ferait Calibre ; la copie de la
+// liseuse garde alors aussi le journal (.mll-backup-wal).
+async function applyDbUpdate(src, u, original, wal, box) {
   if (u.token) {
     box.step('Sauvegarde de la base sur la liseuse…');
     await src.write(KOBO_DB_BACKUP, original);
+    if (wal) await src.write(`${KOBO_DB_BACKUP}-wal`, wal);
+    else await src.removeFile(`${KOBO_DB_BACKUP}-wal`);
     box.step(`Écriture des informations de ${u.changed} fiche(s) dans la liseuse…`);
     const res = await fetch(`${LIB}/api/kobo/devices/${src.device.id}/db/${u.token}`, { credentials: 'same-origin' });
     if (!res.ok) throw new Error('Base modifiée introuvable : rien n\'a été écrit sur la liseuse.');
@@ -276,7 +280,10 @@ async function applyDbUpdate(src, u, original, box) {
     try { await src.removeMatching(c.dir, c.prefix); covers.push(c.itemId); } catch (e) { /* refait au prochain scan */ }
   }
   await api(`/api/kobo/devices/${src.device.id}/db/applied`, { method: 'POST', body: { token: u.token, covers } });
-  if (u.token) toast(`${u.changed} livre(s) mis à jour dans la liseuse. Éjecte-la pour voir les changements.`);
+  if (u.token) {
+    toast([u.merged ? 'Écriture laissée en suspens par la liseuse terminée.' : '',
+      u.changed ? `${u.changed} livre(s) mis à jour dans la liseuse. Éjecte-la pour voir les changements.` : ''].filter(Boolean).join(' '));
+  }
 }
 
 // Bouton desactive pendant l'action ; annulation du choix de dossier ignoree.
@@ -438,7 +445,7 @@ function editKoboDialog(d, members) {
         ${members.map((m) => `<option value="${m.id}" ${d.owner && d.owner.id === m.id ? 'selected' : ''}>${esc(m.username)}</option>`).join('')}
       </select></div>
       <label class="check"><input type="checkbox" name="writeDb" ${d.writeDb ? 'checked' : ''}> Écrire les informations des fiches dans la liseuse
-        ${hint('Avec Chrome : titre, auteurs, résumé, série et tome des fiches écrits dans la base de la liseuse à chaque scan (onglet Séries de la Kobo), livres mis à jour sans perdre la progression. La base est sauvegardée avant chaque écriture, sur la liseuse et dans l\'appli (10 dernières).')}</label>
+        ${hint('Avec Chrome : titre, auteurs, résumé, série et tome des fiches écrits dans la base de la liseuse à chaque scan (onglet Séries de la Kobo), livres mis à jour sans perdre la progression. La base saine est gardée par l\'appli à chaque scan (10 dernières) et copiée sur la liseuse avant chaque écriture ; une écriture laissée en suspens par la liseuse est terminée, comme avec Calibre.')}</label>
       <div class="btn-row">
         <button class="btn btn-primary" type="submit">Enregistrer</button>
         <button class="btn" type="button" data-close>Annuler</button>
@@ -478,7 +485,7 @@ async function renderKoboBackups(d, connected) {
   const canWrite = () => connected() && !!kobo.write;
   const mo = (n) => `${(n / 1048576).toFixed(1).replace('.', ',')} Mo`;
   box.innerHTML = `<details class="card"><summary><strong>Sauvegardes de la base de la liseuse</strong> <span class="small muted">(${list.length})</span>
-      ${hint('Copie de la base de la liseuse faite avant chaque écriture : dans l\'appli (10 dernières) et sur la liseuse (.kobo/KoboReader.sqlite.mll-backup, la dernière). Restaurer remet les livres, la progression et les informations de ce moment-là.')}</summary>
+      ${hint('Copies de la base de la liseuse : dans l\'appli, la base saine de chaque scan (10 dernières) ; sur la liseuse, la base d\'avant la dernière écriture de l\'appli (.kobo/KoboReader.sqlite.mll-backup). Restaurer remet les livres, la progression et les informations de ce moment-là.')}</summary>
     ${list.length ? `<div class="table-wrap"><table class="stack"><tbody>${list.map((b) => `<tr>
       <td>${fmtDate(b.createdAt, true)}</td><td class="small muted">${mo(b.size)}</td>
       <td><span class="btn-row"><a class="btn btn-small" href="${LIB}/api/kobo/devices/${d.id}/backups/${encodeURIComponent(b.name)}" download>Télécharger</a>
@@ -486,13 +493,17 @@ async function renderKoboBackups(d, connected) {
     : '<p class="small muted">Aucune sauvegarde pour le moment.</p>'}
     ${canWrite() ? '<p><button class="btn btn-small" id="kobo-restore-device">Restaurer la copie de la liseuse</button></p>' : ''}
   </details>`;
+  // getBlob : base a remettre, ou { db, wal } (copie de la liseuse avec son journal).
   const restore = async (getBlob, label) => {
     if (!confirm(`Remettre la base de la liseuse ${label} ? Les changements faits depuis sur la liseuse (progression, livres ajoutés) seront perdus. La base actuelle est d'abord copiée sur la liseuse (.kobo/KoboReader.sqlite.mll-before-restore).`)) return;
     if (!canWrite()) throw new Error('Liseuse débranchée.');
-    const blob = await getBlob();
+    const got = await getBlob();
     const current = await kobo.file(KOBO_DB);
     if (current) await kobo.write(`${KOBO_DB}.mll-before-restore`, current);
-    await writeKoboDb(kobo, blob);
+    const currentWal = await kobo.file(`${KOBO_DB}-wal`);
+    if (currentWal && currentWal.size) await kobo.write(`${KOBO_DB}.mll-before-restore-wal`, currentWal);
+    await writeKoboDb(kobo, got.db || got);
+    if (got.wal) await kobo.write(`${KOBO_DB}-wal`, got.wal);
     toast('Base de la liseuse restaurée. Éjecte-la, puis rescanne-la au prochain branchement.');
   };
   $$('[data-restore]', box).forEach((btn) => {
@@ -506,7 +517,8 @@ async function renderKoboBackups(d, connected) {
   if (dev) dev.onclick = busy(() => restore(async () => {
     const f = await kobo.file(KOBO_DB_BACKUP);
     if (!f) throw new Error('Aucune copie sur la liseuse.');
-    return f;
+    const w = await kobo.file(`${KOBO_DB_BACKUP}-wal`);
+    return { db: f, wal: w && w.size ? w : null };
   }, 'telle qu\'elle était avant la dernière écriture de l\'appli'));
 }
 
