@@ -134,6 +134,20 @@ async function connectKobo(root = null) {
         const parent = await dirOf(parts.slice(0, -2), false);
         await parent.removeEntry(parts[parts.length - 2]).catch(() => {});
       },
+      // Fichier seul (sans toucher au dossier) ; absent = rien a faire.
+      removeFile: async (p) => {
+        const parts = p.split('/');
+        try { await (await dirOf(parts.slice(0, -1), false)).removeEntry(parts[parts.length - 1]); } catch (e) { if (e.name !== 'NotFoundError') throw e; }
+      },
+      // Fichiers d'un dossier dont le nom commence par prefix (vignettes d'un livre).
+      removeMatching: async (dir, prefix) => {
+        let d;
+        try { d = await dirOf(dir.split('/'), false); } catch (e) { return 0; }
+        const names = [];
+        for await (const name of d.keys()) if (name.startsWith(prefix)) names.push(name);
+        for (const name of names) await d.removeEntry(name);
+        return names.length;
+      },
     };
     src.alive = async () => !!(await src.file('.kobo/version'));
   } else {
@@ -208,15 +222,54 @@ async function scanKobo(root = null) {
     const dbFile = await src.file('.kobo/KoboReader.sqlite');
     if (!dbFile) throw new Error('Base de la liseuse introuvable (.kobo/KoboReader.sqlite).');
     const mb = `${(dbFile.size / 1048576).toFixed(1).replace('.', ',')} Mo`;
+    // Ecriture dans la base (option de la liseuse, Chrome) : jamais si la liseuse a
+    // laisse un journal non vide (base pas encore a jour : ejection mal faite).
+    const write = !!(src.write && src.device && src.device.writeDb);
+    const wal = write ? await src.file(`${KOBO_DB}-wal`) : null;
+    const walBusy = !!(wal && wal.size > 0);
+    const headers = { 'X-Kobo-Version': encodeURIComponent(src.version), ...(write && !walBusy ? { 'X-Kobo-Write': '1' } : {}) };
     box.step(`Envoi de la base de la liseuse (${mb})…`, 0);
-    src.device = await sendRawProgress('/api/kobo/scan', dbFile, 'application/x-sqlite3', { 'X-Kobo-Version': encodeURIComponent(src.version) }, (p) => {
+    const { dbUpdate, ...device } = await sendRawProgress('/api/kobo/scan', dbFile, 'application/x-sqlite3', headers, (p) => {
       if (p < 1) box.step(`Envoi de la base de la liseuse (${mb})… ${Math.round(p * 100)} %`, Math.round(p * 100));
       else box.step('Analyse des livres et rapprochement avec les fiches…');
     });
+    src.device = device;
+    if (dbUpdate) await applyDbUpdate(src, dbUpdate, dbFile, box);
+    if (walBusy) toast('Informations des fiches non écrites dans la liseuse : sa base n\'est pas à jour. Éjecte-la proprement, rebranche-la puis rescanne.', 'error');
   } finally { box.close(); }
   koboRemember(src);
   renderNav();
   return src.device;
+}
+
+const KOBO_DB = '.kobo/KoboReader.sqlite';
+// Copie de la base gardee sur la liseuse avant chaque ecriture (et avant une restauration).
+const KOBO_DB_BACKUP = `${KOBO_DB}.mll-backup`;
+
+// Base modifiee par le serveur (metadonnees des fiches) ecrite sur la liseuse, apres
+// sauvegarde de l'originale sur la liseuse (l'appli en garde aussi une copie) ;
+// vignettes des livres dont le fichier a ete remplace effacees (refaites par la liseuse).
+async function writeKoboDb(src, blob) {
+  if ((await blob.slice(0, 15).text()) !== 'SQLite format 3') throw new Error('Base reçue invalide : rien n\'a été écrit sur la liseuse.');
+  await src.write(KOBO_DB, blob);
+  for (const x of ['-wal', '-shm', '-journal']) await src.removeFile(KOBO_DB + x);
+}
+
+async function applyDbUpdate(src, u, original, box) {
+  if (u.token) {
+    box.step('Sauvegarde de la base sur la liseuse…');
+    await src.write(KOBO_DB_BACKUP, original);
+    box.step(`Écriture des informations de ${u.changed} fiche(s) dans la liseuse…`);
+    const res = await fetch(`${LIB}/api/kobo/devices/${src.device.id}/db/${u.token}`, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('Base modifiée introuvable : rien n\'a été écrit sur la liseuse.');
+    await writeKoboDb(src, await res.blob());
+  }
+  const covers = [];
+  for (const c of u.covers || []) {
+    try { await src.removeMatching(c.dir, c.prefix); covers.push(c.itemId); } catch (e) { /* refait au prochain scan */ }
+  }
+  await api(`/api/kobo/devices/${src.device.id}/db/applied`, { method: 'POST', body: { token: u.token, covers } });
+  if (u.token) toast(`${u.changed} livre(s) mis à jour dans la liseuse. Éjecte-la pour voir les changements.`);
 }
 
 // Bouton desactive pendant l'action ; annulation du choix de dossier ignoree.
@@ -227,8 +280,10 @@ const busy = (fn) => async (e) => {
 };
 
 // Livre commence ou lu sur la liseuse : une mise a jour (nouveau nom de fichier) y
-// effacerait sa progression, ses marque-pages et son etat « Lu ».
-const started = (i) => !i.pending && (i.readStatus > 0 || i.percent > 0);
+// effacerait sa progression, ses marque-pages et son etat « Lu ». Avec l'ecriture
+// dans la base, le fichier est remplace sur place : rien n'est perdu.
+const writeDb = () => !!(kobo && kobo.write && kobo.device && kobo.device.writeDb);
+const started = (i) => !writeDb() && !i.pending && (i.readStatus > 0 || i.percent > 0);
 
 // Livres de la liseuse branchee (dernier scan et envois en attente), par fiche.
 async function koboItemsByBook() {
@@ -242,8 +297,10 @@ async function koboItemsByBook() {
 // Envoi d'un livre sur la liseuse : copie directe (Chrome) ou telechargement.
 // Avec Chrome, la liseuse est scannee au premier envoi de la session. La liseuse ne
 // relit pas un livre deja importe : une version differente (fiche modifiee) est copiee
-// sous un autre nom et l'ancien fichier est supprime.
-async function pushToKobo(bookId, { quiet = false, items = null } = {}) {
+// sous un autre nom et l'ancien fichier est supprime ; avec l'ecriture dans la base,
+// elle remplace l'ancien fichier (meme nom) et le scan qui suit (sync) ecrit les
+// informations de la fiche dans la base de la liseuse.
+async function pushToKobo(bookId, { quiet = false, items = null, sync = !quiet } = {}) {
   if (KOBO_FS && !kobo) await (koboSavedInfo ? reconnectKobo() : scanKobo());
   const onDevice = items || (await koboItemsByBook()).get(bookId) || [];
   if (!quiet && onDevice.length && !onDevice.some((i) => i.outdated)
@@ -256,9 +313,11 @@ async function pushToKobo(bookId, { quiet = false, items = null } = {}) {
     try { data = await res.json(); } catch (e) { /* reponse vide */ }
     throw new Error((data && data.error) || `Erreur ${res.status}`);
   }
-  const p = decodeURIComponent(res.headers.get('X-Kobo-Path') || 'Bibliotheque/livre.epub');
+  let p = decodeURIComponent(res.headers.get('X-Kobo-Path') || 'Bibliotheque/livre.epub');
   const blob = await res.blob();
   if (kobo && kobo.write) {
+    const inPlace = writeDb() && onDevice.find((i) => i.path && !i.pending);
+    if (inPlace) p = inPlace.path;
     await kobo.write(p, blob);
     if (kobo.device) await api(`/api/kobo/devices/${kobo.device.id}/pushed`, { method: 'POST', body: { bookId, path: p } });
     // Ancienne version retiree : la liseuse importe la nouvelle (metadonnees, couverture).
@@ -270,8 +329,10 @@ async function pushToKobo(bookId, { quiet = false, items = null } = {}) {
         replaced++;
       }
     }
-    if (!quiet) toast(`${replaced ? 'Mis à jour' : 'Copié'} sur la liseuse (${p}). Éjecte-la pour qu'elle l'importe.`);
-    return replaced ? 'updated' : true;
+    if (inPlace && sync) await scanKobo(kobo.root);
+    if (!quiet) toast(inPlace ? 'Mis à jour sur la liseuse (progression conservée). Éjecte-la pour voir les changements.'
+      : `${replaced ? 'Mis à jour' : 'Copié'} sur la liseuse (${p}). Éjecte-la pour qu'elle l'importe.`);
+    return inPlace || replaced ? 'updated' : true;
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -302,13 +363,15 @@ async function pushManyToKobo(ids, progress) {
       if (r === 'updated') out.updated++; else if (r) out.sent++;
     } catch (e) { out.skipped++; }
   }
+  // Fichiers remplaces sur place : informations des fiches ecrites dans la liseuse.
+  if (out.updated && writeDb()) await scanKobo(kobo.root);
   return out;
 }
 
 async function viewKobo() {
   const devices = await api('/api/kobo/devices');
   view().innerHTML = `
-    <div class="page-head"><div><h1>Liseuses ${hint('Branche une Kobo en USB puis « Scanner une Kobo » et choisis le lecteur de la liseuse (KOBOeReader). Rien n\'est modifié sur la liseuse.')}</h1></div>
+    <div class="page-head"><div><h1>Liseuses ${hint('Branche une Kobo en USB puis « Scanner une Kobo » et choisis le lecteur de la liseuse (KOBOeReader). Rien n\'est modifié sur la liseuse, sauf si l\'écriture des informations des fiches est activée pour elle (Modifier).')}</h1></div>
       <button class="btn btn-primary" id="kobo-scan"><span class="hide-mobile">Scanner une Kobo</span><span class="show-mobile">Scanner</span></button></div>
     ${koboWarning()}
     ${devices.length ? `<div class="lib-grid">${devices.map((d) => `
@@ -367,6 +430,8 @@ function editKoboDialog(d, members) {
         <option value="">Aucun</option>
         ${members.map((m) => `<option value="${m.id}" ${d.owner && d.owner.id === m.id ? 'selected' : ''}>${esc(m.username)}</option>`).join('')}
       </select></div>
+      <label class="check"><input type="checkbox" name="writeDb" ${d.writeDb ? 'checked' : ''}> Écrire les informations des fiches dans la liseuse
+        ${hint('Avec Chrome : titre, auteurs, résumé, série et tome des fiches écrits dans la base de la liseuse à chaque scan (onglet Séries de la Kobo), livres mis à jour sans perdre la progression. La base est sauvegardée avant chaque écriture, sur la liseuse et dans l\'appli (10 dernières).')}</label>
       <div class="btn-row">
         <button class="btn btn-primary" type="submit">Enregistrer</button>
         <button class="btn" type="button" data-close>Annuler</button>
@@ -388,12 +453,54 @@ function editKoboDialog(d, members) {
   $('form', backdrop).onsubmit = async (e) => {
     e.preventDefault();
     try {
-      const r = await api(`/api/kobo/devices/${d.id}`, { method: 'PUT', body: { name: e.target.name.value, userId: e.target.userId.value || null } });
+      const r = await api(`/api/kobo/devices/${d.id}`, { method: 'PUT', body: { name: e.target.name.value, userId: e.target.userId.value || null, writeDb: e.target.writeDb.checked } });
       if (kobo && kobo.device && kobo.device.id === r.id) { kobo.device = r; renderNav(); }
       close();
       route();
     } catch (err) { toast(err.message, 'error'); }
   };
+}
+
+// Sauvegardes de la base de la liseuse : copies gardees par l'appli (avant chaque
+// ecriture) et copie gardee sur la liseuse ; restauration avec Chrome, la liseuse
+// branchee (la base actuelle est d'abord copiee sur la liseuse).
+async function renderKoboBackups(d, connected) {
+  const box = $('#kobo-backups');
+  const list = await api(`/api/kobo/devices/${d.id}/backups`).catch(() => []);
+  if (!box || (!list.length && !d.writeDb)) return;
+  const canWrite = () => connected() && !!kobo.write;
+  const mo = (n) => `${(n / 1048576).toFixed(1).replace('.', ',')} Mo`;
+  box.innerHTML = `<details class="card"><summary><strong>Sauvegardes de la base de la liseuse</strong> <span class="small muted">(${list.length})</span>
+      ${hint('Copie de la base de la liseuse faite avant chaque écriture : dans l\'appli (10 dernières) et sur la liseuse (.kobo/KoboReader.sqlite.mll-backup, la dernière). Restaurer remet les livres, la progression et les informations de ce moment-là.')}</summary>
+    ${list.length ? `<div class="table-wrap"><table class="stack"><tbody>${list.map((b) => `<tr>
+      <td>${fmtDate(b.createdAt, true)}</td><td class="small muted">${mo(b.size)}</td>
+      <td><span class="btn-row"><a class="btn btn-small" href="${LIB}/api/kobo/devices/${d.id}/backups/${encodeURIComponent(b.name)}" download>Télécharger</a>
+        ${canWrite() ? `<button class="btn btn-small" data-restore="${esc(b.name)}">Restaurer</button>` : ''}</span></td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="small muted">Aucune sauvegarde pour le moment.</p>'}
+    ${canWrite() ? '<p><button class="btn btn-small" id="kobo-restore-device">Restaurer la copie de la liseuse</button></p>' : ''}
+  </details>`;
+  const restore = async (getBlob, label) => {
+    if (!confirm(`Remettre la base de la liseuse ${label} ? Les changements faits depuis sur la liseuse (progression, livres ajoutés) seront perdus. La base actuelle est d'abord copiée sur la liseuse (.kobo/KoboReader.sqlite.mll-before-restore).`)) return;
+    if (!canWrite()) throw new Error('Liseuse débranchée.');
+    const blob = await getBlob();
+    const current = await kobo.file(KOBO_DB);
+    if (current) await kobo.write(`${KOBO_DB}.mll-before-restore`, current);
+    await writeKoboDb(kobo, blob);
+    toast('Base de la liseuse restaurée. Éjecte-la, puis rescanne-la au prochain branchement.');
+  };
+  $$('[data-restore]', box).forEach((btn) => {
+    btn.onclick = busy(() => restore(async () => {
+      const res = await fetch(`${LIB}/api/kobo/devices/${d.id}/backups/${encodeURIComponent(btn.dataset.restore)}`, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('Sauvegarde introuvable.');
+      return res.blob();
+    }, 'telle qu\'elle était à cette date'));
+  });
+  const dev = $('#kobo-restore-device', box);
+  if (dev) dev.onclick = busy(() => restore(async () => {
+    const f = await kobo.file(KOBO_DB_BACKUP);
+    if (!f) throw new Error('Aucune copie sur la liseuse.');
+    return f;
+  }, 'telle qu\'elle était avant la dernière écriture de l\'appli'));
 }
 
 async function viewKoboDevice(id) {
@@ -467,7 +574,8 @@ async function viewKoboDevice(id) {
           : !canManage() ? '<span class="badge badge-muted">Non</span>'
           : `<button class="btn btn-small" data-copy="${i.id}" ${i.path && !i.pending ? '' : 'disabled title="Fichier inaccessible (carte SD ou pas encore importé)"'}><span class="hide-mobile">Copier depuis la Kobo</span><span class="show-mobile">Copier</span></button>`}</td>
       </tr>`).join('')}</tbody></table></div>`
-      : '<div class="empty">Aucun livre dans cette liste.</div>'}`;
+      : '<div class="empty">Aucun livre dans cette liste.</div>'}
+    ${mine ? '<div id="kobo-backups"></div>' : ''}`;
 
   const item = (btn, key) => d.items.find((i) => i.id === Number(btn.dataset[key]));
   $$('[data-remove]').forEach((btn) => {
@@ -512,6 +620,7 @@ async function viewKoboDevice(id) {
   $('#kfilters-toggle').onclick = () => $('#kobo-filters').classList.toggle('open');
   if ($('#kclear')) $('#kclear').onclick = () => { Object.assign(k, { q: '', category: '', series: '', tag: '', reading: '' }); refilter(); };
   if (mine) $('#kobo-edit').onclick = () => editKoboDialog(d, members);
+  if (mine) renderKoboBackups(d, connected);
   $('#kobo-rescan').onclick = busy(async () => {
     const r = await (connected() && kobo.root ? scanKobo(kobo.root) : koboSavedInfo ? reconnectKobo() : scanKobo());
     if (r.id !== d.id) { toast(`C'est une autre liseuse : ${r.name}.`); go(`#/kobo/${r.id}`); return; }
@@ -561,6 +670,7 @@ async function viewKoboDevice(id) {
       btn.textContent = `Envoi ${n + 1} / ${toUpdate.length}…`;
       try { if (await pushToKobo(i.book.id, { quiet: true, items: d.items.filter((x) => x.book && x.book.id === i.book.id) })) ok++; } catch (e) { failed++; }
     }
+    if (ok && writeDb()) await scanKobo(kobo.root);
     toast(`${ok} livre(s) mis à jour${failed ? `, ${failed} échec(s)` : ''}. Éjecte la liseuse pour qu'elle les importe.`, failed ? 'error' : undefined);
     route();
   });

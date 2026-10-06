@@ -136,6 +136,12 @@ test('liseuses : un lecteur ne gere que la sienne', async () => {
   await check('lecteur2', 'POST', `/kobo/items/${item.id}/link`, { bookId: null }, 403);
   await check('lecteur2', 'DELETE', `/kobo/items/${item.id}`, null, 403);
   await check('lecteur2', 'DELETE', `/kobo/devices/${id}`, null, 403);
+  await check('lecteur2', 'GET', `/kobo/devices/${id}/backups`, null, 403);
+  await check('lecteur2', 'GET', `/kobo/devices/${id}/backups/${id}-20260101-120000.sqlite`, null, 403);
+  await check('lecteur2', 'GET', `/kobo/devices/${id}/db/0123456789abcdef`, null, 403);
+  await check('lecteur2', 'POST', `/kobo/devices/${id}/db/applied`, { covers: [item.id] }, 403);
+  await check('lecteur', 'GET', `/kobo/devices/${id}/backups`, null, 200);
+  await check('lecteur', 'GET', `/kobo/devices/${id}/db/0123456789abcdef`, null, 404);
   assert.equal((await scan(ctx.users.lecteur2, 'N4181234567890')).status, 403);
 
   // Le proprietaire renomme sa liseuse mais ne la donne pas a un autre compte.

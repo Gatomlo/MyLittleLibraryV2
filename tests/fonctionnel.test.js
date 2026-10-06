@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const JSZip = require('jszip');
 const { setup, stop, DATA_DIR } = require('./helpers');
-const { epub, png } = require('./fixtures');
+const { epub, png, koboDb } = require('./fixtures');
 
 let ctx;
 let a; // client administrateur
@@ -187,6 +187,51 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   ok(await a.put(`${api}/books/${imp.bookId}`, { ...fields, seriesNumber: '2' }));
   const kobo3 = await ctx.users.lecteur.get(`${api}/kobo/books/${imp.bookId}/epub`, { buffer: true });
   assert.equal(decodeURIComponent(kobo3.headers.get('x-kobo-path')), koboPath);
+
+  // Ecriture dans la base de la liseuse : informations de la fiche, sauvegarde gardee.
+  const kscan = (extra = {}, raw = koboDb([{ id: `file:///mnt/onboard/${koboPath}`, title: 'Ancien titre', author: 'Vieil Auteur' }])) => a.call('POST', `${api}/kobo/scan`, undefined, {
+    raw, headers: { 'Content-Type': 'application/x-sqlite3', 'X-Kobo-Version': encodeURIComponent('N9990000000001,3.0.35+,4.38.21908,3.0.35+,3.0.35+,00000000-0000-0000-0000-000000000388'), ...extra },
+  });
+  const dev = ok(await kscan());
+  assert.equal(dev.dbUpdate, null);
+  ok(await a.put(`${api}/kobo/devices/${dev.id}`, { writeDb: true }));
+  assert.equal(ok(await kscan()).dbUpdate, null); // sans X-Kobo-Write (Firefox, journal en attente)
+  const w = ok(await kscan({ 'X-Kobo-Write': '1' }));
+  assert.equal(w.dbUpdate.changed, 1);
+  assert.ok(w.dbUpdate.token);
+  const backups = ok(await a.get(`${api}/kobo/devices/${dev.id}/backups`));
+  assert.equal(backups.length, 1);
+  assert.equal((await a.get(`${api}/kobo/devices/${dev.id}/backups/${backups[0].name}`, { buffer: true })).body.subarray(0, 15).toString(), 'SQLite format 3');
+  const modified = (await a.get(`${api}/kobo/devices/${dev.id}/db/${w.dbUpdate.token}`, { buffer: true })).body;
+  const tmp = path.join(DATA_DIR, 'kobo-test.sqlite');
+  fs.writeFileSync(tmp, modified);
+  const { DatabaseSync } = require('node:sqlite');
+  const kdb = new DatabaseSync(tmp, { readOnly: true });
+  const row = kdb.prepare('SELECT * FROM content').get();
+  kdb.close();
+  assert.equal(row.Title, 'Titre corrigé');
+  assert.equal(row.Attribution, 'Ada Lovelace');
+  assert.equal(row.Series, 'Machines');
+  assert.equal(row.SeriesID, 'Machines');
+  assert.equal(row.SeriesNumber, '2');
+  assert.equal(row.SeriesNumberFloat, 2);
+  assert.equal(row.ISBN, '9782070368228');
+  const item = ok(await a.get(`${api}/kobo/devices/${dev.id}`)).items[0];
+  assert.equal(item.series, 'Machines');
+  assert.equal(item.outdated, false);
+  ok(await a.post(`${api}/kobo/devices/${dev.id}/db/applied`, { token: w.dbUpdate.token }));
+  // Base deja a jour : rien a ecrire ; fichier remplace sur place : vignettes a effacer.
+  assert.equal(ok(await kscan({ 'X-Kobo-Write': '1' }, modified)).dbUpdate, null);
+  ok(await a.post(`${api}/kobo/devices/${dev.id}/pushed`, { bookId: imp.bookId, path: koboPath }));
+  const c = ok(await kscan({ 'X-Kobo-Write': '1' }, modified)).dbUpdate;
+  assert.equal(c.token, null);
+  assert.equal(c.covers.length, 1);
+  assert.match(c.covers[0].dir, /^\.kobo-images\/\d+\/\d+$/);
+  assert.ok(c.covers[0].prefix.startsWith('file____mnt_onboard_Bibliotheque_Machines'));
+  ok(await a.post(`${api}/kobo/devices/${dev.id}/db/applied`, { covers: [c.covers[0].itemId] }));
+  assert.equal(ok(await kscan({ 'X-Kobo-Write': '1' }, modified)).dbUpdate, null);
+  ok(await a.del(`${api}/kobo/devices/${dev.id}`));
+  assert.equal(ok(await a.get(`${api}/kobo/devices`)).length, 0);
 
   // Un fichier qui n'est pas un epub est refuse.
   const bad = await a.call('POST', `${api}/import/epub`, undefined, { raw: Buffer.from('pas un zip'), headers: raw.headers });

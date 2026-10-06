@@ -11,10 +11,14 @@ function koboDb(books) {
   const file = path.join(os.tmpdir(), `mll-test-kobo-${crypto.randomBytes(6).toString('hex')}.sqlite`);
   const db = new DatabaseSync(file);
   db.exec(`CREATE TABLE content (ContentID TEXT, ContentType INTEGER, Title TEXT, Attribution TEXT, ISBN TEXT, Publisher TEXT,
-    Series TEXT, SeriesNumber TEXT, ReadStatus INTEGER, ___PercentRead INTEGER, DateLastRead TEXT, ___FileSize INTEGER);
+    Series TEXT, SeriesNumber TEXT, ReadStatus INTEGER, ___PercentRead INTEGER, DateLastRead TEXT, ___FileSize INTEGER,
+    Description TEXT, SeriesID TEXT, SeriesNumberFloat REAL, ImageId TEXT);
     CREATE TABLE user (UserDisplayName TEXT);`);
-  const ins = db.prepare('INSERT INTO content VALUES (?, 6, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, 1000)');
-  for (const b of books) ins.run(b.id, b.title, b.author || null, b.isbn || null, b.status || 0, b.percent || 0, '2026-01-02T10:00:00Z');
+  const ins = db.prepare(`INSERT INTO content (ContentID, ContentType, Title, Attribution, ISBN, ReadStatus, ___PercentRead, DateLastRead, ___FileSize, ImageId)
+    VALUES (?, 6, ?, ?, ?, ?, ?, ?, 1000, ?)`);
+  for (const b of books) {
+    ins.run(b.id, b.title, b.author || null, b.isbn || null, b.status || 0, b.percent || 0, '2026-01-02T10:00:00Z', b.id.replace(/[^a-zA-Z0-9]/g, '_'));
+  }
   db.close();
   const buffer = fs.readFileSync(file);
   fs.rmSync(file, { force: true });
