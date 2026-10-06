@@ -79,31 +79,29 @@ async function reconnectKobo() {
   return scanKobo(info.root);
 }
 
-// Debranchement : verification toutes les 5 s ; onglet, filtre et boutons retires.
-let koboTimer = null;
-// Ecriture dans la base confirmee pour ce branchement (liseuse redemarree avant d'etre
-// branchee) : true / false, null = pas encore demande. Remis a null au debranchement.
-let writeConfirmed = null;
-function watchKobo() {
-  clearInterval(koboTimer);
-  koboTimer = setInterval(async () => {
-    if (!kobo) { clearInterval(koboTimer); return; }
-    if (await kobo.alive()) return;
-    const name = kobo.device ? kobo.device.name : 'La liseuse';
-    if (kobo.root) koboSavedInfo = { root: kobo.root, name };
-    kobo = null;
-    writeConfirmed = null;
-    clearInterval(koboTimer);
-    renderNav();
-    toast(`${name} a été débranchée.`);
-    if (/^#?\/?(book\/\d+|kobo(\/\d+)?)?$/.test(location.hash) && !$('.modal-backdrop')) route();
-  }, 5000);
+// Pas de verification en continu : l'appli ne touche la liseuse que pendant une action
+// (un acces repete laissait Windows servir ensuite une copie perimee de sa base, meme
+// apres ejection). Liseuse absente au debut d'une action : consideree debranchee
+// (onglet, filtre et boutons retires) et l'action s'arrete.
+function markUnplugged() {
+  if (!kobo) return;
+  const name = kobo.device ? kobo.device.name : 'La liseuse';
+  if (kobo.root) koboSavedInfo = { root: kobo.root, name };
+  kobo = null;
+  renderNav();
+  toast(`${name} a été débranchée.`);
+  if (/^#?\/?(book\/\d+|kobo(\/\d+)?)?$/.test(location.hash) && !$('.modal-backdrop')) route();
+}
+async function ensureKobo() {
+  if (!kobo) return;
+  if (await kobo.alive().catch(() => false)) return;
+  markUnplugged();
+  throw new Error('Liseuse débranchée : rebranche-la, puis réessaie.');
 }
 
 // Doit etre appele directement depuis un clic (le navigateur l'exige), sauf avec un
 // dossier deja autorise (root).
 async function connectKobo(root = null) {
-  if (!root) writeConfirmed = null; // liseuse choisie a nouveau : nouveau branchement
   const remembered = !!root;
   let src;
   if (KOBO_FS) {
@@ -165,6 +163,7 @@ async function connectKobo(root = null) {
     src.alive = async () => { try { await map.get('.kobo/version').slice(0, 1).text(); return true; } catch (e) { return false; } };
   }
   const version = await src.file('.kobo/version');
+  if (!version && remembered) markUnplugged();
   if (!version) {
     throw new Error(remembered ? 'Liseuse introuvable : vérifie qu\'elle est bien branchée, sinon utilise « Brancher une liseuse ».'
       : "Ce dossier n'est pas une liseuse Kobo : choisis la racine de la liseuse (le lecteur « KOBOeReader »).");
@@ -176,7 +175,6 @@ async function connectKobo(root = null) {
   kobo = src;
   koboSavedInfo = null;
   koboRemember(src);
-  watchKobo();
   renderNav();
   return src;
 }
@@ -233,13 +231,7 @@ async function scanKobo(root = null) {
     // envoye a la suite de la base pour qu'elle soit lue en entier.
     const wal = await src.file(`${KOBO_DB}-wal`);
     const walBusy = !!(wal && wal.size > 0);
-    // La liseuse ne reporte ses derniers changements dans sa base qu'a l'extinction : si elle
-    // n'a pas redemarre avant d'etre branchee, ecrire dans la base les ecraserait (et l'abimerait).
-    let write = !!(src.write && src.device && src.device.writeDb);
-    if (write && writeConfirmed === null) {
-      writeConfirmed = confirm('Écrire les informations des fiches dans la liseuse ?\n\nSeulement si elle a été éteinte puis rallumée juste avant d\'être branchée : sinon ses derniers changements (livres importés, progression) ne sont pas encore dans sa base et seraient perdus.\n\nOK : écrire. Annuler : lire seulement.');
-    }
-    write = write && writeConfirmed;
+    const write = !!(src.write && src.device && src.device.writeDb);
     const headers = { 'X-Kobo-Version': encodeURIComponent(src.version), 'X-Kobo-Db-Size': String(dbFile.size),
       ...(walBusy ? { 'X-Kobo-Wal-Size': String(wal.size) } : {}),
       ...(write ? { 'X-Kobo-Write': '1' } : {}) };
@@ -341,6 +333,7 @@ async function koboItemsByBook() {
 // elle remplace l'ancien fichier (meme nom) et le scan qui suit (sync) ecrit les
 // informations de la fiche dans la base de la liseuse.
 async function pushToKobo(bookId, { quiet = false, items = null, sync = !quiet } = {}) {
+  await ensureKobo();
   if (KOBO_FS && !kobo) await (koboSavedInfo ? reconnectKobo() : scanKobo());
   const onDevice = items || (await koboItemsByBook()).get(bookId) || [];
   if (!quiet && onDevice.length && !onDevice.some((i) => i.outdated)
@@ -391,6 +384,7 @@ async function pushToKobo(bookId, { quiet = false, items = null, sync = !quiet }
 // liseuse sont ignores, comme ceux sans fichier ou sans droit de telechargement ;
 // ceux dont la fiche a change sont remplaces.
 async function pushManyToKobo(ids, progress) {
+  await ensureKobo();
   if (KOBO_FS && !kobo) await (koboSavedInfo ? reconnectKobo() : scanKobo());
   const onDevice = await koboItemsByBook();
   const out = { sent: 0, updated: 0, already: 0, started: 0, skipped: 0 };
@@ -425,7 +419,7 @@ async function viewKobo() {
       : '<div class="empty">Aucune liseuse pour le moment : branche une Kobo et clique sur « Scanner une Kobo ».</div>'}`;
   $('#kobo-scan').onclick = busy(async () => {
     const d = await scanKobo();
-    toast('Liseuse scannée.');
+    toast('Liseuse scannée. Tu peux l\'éjecter.');
     go(`#/kobo/${d.id}`);
   });
 }
@@ -478,7 +472,7 @@ function editKoboDialog(d, members) {
         <select name="collections">${[['both', 'Catégories et tags'], ['categories', 'Catégories'], ['tags', 'Tags'], ['none', 'Aucune']]
           .map(([v, l]) => `<option value="${v}" ${(d.collections || 'both') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <label class="check"><input type="checkbox" name="writeDb" ${d.writeDb ? 'checked' : ''}> Écrire les informations des fiches dans la liseuse
-        ${hint('Avec Chrome : titre, auteurs, résumé, série et tome des fiches écrits dans la base de la liseuse à chaque scan (onglet Séries de la Kobo), livres mis à jour sans perdre la progression. Éteins puis rallume la liseuse avant de la brancher : elle n\'enregistre ses derniers changements qu\'à l\'extinction (une confirmation est demandée à chaque branchement). La base saine est gardée par l\'appli à chaque scan (10 dernières) et copiée sur la liseuse avant chaque écriture ; une écriture laissée en suspens par la liseuse est terminée, comme avec Calibre.')}</label>
+        ${hint('Avec Chrome : titre, auteurs, résumé, série et tome des fiches écrits dans la base de la liseuse à chaque scan (onglet Séries de la Kobo), livres mis à jour sans perdre la progression. La base saine est gardée par l\'appli à chaque scan (10 dernières) et copiée sur la liseuse avant chaque écriture ; une écriture laissée en suspens par la liseuse est terminée, comme avec Calibre.')}</label>
       <div class="btn-row">
         <button class="btn btn-primary" type="submit">Enregistrer</button>
         <button class="btn" type="button" data-close>Annuler</button>
@@ -533,6 +527,7 @@ async function renderKoboBackups(d, connected) {
   const restore = async (getBlob, label) => {
     if (!confirm(`Remettre la base de la liseuse ${label} ? Les changements faits depuis sur la liseuse (progression, livres ajoutés) seront perdus. La base actuelle est d'abord copiée sur la liseuse (.kobo/KoboReader.sqlite.mll-before-restore).`)) return;
     if (!canWrite()) throw new Error('Liseuse débranchée.');
+    await ensureKobo();
     const got = await getBlob();
     const current = await kobo.file(KOBO_DB);
     if (current) await kobo.write(`${KOBO_DB}.mll-before-restore`, current);
@@ -638,6 +633,7 @@ async function viewKoboDevice(id) {
       const i = item(btn, 'remove');
       if (!confirm(`Supprimer « ${i.title} » de la liseuse ? Le fichier sera effacé de la Kobo (la fiche et le fichier de la bibliothèque sont conservés).`)) return;
       if (!connected()) throw new Error('Liseuse débranchée.');
+      await ensureKobo();
       try { await kobo.remove(i.path); } catch (e) { if (e.name !== 'NotFoundError') throw e; }
       if (await forgetOnKobo(i)) await scanKobo(kobo.root);
       toast('Livre supprimé. Éjecte la liseuse pour qu’elle mette sa bibliothèque à jour.');
@@ -679,7 +675,7 @@ async function viewKoboDevice(id) {
   $('#kobo-rescan').onclick = busy(async () => {
     const r = await (connected() && kobo.root ? scanKobo(kobo.root) : koboSavedInfo ? reconnectKobo() : scanKobo());
     if (r.id !== d.id) { toast(`C'est une autre liseuse : ${r.name}.`); go(`#/kobo/${r.id}`); return; }
-    toast('Liseuse scannée.');
+    toast('Liseuse scannée. Tu peux l\'éjecter.');
     route();
   });
   $$('[data-create]').forEach((btn) => {
@@ -719,6 +715,7 @@ async function viewKoboDevice(id) {
   const updateAll = $('#kobo-update-all');
   if (updateAll) updateAll.onclick = busy(async (btn) => {
     if (!connected()) throw new Error('Liseuse débranchée.');
+    await ensureKobo();
     let ok = 0;
     let failed = 0;
     for (const [n, i] of toUpdate.entries()) {

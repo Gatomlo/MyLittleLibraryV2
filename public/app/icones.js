@@ -177,7 +177,7 @@ function openMenu() {
     closeMenu();
     try {
       const d = await fn();
-      toast(`Liseuse « ${d.name} » branchée.`);
+      toast(`Liseuse « ${d.name} » scannée. Tu peux l'éjecter quand tu as fini.`);
       go(`#/kobo/${d.id}`);
     } catch (err) { if (err.name !== 'AbortError') toast(err.message, 'error'); }
   }; };
