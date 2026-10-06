@@ -11,18 +11,34 @@ const { DatabaseSync } = require('node:sqlite');
 // renvoyee comme { main, wal } (fichier principal illisible seul).
 // corrupt : 'index' (index de ContentType abime) ou 'table' (index et une page de la
 // table content, au milieu, abimes) ; 300 lignes de remplissage pour avoir plusieurs pages.
+// Livre : chapters (nombre de chapitres, ContentType 9 relies par BookID), bookmarks
+// ([{ text, note }] : surlignages et notes).
 function koboDb(books, { withWal = false, corrupt = null } = {}) {
   const file = path.join(os.tmpdir(), `mll-test-kobo-${crypto.randomBytes(6).toString('hex')}.sqlite`);
   const db = new DatabaseSync(file);
   if (withWal) db.exec('PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;');
   db.exec(`CREATE TABLE content (ContentID TEXT, ContentType INTEGER, Title TEXT, Attribution TEXT, ISBN TEXT, Publisher TEXT,
     Series TEXT, SeriesNumber TEXT, ReadStatus INTEGER, ___PercentRead INTEGER, DateLastRead TEXT, ___FileSize INTEGER,
-    Description TEXT, SeriesID TEXT, SeriesNumberFloat REAL, ImageId TEXT);
-    CREATE TABLE user (UserDisplayName TEXT);`);
+    Description TEXT, SeriesID TEXT, SeriesNumberFloat REAL, ImageId TEXT, BookID TEXT);
+    CREATE TABLE user (UserDisplayName TEXT);
+    CREATE TABLE volume_shortcovers (volumeId TEXT, shortcoverId TEXT, VolumeIndex INTEGER);
+    CREATE TABLE Bookmark (BookmarkID TEXT NOT NULL PRIMARY KEY, VolumeID TEXT NOT NULL, ContentID TEXT NOT NULL, Text TEXT, Annotation TEXT,
+      DateCreated TEXT, DateModified TEXT, ChapterProgress REAL NOT NULL DEFAULT 0, Hidden BOOL NOT NULL DEFAULT 0, Type TEXT, Color INTEGER DEFAULT 0);
+    CREATE TABLE Shelf (CreationDate TEXT, Id TEXT, InternalName TEXT, LastModified TEXT, Name TEXT, Type TEXT, _IsDeleted BOOL, _IsVisible BOOL,
+      _IsSynced BOOL, _SyncTime TEXT, LastAccessed TEXT, PRIMARY KEY(Id));
+    CREATE TABLE ShelfContent (ShelfName TEXT, ContentId TEXT, DateModified TEXT, _IsDeleted BOOL, _IsSynced BOOL, PRIMARY KEY(ShelfName, ContentId));`);
   const ins = db.prepare(`INSERT INTO content (ContentID, ContentType, Title, Attribution, ISBN, ReadStatus, ___PercentRead, DateLastRead, ___FileSize, ImageId)
     VALUES (?, 6, ?, ?, ?, ?, ?, ?, 1000, ?)`);
+  const chapter = db.prepare("INSERT INTO content (ContentID, ContentType, Title, BookID) VALUES (?, 9, ?, ?)");
+  const cover = db.prepare('INSERT INTO volume_shortcovers VALUES (?, ?, ?)');
+  const mark = db.prepare("INSERT INTO Bookmark (BookmarkID, VolumeID, ContentID, Text, Annotation, DateCreated, ChapterProgress, Type) VALUES (?, ?, ?, ?, ?, '2026-02-03T08:00:00Z', 0.5, ?)");
   for (const b of books) {
     ins.run(b.id, b.title, b.author || null, b.isbn || null, b.status || 0, b.percent || 0, '2026-01-02T10:00:00Z', b.id.replace(/[^a-zA-Z0-9]/g, '_'));
+    for (let i = 1; i <= (b.chapters || 0); i++) {
+      chapter.run(`${b.id.slice(7)}!OEBPS!ch${i}.xhtml`, `Chapitre ${i}`, b.id);
+      cover.run(b.id, `${b.id.slice(7)}!OEBPS!ch${i}.xhtml`, i);
+    }
+    (b.bookmarks || []).forEach((m, i) => mark.run(`${b.title}-${i}`, b.id, `${b.id.slice(7)}!OEBPS!ch1.xhtml`, m.text || null, m.note || null, m.note ? 'note' : 'highlight'));
   }
   let badPage = null;
   if (corrupt) {

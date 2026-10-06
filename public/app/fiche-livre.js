@@ -50,12 +50,14 @@ async function viewBook(id) {
     <h2>Exemplaires</h2>
     <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
     ${manage ? `<div id="reservations">${reservationsHtml(book)}</div>` : ''}
-    ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}`;
+    ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}
+    ${member && features().kobo ? '<div id="kobo-notes"></div>' : ''}`;
   if (manage) { bindAdminBook(book); bindReservations(book); }
   const push = $('#push-kobo');
   if (push) push.onclick = busy(() => pushToKobo(book.id));
   if (member) bindReaders(book);
   if (member && book.myStatus) bindStatusEditor(book);
+  if ($('#kobo-notes')) loadKoboNotes(book.id);
   // Tag : catalogue filtre sur ce tag.
   $$('[data-tag]').forEach((a) => {
     a.onclick = (e) => {
@@ -73,6 +75,19 @@ async function viewBook(id) {
       go('#/');
     };
   });
+}
+
+// Surlignages et notes faits sur ses liseuses Kobo (releves a chaque scan).
+async function loadKoboNotes(bookId) {
+  const box = $('#kobo-notes');
+  const list = await api(`/api/kobo/books/${bookId}/annotations`).catch(() => []);
+  if (!box || !list.length) return;
+  box.innerHTML = `<h2>Mes surlignages ${hint('Surlignages et notes faits sur ta liseuse Kobo, relevés à chaque scan.')}</h2>
+    <div class="card kobo-notes">${list.map((a) => `<div class="kobo-note">
+      ${a.text ? `<blockquote>${esc(a.text)}</blockquote>` : ''}
+      ${a.note ? `<p class="kobo-note-text">${esc(a.note)}</p>` : ''}
+      <div class="small muted">${[a.chapter ? esc(a.chapter) : '', a.createdAt ? fmtDate(a.createdAt) : '', esc(a.device)].filter(Boolean).join(' · ')}</div>
+    </div>`).join('')}</div>`;
 }
 
 // Lecteurs du livre (comptes membres) avec leur statut de lecture. Sur la fiche :

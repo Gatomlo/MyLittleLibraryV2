@@ -1084,3 +1084,9 @@ body.selecting .fab-stack { display: none; }
   .books.books-list .book-card .badge { margin-top: 0; }
   .books.books-list .select-check { top: 4px; left: 4px; width: 22px; height: 22px; }
 }
+
+/* Surlignages et notes Kobo (fiche d'un livre). */
+.kobo-notes { display: grid; gap: 14px; }
+.kobo-note + .kobo-note { border-top: 1px solid var(--border); padding-top: 14px; }
+.kobo-note blockquote { margin: 0 0 6px; padding: 2px 0 2px 12px; border-left: 3px solid var(--sun, #e0a800); font-style: italic; white-space: pre-wrap; }
+.kobo-note-text { margin: 0 0 6px; white-space: pre-wrap; }

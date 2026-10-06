@@ -79,3 +79,19 @@ test('limiteur : fenetre glissante par cle', async () => {
   await new Promise((r) => setTimeout(r, 60));
   assert.equal(l.count('a'), 0);
 });
+
+test('kepub : phrases et images reperees, corps entoure, en-tete intact', () => {
+  const { convertDocument } = require('../lib/kepub');
+  const html = '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Titre. Ici</title></head>'
+    + '<body><h1>Chapitre</h1><p>Une phrase. Une autre ! <em>Mot</em></p><p><img src="a.jpg" alt="a > b"/></p></body></html>';
+  const out = convertDocument(html);
+  assert.ok(out.includes('<title>Titre. Ici</title>'));
+  assert.ok(out.includes('<body><div id="book-columns"><div id="book-inner"><h1><span class="koboSpan" id="kobo.1.1">Chapitre</span></h1>'));
+  assert.ok(out.includes('<span class="koboSpan" id="kobo.2.1">Une phrase.</span> <span class="koboSpan" id="kobo.2.2">Une autre !</span>'));
+  assert.ok(out.includes('<em><span class="koboSpan" id="kobo.2.3">Mot</span></em>'));
+  assert.ok(out.includes('<span class="koboSpan" id="kobo.3.1"><img src="a.jpg" alt="a > b"/></span>'));
+  assert.ok(out.endsWith('</div></div></body></html>'));
+  const ids = [...out.matchAll(/id="(kobo\.\d+\.\d+)"/g)].map((m) => m[1]);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.equal(convertDocument(out), out); // deja converti : inchange
+});

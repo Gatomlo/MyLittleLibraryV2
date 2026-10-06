@@ -232,6 +232,42 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   ok(await a.post(`${api}/kobo/devices/${dev.id}/db/applied`, { covers: [c.covers[0].itemId] }));
   assert.equal(ok(await kscan({ 'X-Kobo-Write': '1' }, modified)).dbUpdate, null);
 
+  // Collections d'apres les categories, surlignages releves, livre retire de la base.
+  ok(await a.put(`${api}/books/${imp.bookId}`, { ...fields, seriesNumber: '2', categories: 'Science-fiction' }));
+  const rich = koboDb([{ id: `file:///mnt/onboard/${koboPath}`, title: 'Titre corrigé', author: 'Ada Lovelace', chapters: 3,
+    bookmarks: [{ text: 'Une phrase surlignée.' }, { text: 'Avec une note.', note: 'Ma note' }] }]);
+  const coll = ok(await kscan({ 'X-Kobo-Write': '1' }, rich)).dbUpdate;
+  assert.ok(coll.collections > 0);
+  const notes = ok(await a.get(`${api}/kobo/books/${imp.bookId}/annotations`));
+  assert.deepEqual(notes.map((n) => [n.kind, n.text, n.note, n.chapter]), [['highlight', 'Une phrase surlignée.', null, 'Chapitre 1'], ['note', 'Avec une note.', 'Ma note', 'Chapitre 1']]);
+  fs.writeFileSync(tmp, (await a.get(`${api}/kobo/devices/${dev.id}/db/${coll.token}`, { buffer: true })).body);
+  let sdb = new DatabaseSync(tmp, { readOnly: true });
+  assert.deepEqual(sdb.prepare('SELECT ShelfName, ContentId FROM ShelfContent').all().map((r) => ({ ...r })), [{ ShelfName: 'Science-fiction', ContentId: `file:///mnt/onboard/${koboPath}` }]);
+  assert.equal(sdb.prepare("SELECT _IsDeleted FROM Shelf WHERE Name = 'Science-fiction'").get()._IsDeleted, 'false');
+  sdb.close();
+  ok(await a.post(`${api}/kobo/devices/${dev.id}/db/applied`, { token: coll.token }));
+  assert.deepEqual(ok(await a.get(`${api}/kobo/devices`))[0].collections, 'both');
+  const richItem = ok(await a.get(`${api}/kobo/devices/${dev.id}`)).items[0];
+  ok(await a.post(`${api}/kobo/items/${richItem.id}/removed`, {}));
+  assert.equal(ok(await a.get(`${api}/kobo/devices/${dev.id}`)).items.length, 0);
+  const rm = ok(await kscan({ 'X-Kobo-Write': '1' }, fs.readFileSync(tmp))).dbUpdate;
+  assert.equal(rm.removed, 1);
+  fs.writeFileSync(tmp, (await a.get(`${api}/kobo/devices/${dev.id}/db/${rm.token}`, { buffer: true })).body);
+  sdb = new DatabaseSync(tmp, { readOnly: true });
+  assert.equal(sdb.prepare('SELECT COUNT(*) AS n FROM content').get().n, 0);
+  assert.equal(sdb.prepare('SELECT COUNT(*) AS n FROM volume_shortcovers').get().n, 0);
+  assert.equal(sdb.prepare('SELECT COUNT(*) AS n FROM ShelfContent').get().n, 0);
+  assert.equal(sdb.prepare('SELECT COUNT(*) AS n FROM Bookmark').get().n, 2); // gardes
+  sdb.close();
+  ok(await a.post(`${api}/kobo/devices/${dev.id}/db/applied`, { token: rm.token }));
+  assert.equal(ok(await kscan({}, fs.readFileSync(tmp))).books, 0);
+
+  // Envoi au format kepub : extension .kepub.epub, texte reperes koboSpan.
+  const kep = await ctx.users.lecteur.get(`${api}/kobo/books/${imp.bookId}/epub?format=kepub`, { buffer: true });
+  assert.match(decodeURIComponent(kep.headers.get('x-kobo-path')), /\]\.kepub\.epub$/);
+  const kepZip = await JSZip.loadAsync(kep.body);
+  assert.match(await kepZip.file('OEBPS/c1.xhtml').async('string'), /<span class="koboSpan" id="kobo\.1\.1">Bonjour\.<\/span>/);
+
   // Base avec son journal (mise a jour pas encore reportee) : lue en entier, rien n'est
   // ecrit ; base abimee : message clair, pas d'erreur serveur.
   const parts = koboDb([{ id: `file:///mnt/onboard/${koboPath}`, title: 'Titre corrigé', author: 'Ada Lovelace' },
