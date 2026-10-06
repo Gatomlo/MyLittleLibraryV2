@@ -188,7 +188,9 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   à côté de Sélectionner, gardé dans le navigateur).
 - **Étiquettes** (menu du compte) : planches A4 (Avery L7160, L7159, L7163, L7651, 70×37…, ou format
   personnalisé), QR code + code + titre + nom et logo de la bibliothèque, case de
-  départ pour réutiliser une planche entamée.
+  départ pour réutiliser une planche entamée ; étiquettes de tranche au choix (code seul,
+  écrit verticalement, de bas en haut ou de haut en bas, avec leur propre format de planche ;
+  n'enlèvent pas les livres de la liste d'attente).
 - **Réglages** (menu du compte), en trois groupes :
   *Bibliothèque* (nom, logo et en-tête ; fonctionnalités ; codes des exemplaires),
   *Catalogue* (affichage, catégories, tags, fiches incomplètes, intégration site web),

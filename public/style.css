@@ -1094,3 +1094,8 @@ body.selecting .fab-stack { display: none; }
 .kobo-note + .kobo-note { border-top: 1px solid var(--border); padding-top: 14px; }
 .kobo-note blockquote { margin: 0 0 6px; padding: 2px 0 2px 12px; border-left: 3px solid var(--sun, #e0a800); font-style: italic; white-space: pre-wrap; }
 .kobo-note-text { margin: 0 0 6px; white-space: pre-wrap; }
+
+/* Etiquette de tranche : code seul, ecrit verticalement et centre. */
+.lbl.spine { display: flex; align-items: center; justify-content: center; padding: 0; overflow: hidden; }
+.lbl.spine .spine-code { writing-mode: vertical-rl; font-family: "Courier New", monospace; font-weight: 700; line-height: 1; white-space: nowrap; letter-spacing: .02em; }
+.lbl.spine .spine-code.up { transform: rotate(180deg); }

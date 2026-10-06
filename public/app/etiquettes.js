@@ -25,7 +25,17 @@ const LAYOUT_FIELDS = [['cols', 'Colonnes'], ['rows', 'Lignes'], ['width', 'Larg
 // recherche (titre, auteur, code) ou par scan, sans longue liste a cocher.
 async function viewLabels() {
   const [settings, pending] = await Promise.all([api('/api/settings'), api('/api/labels/pending')]);
-  const layout = Object.assign({ preset: 'L7160', showLogo: true, showName: true, showTitle: true, showAuthor: true, guides: true }, LABEL_PRESETS.L7160, settings.labelLayout || {});
+  // Deux types d'etiquettes, chacun avec son format de planche : completes (QR code,
+  // titre, code) et de tranche (code seul, ecrit verticalement). Enregistres ensemble
+  // (labelLayout = format complet + kind + spine).
+  const saved = settings.labelLayout || {};
+  const { spine: savedSpine, kind: savedKind, ...savedFull } = saved;
+  const layouts = {
+    full: Object.assign({ preset: 'L7160', showLogo: true, showName: true, showTitle: true, showAuthor: true, guides: true }, LABEL_PRESETS.L7160, savedFull),
+    spine: Object.assign({ preset: 'L7651', guides: true, direction: 'up' }, LABEL_PRESETS.L7651, savedSpine || {}),
+  };
+  let kind = savedKind === 'spine' ? 'spine' : 'full';
+  let layout = layouts[kind];
   const sel = state.labels;
   let start = 1;
   let data = null;
@@ -44,6 +54,14 @@ async function viewLabels() {
           <p class="summary-line" id="summary"></p>
         </div>
         <div class="card">
+          <h3 style="margin-top:0">Type d'étiquette</h3>
+          <div class="seg" id="kind-seg">
+            <button type="button" data-kind="full">Complètes</button>
+            <button type="button" data-kind="spine">De tranche</button>
+          </div>
+          <p class="small muted" id="kind-help" style="margin:8px 0 0"></p>
+        </div>
+        <div class="card">
           <h3 style="margin-top:0">Format de planche</h3>
           <div class="field"><select id="preset">
             ${Object.entries(LABEL_PRESETS).map(([k, p]) => `<option value="${k}" ${layout.preset === k ? 'selected' : ''}>${p.name}</option>`).join('')}
@@ -53,11 +71,15 @@ async function viewLabels() {
             <div class="grid-2">${LAYOUT_FIELDS.map(([k, label]) => `<div class="field"><label>${label}</label><input type="number" step="0.01" data-dim="${k}" value="${layout[k]}"></div>`).join('')}</div>
           </details>
           <div class="field"><label>Commencer à la case n° ${hint('Pour réutiliser une planche déjà entamée.')}</label><input type="number" id="start" min="1" value="1"></div>
-          <label class="check"><input type="checkbox" id="opt-logo" ${layout.showLogo ? 'checked' : ''}> Logo</label>
-          <label class="check"><input type="checkbox" id="opt-name" ${layout.showName ? 'checked' : ''}> Nom de la bibliothèque</label>
-          <label class="check"><input type="checkbox" id="opt-title" ${layout.showTitle ? 'checked' : ''}> Titre du livre</label>
-          <label class="check"><input type="checkbox" id="opt-author" ${layout.showAuthor ? 'checked' : ''}> Auteur(s)</label>
-          <label class="check"><input type="checkbox" id="opt-guides" ${layout.guides ? 'checked' : ''}> Contours dans l'aperçu</label>
+          <div id="full-opts">
+            <label class="check"><input type="checkbox" id="opt-logo"> Logo</label>
+            <label class="check"><input type="checkbox" id="opt-name"> Nom de la bibliothèque</label>
+            <label class="check"><input type="checkbox" id="opt-title"> Titre du livre</label>
+            <label class="check"><input type="checkbox" id="opt-author"> Auteur(s)</label>
+          </div>
+          <div class="field" id="spine-opts"><label>Sens du code ${hint('De bas en haut : sens habituel des tranches de livres en français. De haut en bas : sens anglo-saxon.')}</label>
+            <select id="opt-direction"><option value="up">De bas en haut</option><option value="down">De haut en bas</option></select></div>
+          <label class="check"><input type="checkbox" id="opt-guides"> Contours dans l'aperçu</label>
           <div class="btn-row" style="margin-top:14px">
             <button class="btn btn-primary" id="print">Imprimer</button>${hint('Dans la fenêtre d\'impression : format A4, marges « Aucune », échelle 100 % (« Taille réelle »).')}
           </div>
@@ -86,7 +108,7 @@ async function viewLabels() {
   }
 
   function renderMode() {
-    $$('.seg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === sel.mode));
+    $$('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === sel.mode));
     $('#manual-count').textContent = sel.manual.length;
     const body = $('#mode-body');
     if (sel.mode === 'pending') {
@@ -152,15 +174,38 @@ async function viewLabels() {
     LAYOUT_FIELDS.forEach(([k]) => { layout[k] = parseFloat($(`[data-dim="${k}"]`).value) || 0; });
     layout.cols = Math.max(1, Math.round(layout.cols));
     layout.rows = Math.max(1, Math.round(layout.rows));
-    layout.showLogo = $('#opt-logo').checked;
-    layout.showName = $('#opt-name').checked;
-    layout.showTitle = $('#opt-title').checked;
-    layout.showAuthor = $('#opt-author').checked;
+    if (kind === 'full') {
+      layout.showLogo = $('#opt-logo').checked;
+      layout.showName = $('#opt-name').checked;
+      layout.showTitle = $('#opt-title').checked;
+      layout.showAuthor = $('#opt-author').checked;
+    } else {
+      layout.direction = $('#opt-direction').value;
+    }
     layout.guides = $('#opt-guides').checked;
     start = Math.max(1, parseInt($('#start').value, 10) || 1);
   }
 
-  const saveLayout = debounce(() => api('/api/settings', { method: 'PUT', body: { labelLayout: layout } }).catch(() => {}), 800);
+  const saveLayout = debounce(() => api('/api/settings', { method: 'PUT', body: { labelLayout: { ...layouts.full, kind, spine: layouts.spine } } }).catch(() => {}), 800);
+
+  // Champs du formulaire d'apres le type choisi (format et options propres a chacun).
+  function showKind() {
+    layout = layouts[kind];
+    $$('#kind-seg button').forEach((b) => b.classList.toggle('active', b.dataset.kind === kind));
+    $('#kind-help').textContent = kind === 'spine'
+      ? 'Code du livre seul, écrit verticalement, à coller sur la tranche. Choisis des étiquettes étroites (format personnalisé au besoin).'
+      : 'QR code à scanner pour les prêts et retours, avec le titre et le code.';
+    $('#preset').value = LABEL_PRESETS[layout.preset] ? layout.preset : 'custom';
+    LAYOUT_FIELDS.forEach(([k]) => { $(`[data-dim="${k}"]`).value = layout[k]; });
+    $('#full-opts').hidden = kind !== 'full';
+    $('#spine-opts').hidden = kind !== 'spine';
+    $('#opt-logo').checked = !!layout.showLogo;
+    $('#opt-name').checked = !!layout.showName;
+    $('#opt-title').checked = !!layout.showTitle;
+    $('#opt-author').checked = !!layout.showAuthor;
+    $('#opt-direction').value = layout.direction || 'up';
+    $('#opt-guides').checked = !!layout.guides;
+  }
 
   function renderSheets() {
     readLayout();
@@ -187,6 +232,14 @@ async function viewLabels() {
         const row = Math.floor(i / layout.cols);
         const pos = `left:${layout.left + col * layout.hPitch}mm;top:${layout.top + row * layout.vPitch}mm;width:${layout.width}mm;height:${layout.height}mm`;
         if (!item) { html += `<div class="lbl blank" style="${pos}"></div>`; return; }
+        if (kind === 'spine') {
+          // Taille du code : la plus grande qui tient dans la longueur et la largeur de
+          // l'etiquette (police a chasse fixe : ~0,6 em par caractere).
+          const len = Math.max(1, String(item.code).length);
+          const size = Math.max(1.5, Math.min((layout.width - 1.5) * 0.85, (layout.height - 2) / (len * 0.62)));
+          html += `<div class="lbl spine" style="${pos}"><span class="spine-code ${layout.direction === 'down' ? '' : 'up'}" style="font-size:${size.toFixed(2)}mm">${esc(item.code)}</span></div>`;
+          return;
+        }
         html += `<div class="lbl ${small ? 'small' : ''}" style="${pos};--k:${k.toFixed(3)}">
           <div class="qr" style="width:${qrSize}mm;height:${qrSize}mm">${item.svg}</div>
           <div class="info">
@@ -212,7 +265,7 @@ async function viewLabels() {
     if (token === fetchToken) { data = result; renderSheets(); }
   }
 
-  $$('.seg button').forEach((btn) => {
+  $$('[data-mode]').forEach((btn) => {
     btn.onclick = () => { sel.mode = btn.dataset.mode; renderMode(); refresh(); };
   });
   $('#preset').onchange = (e) => {
@@ -224,7 +277,10 @@ async function viewLabels() {
     saveLayout();
   };
   $$('[data-dim]').forEach((input) => input.addEventListener('input', () => { layout.preset = 'custom'; $('#preset').value = 'custom'; renderSheets(); saveLayout(); }));
-  ['#opt-logo', '#opt-name', '#opt-title', '#opt-author', '#opt-guides'].forEach((s) => { $(s).onchange = () => { renderSheets(); saveLayout(); }; });
+  ['#opt-logo', '#opt-name', '#opt-title', '#opt-author', '#opt-guides', '#opt-direction'].forEach((s) => { $(s).onchange = () => { renderSheets(); saveLayout(); }; });
+  $$('#kind-seg button').forEach((btn) => {
+    btn.onclick = () => { kind = btn.dataset.kind; showKind(); renderSheets(); saveLayout(); };
+  });
   $('#start').oninput = renderSheets;
   $('#print').onclick = async () => {
     if (!data || !data.items.length) return toast('Aucune étiquette sélectionnée.', 'error');
@@ -237,6 +293,8 @@ async function viewLabels() {
     window.print();
     root.innerHTML = '';
     const printed = data.items.map((i) => i.code);
+    // Etiquettes de tranche : en plus des etiquettes completes, la liste d'attente ne change pas.
+    if (kind === 'spine') return;
     if (confirm(`Les ${printed.length} étiquette(s) se sont-elles bien imprimées ?\nElles seront retirées de la liste d'attente.`)) {
       await api('/api/labels/mark-printed', { method: 'POST', body: { codes: printed } });
       if (sel.mode === 'manual') sel.manual = [];
@@ -248,6 +306,7 @@ async function viewLabels() {
 
   // Rien en attente et rien de choisi : on ouvre directement la selection manuelle.
   if (sel.mode === 'pending' && !pending.length) sel.mode = 'manual';
+  showKind();
   renderMode();
   await refresh();
 }
