@@ -234,7 +234,8 @@ async function scanKobo(root = null) {
       else box.step('Analyse des livres et rapprochement avec les fiches…');
     });
     src.device = device;
-    if (dbUpdate) await applyDbUpdate(src, dbUpdate, dbFile, box);
+    if (dbUpdate && dbUpdate.error) toast(`Scan fait, mais informations des fiches non écrites dans la liseuse : ${dbUpdate.error}`, 'error');
+    else if (dbUpdate) await applyDbUpdate(src, dbUpdate, dbFile, box);
     if (walBusy) toast('Informations des fiches non écrites dans la liseuse : sa base n\'est pas à jour. Éjecte-la proprement, rebranche-la puis rescanne.', 'error');
   } finally { box.close(); }
   koboRemember(src);
