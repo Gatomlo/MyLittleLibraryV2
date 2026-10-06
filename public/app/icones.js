@@ -4,7 +4,7 @@ import { ROOT, LIBRARY, libUrl, state, pending, isAdmin, libRole, isMember, canM
 import { $, $$, view, esc, gapi, toast, go } from './utilitaires.js';
 import { scanConf, SCAN_TITLES, refreshLoanBadge } from './scanner.js';
 import { renderHeader } from './entete.js';
-import { TOUCH_ONLY, kobo, koboOn, koboSavedInfo, reconnectKobo, scanKobo } from './kobo.js';
+import { TOUCH_ONLY, kobo, koboOn, koboSavedInfo, reconnectKobo, scanKobo, ejectKobo } from './kobo.js';
 import { openHomeCustomize } from './accueil.js';
 import { canInstall, installApp } from './installation.js';
 
@@ -161,6 +161,7 @@ function openMenu() {
     <div class="menu-title">Liseuses</div>
     ${koboSavedInfo && !koboOn() ? `<button class="menu-item" type="button" id="menu-kobo-reconnect">${icon('kobo')}Reconnecter ${esc(koboSavedInfo.name)}</button>` : ''}
     <button class="menu-item" type="button" id="menu-kobo-connect">${icon('kobo')}${koboOn() ? `Rescanner ${esc(kobo.device.name)}` : koboSavedInfo ? 'Brancher une autre liseuse' : 'Brancher une liseuse'}</button>
+    ${koboOn() && kobo.write ? `<button class="menu-item" type="button" id="menu-kobo-eject">${icon('kobo')}Éjecter ${esc(kobo.device.name)}</button>` : ''}
     <a class="menu-item" href="#/kobo">${icon('kobo')}Toutes les liseuses</a>` : ''}
     <div class="menu-sep"></div>
     <a class="menu-item" href="#/account">${icon('user')}Mon compte</a>
@@ -184,6 +185,8 @@ function openMenu() {
   // Rescanner la liseuse branchee : sans repasser par le choix du dossier.
   koboMenuAction($('#menu-kobo-connect', menu), () => (koboOn() && kobo.root ? scanKobo(kobo.root) : scanKobo()));
   koboMenuAction($('#menu-kobo-reconnect', menu), reconnectKobo);
+  const eject = $('#menu-kobo-eject', menu);
+  if (eject) eject.onclick = () => { closeMenu(); ejectKobo(); };
   $$('[data-default]', menu).forEach((btn) => {
     btn.onclick = async () => {
       const id = Number(btn.dataset.default);

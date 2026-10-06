@@ -313,6 +313,21 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   const cut = await kscan({ 'X-Kobo-Db-Size': String(truncated.length + 10) }, truncated);
   assert.equal(cut.status, 400);
   assert.match(cut.body.error, /incomplète/);
+  // Livre envoye lors d'un branchement precedent et absent de la base : base peut-etre
+  // perimee, pas d'ecriture au premier essai ; permise a la relecture (X-Kobo-Retry).
+  const waiting = ok(await a.post(`${api}/books`, { title: 'Livre en attente' }));
+  ok(await a.post(`${api}/kobo/devices/${dev.id}/pushed`, { bookId: waiting.id, path: `Autre/Livre en attente [mll-${waiting.id}.abcdef].epub` }));
+  const { libraryDb } = require('../lib/db');
+  libraryDb(ctx.lib.id).prepare("UPDATE kobo_items SET pushed_at = datetime('now', '-1 hour') WHERE pending = 1").run();
+  const staleScan = ok(await kscan({ 'X-Kobo-Write': '1' }, rich));
+  assert.equal(staleScan.stale, true);
+  assert.equal(staleScan.pendingOld, 1);
+  assert.equal(staleScan.dbUpdate, null);
+  const retryScan = ok(await kscan({ 'X-Kobo-Write': '1', 'X-Kobo-Retry': '1' }, rich));
+  assert.equal(retryScan.stale, false);
+  assert.ok(retryScan.dbUpdate && retryScan.dbUpdate.token);
+  libraryDb(ctx.lib.id).prepare('DELETE FROM kobo_items WHERE pending = 1').run();
+
   // Livre en cours : progression de la liseuse du compte sur la fiche et dans le catalogue.
   ok(await kscan({}, koboDb([{ id: `file:///mnt/onboard/${koboPath}`, title: 'Titre corrigé', author: 'Ada Lovelace', status: 1, percent: 42 }])));
   ok(await a.put(`${api}/books/${imp.bookId}/status`, { reading: 'reading' }));
