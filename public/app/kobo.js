@@ -81,6 +81,9 @@ async function reconnectKobo() {
 
 // Debranchement : verification toutes les 5 s ; onglet, filtre et boutons retires.
 let koboTimer = null;
+// Ecriture dans la base confirmee pour ce branchement (liseuse redemarree avant d'etre
+// branchee) : true / false, null = pas encore demande. Remis a null au debranchement.
+let writeConfirmed = null;
 function watchKobo() {
   clearInterval(koboTimer);
   koboTimer = setInterval(async () => {
@@ -89,6 +92,7 @@ function watchKobo() {
     const name = kobo.device ? kobo.device.name : 'La liseuse';
     if (kobo.root) koboSavedInfo = { root: kobo.root, name };
     kobo = null;
+    writeConfirmed = null;
     clearInterval(koboTimer);
     renderNav();
     toast(`${name} a été débranchée.`);
@@ -99,6 +103,7 @@ function watchKobo() {
 // Doit etre appele directement depuis un clic (le navigateur l'exige), sauf avec un
 // dossier deja autorise (root).
 async function connectKobo(root = null) {
+  if (!root) writeConfirmed = null; // liseuse choisie a nouveau : nouveau branchement
   const remembered = !!root;
   let src;
   if (KOBO_FS) {
@@ -228,7 +233,13 @@ async function scanKobo(root = null) {
     // envoye a la suite de la base pour qu'elle soit lue en entier.
     const wal = await src.file(`${KOBO_DB}-wal`);
     const walBusy = !!(wal && wal.size > 0);
-    const write = !!(src.write && src.device && src.device.writeDb);
+    // La liseuse ne reporte ses derniers changements dans sa base qu'a l'extinction : si elle
+    // n'a pas redemarre avant d'etre branchee, ecrire dans la base les ecraserait (et l'abimerait).
+    let write = !!(src.write && src.device && src.device.writeDb);
+    if (write && writeConfirmed === null) {
+      writeConfirmed = confirm('Écrire les informations des fiches dans la liseuse ?\n\nSeulement si elle a été éteinte puis rallumée juste avant d\'être branchée : sinon ses derniers changements (livres importés, progression) ne sont pas encore dans sa base et seraient perdus.\n\nOK : écrire. Annuler : lire seulement.');
+    }
+    write = write && writeConfirmed;
     const headers = { 'X-Kobo-Version': encodeURIComponent(src.version), 'X-Kobo-Db-Size': String(dbFile.size),
       ...(walBusy ? { 'X-Kobo-Wal-Size': String(wal.size) } : {}),
       ...(write ? { 'X-Kobo-Write': '1' } : {}) };
@@ -467,7 +478,7 @@ function editKoboDialog(d, members) {
         <select name="collections">${[['both', 'Catégories et tags'], ['categories', 'Catégories'], ['tags', 'Tags'], ['none', 'Aucune']]
           .map(([v, l]) => `<option value="${v}" ${(d.collections || 'both') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <label class="check"><input type="checkbox" name="writeDb" ${d.writeDb ? 'checked' : ''}> Écrire les informations des fiches dans la liseuse
-        ${hint('Avec Chrome : titre, auteurs, résumé, série et tome des fiches écrits dans la base de la liseuse à chaque scan (onglet Séries de la Kobo), livres mis à jour sans perdre la progression. La base saine est gardée par l\'appli à chaque scan (10 dernières) et copiée sur la liseuse avant chaque écriture ; une écriture laissée en suspens par la liseuse est terminée, comme avec Calibre.')}</label>
+        ${hint('Avec Chrome : titre, auteurs, résumé, série et tome des fiches écrits dans la base de la liseuse à chaque scan (onglet Séries de la Kobo), livres mis à jour sans perdre la progression. Éteins puis rallume la liseuse avant de la brancher : elle n\'enregistre ses derniers changements qu\'à l\'extinction (une confirmation est demandée à chaque branchement). La base saine est gardée par l\'appli à chaque scan (10 dernières) et copiée sur la liseuse avant chaque écriture ; une écriture laissée en suspens par la liseuse est terminée, comme avec Calibre.')}</label>
       <div class="btn-row">
         <button class="btn btn-primary" type="submit">Enregistrer</button>
         <button class="btn" type="button" data-close>Annuler</button>
