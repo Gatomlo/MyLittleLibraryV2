@@ -461,7 +461,7 @@ function bindSelection(reload) {
     try {
       const r = await pushManyToKobo(ids, (n) => { btn.textContent = `Envoi ${n} / ${ids.length}…`; });
       toast(`${r.sent} livre(s) envoyé(s)${r.updated ? `, ${r.updated} mis à jour` : ''}${r.already ? `, ${r.already} déjà sur la liseuse` : ''}${r.started ? `, ${r.started} commencé(s) sur la liseuse laissé(s) tel(s) quel(s)` : ''}${r.skipped ? `, ${r.skipped} sans fichier ou sans droit` : ''}.`
-        + (r.sent || r.updated ? (kobo && kobo.write ? ` Quand tu as fini, clique sur « Éjecter » (menu du compte) puis éjecte la liseuse dans Windows${kobo.device && kobo.device.writeDb ? ' ; série et collections des nouveaux livres au prochain branchement' : ''}.` : ' Copie les fichiers téléchargés sur la liseuse.') : ''));
+        + (r.sent || r.updated ? (kobo && kobo.write ? ` Quand tu as fini, clique sur « Terminer » (menu du compte), puis éjecte la liseuse dans Windows${kobo.device && kobo.device.writeDb ? ' ; série et collections des nouveaux livres au prochain branchement' : ''}.` : ' Copie les fichiers téléchargés sur la liseuse.') : ''));
       reload();
     } finally { btn.innerHTML = '<span class="hide-mobile">Envoyer sur la liseuse</span><span class="show-mobile">Liseuse</span>'; }
   });

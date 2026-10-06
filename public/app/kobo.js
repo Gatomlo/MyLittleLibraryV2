@@ -61,7 +61,7 @@ const koboRemember = (src) => (src.root && LIBRARY
 
 // Ouverture de la page : liseuse deja autorisee et branchee -> scan automatique (mise a
 // jour de la base de la liseuse avec l'option d'ecriture), au plus une fois toutes les
-// 2 minutes. Apres « Ejecter » : rien, jusqu'a la prochaine reconnexion.
+// 2 minutes. Apres « Terminer » : rien, jusqu'a la prochaine reconnexion.
 const AUTOSCAN_KEY = 'mll-kobo-autoscan';
 async function koboRestore() {
   if (!KOBO_FS || !LIBRARY || !isMember() || !features().kobo || kobo) return;
@@ -72,7 +72,7 @@ async function koboRestore() {
     koboSavedInfo = info;
     if (ejected === 'toast') {
       session((st) => st.setItem(EJECTED_KEY, '1'));
-      toast(`${info.name || 'La liseuse'} est libérée : tu peux maintenant l'éjecter dans Windows.`);
+      toast(`Terminé : tu peux maintenant éjecter ${info.name || 'la liseuse'} dans Windows.`);
     }
     renderNav();
     return;
@@ -285,19 +285,19 @@ async function scanKobo(root = null, { retry = false } = {}) {
   return src.device;
 }
 
-// Ejecter : la page est rechargee sans toucher a la liseuse (comme un onglet ferme :
+// Terminer : la page est rechargee sans toucher a la liseuse (comme un onglet ferme :
 // plus aucun acces en memoire), puis Windows peut l'ejecter proprement.
 const EJECTED_KEY = 'mll-kobo-ejected';
 const session = (fn) => { try { return fn(sessionStorage); } catch (e) { return null; } };
 // Changements faits sur la liseuse depuis le dernier scan (livres retires, remplaces) :
-// ecrits dans sa base en une fois, a l'ejection.
+// ecrits dans sa base en une fois, a « Terminer ».
 let koboChanged = false;
 async function ejectKobo() {
   if (koboChanged && writeDb()) {
     try {
       await scanKobo(kobo.root);
     } catch (e) {
-      if (!confirm(`La liseuse n'a pas pu être mise à jour (${e.message}). L'éjecter quand même ? Elle sera mise à jour au prochain branchement.`)) return;
+      if (!confirm(`La liseuse n'a pas pu être mise à jour (${e.message}). Terminer quand même ? Elle sera mise à jour au prochain branchement.`)) return;
     }
   }
   koboChanged = false;
@@ -386,7 +386,7 @@ async function koboItemsByBook() {
 // relit pas un livre deja importe : une version differente (fiche modifiee) est copiee
 // sous un autre nom et l'ancien fichier est supprime ; avec l'ecriture dans la base,
 // elle remplace l'ancien fichier (meme nom) et les informations de la fiche sont
-// ecrites dans la base de la liseuse a l'ejection (« Ejecter », koboChanged).
+// ecrites dans la base de la liseuse a « Terminer » (koboChanged).
 async function pushToKobo(bookId, { quiet = false, items = null } = {}) {
   await ensureKobo();
   if (KOBO_FS && !kobo) await (koboSavedInfo ? reconnectKobo() : scanKobo());
@@ -420,7 +420,7 @@ async function pushToKobo(bookId, { quiet = false, items = null } = {}) {
       }
     }
     if (inPlace || removedInDb) koboChanged = true;
-    if (!quiet) toast(inPlace ? 'Mis à jour sur la liseuse (progression conservée). Clique sur « Éjecter » quand tu as fini.'
+    if (!quiet) toast(inPlace ? 'Mis à jour sur la liseuse (progression conservée). Quand tu as fini, clique sur « Terminer ».'
       : `${replaced ? 'Mis à jour' : 'Copié'} sur la liseuse. Éjecte-la pour qu'elle l'importe${writeDb() ? ' ; sa série et ses collections seront ajoutées au prochain branchement' : ''}.`);
     return inPlace || replaced ? 'updated' : true;
   }
@@ -474,7 +474,7 @@ async function viewKobo() {
       : '<div class="empty">Aucune liseuse pour le moment : branche une Kobo et clique sur « Scanner une Kobo ».</div>'}`;
   $('#kobo-scan').onclick = busy(async () => {
     const d = await scanKobo();
-    toast('Liseuse scannée. Tu peux l\'éjecter.');
+    toast('Liseuse scannée. Quand tu as fini, clique sur « Terminer ».');
     go(`#/kobo/${d.id}`);
   });
 }
@@ -648,7 +648,7 @@ async function viewKoboDevice(id) {
         ${toCreate.length > 1 && canManage() ? `<button class="btn" id="kobo-create-all"><span class="hide-mobile">Créer les ${toCreate.length} fiches</span><span class="show-mobile">Créer (${toCreate.length})</span></button>` : ''}
         ${toCopy.length && canManage() ? `<button class="btn" id="kobo-copy-all"><span class="hide-mobile">Copier les ${toCopy.length} fichier(s) manquant(s)</span><span class="show-mobile">Copier (${toCopy.length})</span></button>` : ''}
         ${toUpdate.length ? `<button class="btn" id="kobo-update-all"><span class="hide-mobile">Mettre à jour ${toUpdate.length} livre(s)</span><span class="show-mobile">Màj (${toUpdate.length})</span></button>` : ''}
-        ${connected() ? '<button class="btn" id="kobo-eject" title="Libérer la liseuse avant de l\'éjecter dans Windows">Éjecter</button>' : ''}
+        ${connected() ? '<button class="btn" id="kobo-eject" title="Enregistrer les changements dans la liseuse et la libérer, avant de l\'éjecter dans Windows">Terminer</button>' : ''}
         ${mine ? '<button class="btn" id="kobo-edit">Modifier</button>' : ''}
       </div></div>
     ${koboWarning()}
@@ -692,7 +692,7 @@ async function viewKoboDevice(id) {
       await ensureKobo();
       try { await kobo.remove(i.path); } catch (e) { if (e.name !== 'NotFoundError') throw e; }
       if (await forgetOnKobo(i)) koboChanged = true;
-      toast(writeDb() ? 'Livre supprimé. Clique sur « Éjecter » quand tu as fini : la liseuse sera mise à jour à ce moment-là.'
+      toast(writeDb() ? 'Livre supprimé. Quand tu as fini, clique sur « Terminer » : la liseuse sera mise à jour à ce moment-là.'
         : 'Livre supprimé. Éjecte la liseuse pour qu’elle mette sa bibliothèque à jour.');
       route();
     });
@@ -733,7 +733,7 @@ async function viewKoboDevice(id) {
   $('#kobo-rescan').onclick = busy(async () => {
     const r = await (connected() && kobo.root ? scanKobo(kobo.root) : koboSavedInfo ? reconnectKobo() : scanKobo());
     if (r.id !== d.id) { toast(`C'est une autre liseuse : ${r.name}.`); go(`#/kobo/${r.id}`); return; }
-    toast('Liseuse scannée. Tu peux l\'éjecter.');
+    toast('Liseuse scannée. Quand tu as fini, clique sur « Terminer ».');
     route();
   });
   $$('[data-create]').forEach((btn) => {
@@ -781,7 +781,7 @@ async function viewKoboDevice(id) {
       try { if (await pushToKobo(i.book.id, { quiet: true, items: d.items.filter((x) => x.book && x.book.id === i.book.id) })) ok++; } catch (e) { failed++; }
     }
     if (ok && writeDb()) koboChanged = true;
-    toast(`${ok} livre(s) mis à jour${failed ? `, ${failed} échec(s)` : ''}. Quand tu as fini, clique sur « Éjecter » puis éjecte la liseuse dans Windows.`, failed ? 'error' : undefined);
+    toast(`${ok} livre(s) mis à jour${failed ? `, ${failed} échec(s)` : ''}. Quand tu as fini, clique sur « Terminer », puis éjecte la liseuse dans Windows.`, failed ? 'error' : undefined);
     route();
   });
   const copyAll = $('#kobo-copy-all');

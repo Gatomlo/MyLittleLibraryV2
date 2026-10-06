@@ -161,7 +161,7 @@ function openMenu() {
     <div class="menu-title">Liseuses</div>
     ${koboSavedInfo && !koboOn() ? `<button class="menu-item" type="button" id="menu-kobo-reconnect">${icon('kobo')}Reconnecter ${esc(koboSavedInfo.name)}</button>` : ''}
     <button class="menu-item" type="button" id="menu-kobo-connect">${icon('kobo')}${koboOn() ? `Rescanner ${esc(kobo.device.name)}` : koboSavedInfo ? 'Brancher une autre liseuse' : 'Brancher une liseuse'}</button>
-    ${koboOn() && kobo.write ? `<button class="menu-item" type="button" id="menu-kobo-eject">${icon('kobo')}Éjecter ${esc(kobo.device.name)}</button>` : ''}
+    ${koboOn() && kobo.write ? `<button class="menu-item" type="button" id="menu-kobo-eject">${icon('kobo')}Terminer avec ${esc(kobo.device.name)}</button>` : ''}
     <a class="menu-item" href="#/kobo">${icon('kobo')}Toutes les liseuses</a>` : ''}
     <div class="menu-sep"></div>
     <a class="menu-item" href="#/account">${icon('user')}Mon compte</a>
@@ -178,7 +178,7 @@ function openMenu() {
     closeMenu();
     try {
       const d = await fn();
-      toast(`Liseuse « ${d.name} » scannée. Tu peux l'éjecter quand tu as fini.`);
+      toast(`Liseuse « ${d.name} » scannée. Quand tu as fini, clique sur « Terminer ».`);
       go(`#/kobo/${d.id}`);
     } catch (err) { if (err.name !== 'AbortError') toast(err.message, 'error'); }
   }; };
