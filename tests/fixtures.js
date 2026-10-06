@@ -7,9 +7,12 @@ const JSZip = require('jszip');
 const { DatabaseSync } = require('node:sqlite');
 
 // Base KoboReader.sqlite minimale. books : [{ id, title, author, isbn, status, percent }].
-function koboDb(books) {
+// withWal : base en mode journal (WAL) dont tout le contenu est encore dans le journal,
+// renvoyee comme { main, wal } (fichier principal illisible seul).
+function koboDb(books, { withWal = false } = {}) {
   const file = path.join(os.tmpdir(), `mll-test-kobo-${crypto.randomBytes(6).toString('hex')}.sqlite`);
   const db = new DatabaseSync(file);
+  if (withWal) db.exec('PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;');
   db.exec(`CREATE TABLE content (ContentID TEXT, ContentType INTEGER, Title TEXT, Attribution TEXT, ISBN TEXT, Publisher TEXT,
     Series TEXT, SeriesNumber TEXT, ReadStatus INTEGER, ___PercentRead INTEGER, DateLastRead TEXT, ___FileSize INTEGER,
     Description TEXT, SeriesID TEXT, SeriesNumberFloat REAL, ImageId TEXT);
@@ -18,6 +21,12 @@ function koboDb(books) {
     VALUES (?, 6, ?, ?, ?, ?, ?, ?, 1000, ?)`);
   for (const b of books) {
     ins.run(b.id, b.title, b.author || null, b.isbn || null, b.status || 0, b.percent || 0, '2026-01-02T10:00:00Z', b.id.replace(/[^a-zA-Z0-9]/g, '_'));
+  }
+  if (withWal) {
+    const out = { main: fs.readFileSync(file), wal: fs.readFileSync(`${file}-wal`) };
+    db.close();
+    ['', '-wal', '-shm'].forEach((x) => fs.rmSync(file + x, { force: true }));
+    return out;
   }
   db.close();
   const buffer = fs.readFileSync(file);

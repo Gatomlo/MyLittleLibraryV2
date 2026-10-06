@@ -230,6 +230,19 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   assert.ok(c.covers[0].prefix.startsWith('file____mnt_onboard_Bibliotheque_Machines'));
   ok(await a.post(`${api}/kobo/devices/${dev.id}/db/applied`, { covers: [c.covers[0].itemId] }));
   assert.equal(ok(await kscan({ 'X-Kobo-Write': '1' }, modified)).dbUpdate, null);
+
+  // Base avec son journal (mise a jour pas encore reportee) : lue en entier, rien n'est
+  // ecrit ; base abimee : message clair, pas d'erreur serveur.
+  const parts = koboDb([{ id: `file:///mnt/onboard/${koboPath}`, title: 'Titre corrigé', author: 'Ada Lovelace' },
+    { id: 'file:///mnt/onboard/autre.epub', title: 'Autre livre' }], { withWal: true });
+  assert.equal((await kscan({}, parts.main)).status, 400);
+  const withWal = ok(await kscan({ 'X-Kobo-Write': '1', 'X-Kobo-Wal-Size': String(parts.wal.length) }, Buffer.concat([parts.main, parts.wal])));
+  assert.equal(withWal.books, 2);
+  assert.equal(withWal.dbUpdate, null);
+  const broken = Buffer.concat([modified.subarray(0, 100), Buffer.alloc(modified.length - 100, 7)]);
+  const badScan = await kscan({}, broken);
+  assert.equal(badScan.status, 400);
+  assert.match(badScan.body.error, /illisible/);
   ok(await a.del(`${api}/kobo/devices/${dev.id}`));
   assert.equal(ok(await a.get(`${api}/kobo/devices`)).length, 0);
 

@@ -224,19 +224,23 @@ async function scanKobo(root = null) {
     const mb = `${(dbFile.size / 1048576).toFixed(1).replace('.', ',')} Mo`;
     // Ecriture dans la base (option de la liseuse, Chrome) : jamais si la liseuse a
     // laisse un journal non vide (base pas encore a jour : ejection mal faite).
-    const write = !!(src.write && src.device && src.device.writeDb);
-    const wal = write ? await src.file(`${KOBO_DB}-wal`) : null;
+    // Journal de la base non vide (mise a jour pas encore reportee dans la base) :
+    // envoye a la suite de la base pour qu'elle soit lue en entier.
+    const wal = await src.file(`${KOBO_DB}-wal`);
     const walBusy = !!(wal && wal.size > 0);
-    const headers = { 'X-Kobo-Version': encodeURIComponent(src.version), ...(write && !walBusy ? { 'X-Kobo-Write': '1' } : {}) };
+    const write = !!(src.write && src.device && src.device.writeDb);
+    const headers = { 'X-Kobo-Version': encodeURIComponent(src.version), ...(walBusy ? { 'X-Kobo-Wal-Size': String(wal.size) } : {}),
+      ...(write && !walBusy ? { 'X-Kobo-Write': '1' } : {}) };
     box.step(`Envoi de la base de la liseuse (${mb})…`, 0);
-    const { dbUpdate, ...device } = await sendRawProgress('/api/kobo/scan', dbFile, 'application/x-sqlite3', headers, (p) => {
+    const body = walBusy ? new Blob([dbFile, wal]) : dbFile;
+    const { dbUpdate, ...device } = await sendRawProgress('/api/kobo/scan', body, 'application/x-sqlite3', headers, (p) => {
       if (p < 1) box.step(`Envoi de la base de la liseuse (${mb})… ${Math.round(p * 100)} %`, Math.round(p * 100));
       else box.step('Analyse des livres et rapprochement avec les fiches…');
     });
     src.device = device;
     if (dbUpdate && dbUpdate.error) toast(`Scan fait, mais informations des fiches non écrites dans la liseuse : ${dbUpdate.error}`, 'error');
     else if (dbUpdate) await applyDbUpdate(src, dbUpdate, dbFile, box);
-    if (walBusy) toast('Informations des fiches non écrites dans la liseuse : sa base n\'est pas à jour. Éjecte-la proprement, rebranche-la puis rescanne.', 'error');
+    if (walBusy && write) toast('Informations des fiches non écrites dans la liseuse : sa base n\'est pas à jour. Éjecte-la proprement, rebranche-la puis rescanne.', 'error');
   } finally { box.close(); }
   koboRemember(src);
   renderNav();
