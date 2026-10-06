@@ -178,6 +178,17 @@ test('etiquettes : QR code et marquage', async () => {
   const before = pending.length - 1;
   assert.ok(ok(await a.post(`${api}/labels/reset`)).reset >= 1);
   assert.ok(ok(await a.get(`${api}/labels/pending`)).length > before, 'etiquettes remises en attente');
+  // Liste d'attente des etiquettes de tranche independante des completes.
+  const full = ok(await a.get(`${api}/labels/pending`)).length;
+  ok(await a.post(`${api}/labels/reset`, { kind: 'spine' }));
+  const spine = ok(await a.get(`${api}/labels/pending?kind=spine`));
+  assert.ok(spine.length > 0);
+  ok(await a.post(`${api}/labels/mark-printed`, { codes: [spine[0].code], kind: 'spine' }));
+  assert.equal(ok(await a.get(`${api}/labels/pending?kind=spine`)).length, spine.length - 1);
+  assert.equal(ok(await a.get(`${api}/labels/pending`)).length, full, 'completes inchangees');
+  assert.ok(ok(await a.post(`${api}/labels/clear`, { kind: 'spine' })).cleared >= 1);
+  assert.equal(ok(await a.get(`${api}/labels/pending?kind=spine`)).length, 0);
+  assert.equal(ok(await a.get(`${api}/labels/pending`)).length, full, 'completes toujours inchangees');
 });
 
 test('epub : import, droits de lecture, envoi vers une liseuse', async () => {

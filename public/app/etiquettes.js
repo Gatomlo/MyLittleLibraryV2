@@ -23,8 +23,11 @@ const LAYOUT_FIELDS = [['cols', 'Colonnes'], ['rows', 'Lignes'], ['width', 'Larg
 // Selection des etiquettes : par defaut toutes celles en attente (nouveaux
 // exemplaires, codes regeneres) ; sinon une selection manuelle construite par
 // recherche (titre, auteur, code) ou par scan, sans longue liste a cocher.
+// Une liste d'attente par type d'etiquette (completes / de tranche), independantes.
 async function viewLabels() {
-  const [settings, pending] = await Promise.all([api('/api/settings'), api('/api/labels/pending')]);
+  const [settings, pendingFull, pendingSpine] = await Promise.all([api('/api/settings'),
+    api('/api/labels/pending'), api('/api/labels/pending?kind=spine')]);
+  const pendings = { full: pendingFull, spine: pendingSpine };
   // Deux types d'etiquettes, chacun avec son format de planche : completes (QR code,
   // titre, code) et de tranche (code seul, ecrit verticalement). Enregistres ensemble
   // (labelLayout = format complet + kind + spine).
@@ -36,6 +39,7 @@ async function viewLabels() {
   };
   let kind = savedKind === 'spine' ? 'spine' : 'full';
   let layout = layouts[kind];
+  let pending = pendings[kind];
   const sel = state.labels;
   let start = 1;
   let data = null;
@@ -45,21 +49,21 @@ async function viewLabels() {
     <div class="label-layout">
       <div>
         <div class="card">
-          <h3 style="margin-top:0">Quoi imprimer ?</h3>
-          <div class="seg">
-            <button type="button" data-mode="pending">En attente (${pending.length})</button>
-            <button type="button" data-mode="manual">Sélection (<span id="manual-count">0</span>)</button>
-          </div>
-          <div id="mode-body"></div>
-          <p class="summary-line" id="summary"></p>
-        </div>
-        <div class="card">
           <h3 style="margin-top:0">Type d'étiquette</h3>
           <div class="seg" id="kind-seg">
             <button type="button" data-kind="full">Complètes</button>
             <button type="button" data-kind="spine">De tranche</button>
           </div>
           <p class="small muted" id="kind-help" style="margin:8px 0 0"></p>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Quoi imprimer ?</h3>
+          <div class="seg">
+            <button type="button" data-mode="pending">En attente (<span id="pending-count">${pending.length}</span>)</button>
+            <button type="button" data-mode="manual">Sélection (<span id="manual-count">0</span>)</button>
+          </div>
+          <div id="mode-body"></div>
+          <p class="summary-line" id="summary"></p>
         </div>
         <div class="card">
           <h3 style="margin-top:0">Format de planche</h3>
@@ -77,8 +81,9 @@ async function viewLabels() {
             <label class="check"><input type="checkbox" id="opt-title"> Titre du livre</label>
             <label class="check"><input type="checkbox" id="opt-author"> Auteur(s)</label>
           </div>
-          <div class="field" id="spine-opts"><label>Sens du code ${hint('De bas en haut : sens habituel des tranches de livres en français. De haut en bas : sens anglo-saxon.')}</label>
-            <select id="opt-direction"><option value="up">De bas en haut</option><option value="down">De haut en bas</option></select></div>
+          <div class="field" id="spine-opts"><label>Sens du code ${hint('De bas en haut : sens habituel des tranches de livres en français. De haut en bas : sens anglo-saxon. Une lettre par ligne : lettres droites, empilées.')}</label>
+            <select id="opt-direction"><option value="up">De bas en haut</option><option value="down">De haut en bas</option>
+              <option value="stack">Une lettre par ligne</option></select></div>
           <label class="check"><input type="checkbox" id="opt-guides"> Contours dans l'aperçu</label>
           <div class="btn-row" style="margin-top:14px">
             <button class="btn btn-primary" id="print">Imprimer</button>${hint('Dans la fenêtre d\'impression : format A4, marges « Aucune », échelle 100 % (« Taille réelle »).')}
@@ -107,17 +112,30 @@ async function viewLabels() {
     return Array.from(groups).map(([title, codes]) => `<div class="sel-row"><span class="grow">${esc(title)}</span><span class="small muted code">${codes.map(esc).join(', ')}</span></div>`).join('');
   }
 
+  const kindName = () => (kind === 'spine' ? 'de tranche' : 'complètes');
+
   async function resetAll() {
-    if (!confirm('Remettre les étiquettes de tous les exemplaires papier dans la liste d\'attente ?\nLes codes ne changent pas.')) return;
+    if (!confirm(`Remettre les étiquettes ${kindName()} de tous les exemplaires papier dans la liste d'attente ?\nLes codes ne changent pas.`)) return;
     try {
-      const r = await api('/api/labels/reset', { method: 'POST' });
+      const r = await api('/api/labels/reset', { method: 'POST', body: { kind } });
       sel.mode = 'pending';
       toast(r.reset ? `${r.reset} étiquette(s) remise(s) en attente.` : 'Toutes les étiquettes étaient déjà en attente.');
       route();
     } catch (err) { toast(err.message, 'error'); }
   }
 
+  async function clearPending() {
+    if (!confirm(`Vider la liste d'attente des étiquettes ${kindName()} (${pending.length}) sans les imprimer ?`)) return;
+    try {
+      await api('/api/labels/clear', { method: 'POST', body: { kind } });
+      sel.mode = 'pending';
+      toast('Liste d\'attente vidée.');
+      route();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
   function renderMode() {
+    $('#pending-count').textContent = pending.length;
     $$('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === sel.mode));
     $('#manual-count').textContent = sel.manual.length;
     const body = $('#mode-body');
@@ -126,10 +144,13 @@ async function viewLabels() {
         <details><summary class="small" style="cursor:pointer;margin-bottom:8px">Voir le détail</summary>
           <div class="sel-list">${groupedHtml(pending)}</div></details>
         <div class="btn-row" style="margin-top:10px"><button class="btn btn-small" type="button" id="customize">Personnaliser</button>${hint('Nouveaux exemplaires et codes régénérés, pas encore imprimés. Personnaliser : copie cette liste dans « Sélection » pour la modifier.')}
+          <button class="btn btn-small btn-danger" type="button" id="clear-pending">Vider la liste</button>${hint('Retire tous les livres de cette liste d\'attente sans imprimer (étiquettes déjà posées…).')}
           <button class="btn btn-small" type="button" id="reset-all">Tout remettre à imprimer</button></div>`
         : `<p class="muted small">Aucune étiquette en attente. Utilise « Sélection » pour réimprimer des étiquettes.</p>
           <div class="btn-row"><button class="btn btn-small" type="button" id="reset-all">Tout remettre à imprimer</button>${hint('Remet les étiquettes de tous les exemplaires papier dans « En attente », sans changer leurs codes.')}</div>`;
       $('#reset-all').onclick = resetAll;
+      const cp = $('#clear-pending');
+      if (cp) cp.onclick = clearPending;
       const cz = $('#customize');
       if (cz) cz.onclick = () => { sel.manual = []; addManual(pending); sel.mode = 'manual'; renderMode(); refresh(); };
       return;
@@ -152,7 +173,7 @@ async function viewLabels() {
     q.addEventListener('input', debounce(async () => {
       const out = $('#lbl-results');
       if (!q.value.trim()) { out.innerHTML = ''; return; }
-      const results = await api(`/api/labels/search?q=${encodeURIComponent(q.value)}`).catch(() => []);
+      const results = await api(`/api/labels/search?kind=${kind}&q=${encodeURIComponent(q.value)}`).catch(() => []);
       out.innerHTML = results.length ? `<div class="search-results">${results.map((b, i) => `
         <div class="sel-row"><span class="grow"><strong>${esc(b.title)}</strong> <span class="muted">${esc(b.authors)}</span></span>
           <button type="button" class="add" data-add-book="${i}">+ ${b.copies.length > 1 ? `${b.copies.length} ex.` : esc(b.copies[0].code)}</button></div>
@@ -204,6 +225,7 @@ async function viewLabels() {
   // Champs du formulaire d'apres le type choisi (format et options propres a chacun).
   function showKind() {
     layout = layouts[kind];
+    pending = pendings[kind];
     $$('#kind-seg button').forEach((b) => b.classList.toggle('active', b.dataset.kind === kind));
     $('#kind-help').textContent = kind === 'spine'
       ? 'Code du livre seul, écrit verticalement, à coller sur la tranche. Choisis des étiquettes étroites (format personnalisé au besoin).'
@@ -250,9 +272,14 @@ async function viewLabels() {
         if (kind === 'spine') {
           // Taille du code : la plus grande qui tient dans la longueur et la largeur de
           // l'etiquette (police a chasse fixe : ~0,6 em par caractere).
+          // Une lettre par ligne : ~1 em de haut et 0,6 em de large par caractere.
           const len = Math.max(1, String(item.code).length);
-          const size = Math.max(1.5, Math.min((layout.width - 1.5) * 0.85, (layout.height - 2) / (len * 0.62)));
-          html += `<div class="lbl spine" style="${pos}"><span class="spine-code ${layout.direction === 'down' ? '' : 'up'}" style="font-size:${size.toFixed(2)}mm">${esc(item.code)}</span></div>`;
+          const stack = layout.direction === 'stack';
+          const size = stack
+            ? Math.max(1.5, Math.min((layout.width - 1.5) / 0.7, (layout.height - 3) / (len * 1.1)))
+            : Math.max(1.5, Math.min((layout.width - 1.5) * 0.85, (layout.height - 2) / (len * 0.62)));
+          const dir = { up: 'up', down: '', stack: 'stack' }[layout.direction] ?? 'up';
+          html += `<div class="lbl spine" style="${pos}"><span class="spine-code ${dir}" style="font-size:${size.toFixed(2)}mm">${esc(item.code)}</span></div>`;
           return;
         }
         html += `<div class="lbl ${small ? 'small' : ''}" style="${pos};--k:${k.toFixed(3)}">
@@ -294,7 +321,7 @@ async function viewLabels() {
   $$('[data-dim]').forEach((input) => input.addEventListener('input', () => { layout.preset = 'custom'; $('#preset').value = 'custom'; renderSheets(); saveLayout(); }));
   ['#opt-logo', '#opt-name', '#opt-title', '#opt-author', '#opt-guides', '#opt-direction'].forEach((s) => { $(s).onchange = () => { renderSheets(); saveLayout(); }; });
   $$('#kind-seg button').forEach((btn) => {
-    btn.onclick = () => { kind = btn.dataset.kind; showKind(); renderSheets(); saveLayout(); };
+    btn.onclick = () => { kind = btn.dataset.kind; showKind(); renderMode(); refresh(); saveLayout(); };
   });
   $('#start').oninput = renderSheets;
   $('#print').onclick = async () => {
@@ -308,13 +335,8 @@ async function viewLabels() {
     window.print();
     root.innerHTML = '';
     const printed = data.items.map((i) => i.code);
-    // Etiquettes de tranche : souvent imprimees en plus des completes, on demande
-    // donc explicitement s'il faut vider la liste d'attente.
-    const question = kind === 'spine'
-      ? `Les ${printed.length} étiquette(s) de tranche se sont-elles bien imprimées ?\nRetirer ces livres de la liste d'attente ? (Annuler si les étiquettes complètes restent à imprimer.)`
-      : `Les ${printed.length} étiquette(s) se sont-elles bien imprimées ?\nElles seront retirées de la liste d'attente.`;
-    if (confirm(question)) {
-      await api('/api/labels/mark-printed', { method: 'POST', body: { codes: printed } });
+    if (confirm(`Les ${printed.length} étiquette(s) ${kindName()} se sont-elles bien imprimées ?\nElles seront retirées de la liste d'attente des étiquettes ${kindName()}.`)) {
+      await api('/api/labels/mark-printed', { method: 'POST', body: { codes: printed, kind } });
       if (sel.mode === 'manual') sel.manual = [];
       sel.mode = 'pending';
       toast('Étiquettes marquées comme imprimées.');
