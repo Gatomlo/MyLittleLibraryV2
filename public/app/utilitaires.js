@@ -77,6 +77,8 @@ function fmtDate(s, withTime) {
 }
 
 async function request(base, path, { method = 'GET', body } = {}) {
+  // POST / PUT / PATCH toujours en JSON (corps vide = {}) : le serveur refuse le reste (415).
+  if (body === undefined && ['POST', 'PUT', 'PATCH'].includes(method)) body = {};
   const res = await fetch(base + path, {
     method,
     credentials: 'same-origin',

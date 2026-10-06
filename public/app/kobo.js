@@ -3,7 +3,7 @@ import './fiche-livre.js';
 import { state, LIBRARY, LIB, isMember, canManage, features } from './etat.js';
 import { $, $$, view, esc, hint, fmtDate, api, toast, go, debounce } from './utilitaires.js';
 import { iconText, renderNav } from './icones.js';
-import { route } from './routage.js';
+import { route, onLeave } from './routage.js';
 import { searchPicker, loadMembers, pickBookDialog } from './catalogue.js';
 import { uploadEpub } from './fiche-livre.js';
 import { historyAdd, historyUpdate } from './import-suivi.js';
@@ -19,6 +19,8 @@ const TOUCH_ONLY = window.matchMedia('(hover: none) and (pointer: coarse)').matc
 let kobo = null; // liseuse branchee : { serial, version, file(chemin), write(chemin, blob) | null }
 // Filtres de la page d'une liseuse (memes criteres que le catalogue, plus la lecture).
 const koboState = { filter: 'all', q: '', category: '', series: '', tag: '', reading: '', sort: 'series', focus: false };
+// Selection de plusieurs livres de la page d'une liseuse (gardee quand la page est redessinee).
+const koboSel = { deviceId: null, on: false, ids: new Set() };
 // Liseuse branchee (et connue de la bibliotheque) : onglet, filtre du catalogue et
 // boutons d'envoi n'apparaissent qu'a cette condition.
 const koboOn = () => isMember() && features().kobo && !!kobo && !!kobo.device;
@@ -577,6 +579,86 @@ async function renderKoboBackups(d, connected) {
   }, 'telle qu\'elle était avant la dernière écriture de l\'appli'));
 }
 
+// Barre de selection de la page d'une liseuse : suppression de plusieurs livres de la
+// liseuse (comme un par un : base de la liseuse mise a jour a « Terminer »), mise a
+// jour de plusieurs livres d'apres leur fiche.
+function bindKoboSelection(d, items, connected) {
+  const selectable = items.filter((i) => i.path);
+  const picked = () => d.items.filter((i) => koboSel.ids.has(i.id) && i.path);
+  document.body.insertAdjacentHTML('beforeend', `<div class="select-bar" id="kobo-select-bar">
+    <strong id="ksel-count"></strong>
+    <button class="btn btn-small" type="button" id="ksel-none">Aucun</button>
+    ${kobo.write ? '<button class="btn btn-small" type="button" id="ksel-update" title="Renvoyer ces livres avec les informations et la couverture de leur fiche">Mettre à jour</button>' : ''}
+    <button class="btn btn-small btn-danger" type="button" id="ksel-remove">${iconText('trash', 'Supprimer de la liseuse')}</button>
+    <button class="btn btn-small" type="button" id="ksel-done" style="margin-left:auto">Fermer</button>
+  </div>`);
+  document.body.classList.add('selecting');
+  onLeave(() => { $('#kobo-select-bar')?.remove(); document.body.classList.remove('selecting'); });
+  const refresh = () => {
+    const list = picked();
+    const n = list.length;
+    $('#ksel-count').textContent = `${n} livre${n > 1 ? 's' : ''} sélectionné${n > 1 ? 's' : ''}`;
+    $('#ksel-remove').disabled = !n;
+    if ($('#ksel-update')) $('#ksel-update').disabled = !list.some((i) => i.book && !i.pending);
+    const all = $('#ksel-all');
+    if (all) {
+      const inView = selectable.filter((i) => koboSel.ids.has(i.id)).length;
+      all.checked = !!inView && inView === selectable.length;
+      all.indeterminate = !!inView && inView < selectable.length;
+    }
+  };
+  const mark = (id, on) => {
+    if (on) koboSel.ids.add(id); else koboSel.ids.delete(id);
+    const box = $(`[data-sel="${id}"]`);
+    if (box) { box.checked = on; box.closest('tr').classList.toggle('row-selected', on); }
+  };
+  $$('[data-sel]').forEach((box) => { box.onchange = () => { mark(Number(box.dataset.sel), box.checked); refresh(); }; });
+  if ($('#ksel-all')) $('#ksel-all').onchange = (e) => { selectable.forEach((i) => mark(i.id, e.target.checked)); refresh(); };
+  $('#ksel-none').onclick = () => { [...koboSel.ids].forEach((id) => mark(id, false)); refresh(); };
+  $('#ksel-done').onclick = () => { koboSel.on = false; koboSel.ids.clear(); route(); };
+  $('#ksel-remove').onclick = busy(async (btn) => {
+    const list = picked();
+    if (!list.length) return;
+    if (!confirm(`Supprimer ${list.length} livre(s) de la liseuse ? Les fichiers seront effacés de la Kobo (les fiches et les fichiers de la bibliothèque sont conservés).`)) return;
+    if (!connected()) throw new Error('Liseuse débranchée.');
+    await ensureKobo();
+    let ok = 0;
+    let failed = 0;
+    for (const [n, i] of list.entries()) {
+      btn.textContent = `Suppression ${n + 1} / ${list.length}…`;
+      try {
+        try { await kobo.remove(i.path); } catch (e) { if (e.name !== 'NotFoundError') throw e; }
+        if (await forgetOnKobo(i)) koboChanged = true;
+        koboSel.ids.delete(i.id);
+        ok++;
+      } catch (e) { failed++; }
+    }
+    toast(`${ok} livre(s) supprimé(s)${failed ? `, ${failed} échec(s)` : ''}. ${writeDb()
+      ? 'Quand tu as fini, clique sur « Terminer » : la liseuse sera mise à jour à ce moment-là.'
+      : 'Éjecte la liseuse pour qu’elle mette sa bibliothèque à jour.'}`, failed ? 'error' : undefined);
+    route();
+  });
+  if ($('#ksel-update')) $('#ksel-update').onclick = busy(async (btn) => {
+    const list = picked().filter((i) => i.book && !i.pending);
+    const books = [...new Set(list.map((i) => i.book.id))];
+    if (!books.length) return;
+    if (list.some(started) && !confirm('Certains de ces livres sont commencés ou lus sur la liseuse : la mise à jour y effacera leur progression, leurs marque-pages et leur état « Lu » (les statuts de lecture de la bibliothèque sont gardés). Continuer ?')) return;
+    if (!connected()) throw new Error('Liseuse débranchée.');
+    await ensureKobo();
+    let ok = 0;
+    let failed = 0;
+    for (const [n, bookId] of books.entries()) {
+      btn.textContent = `Envoi ${n + 1} / ${books.length}…`;
+      try { if (await pushToKobo(bookId, { quiet: true, items: d.items.filter((x) => x.book && x.book.id === bookId) })) ok++; } catch (e) { failed++; }
+    }
+    if (ok && writeDb()) koboChanged = true;
+    koboSel.ids.clear();
+    toast(`${ok} livre(s) mis à jour${failed ? `, ${failed} échec(s)` : ''}. Quand tu as fini, clique sur « Terminer », puis éjecte la liseuse dans Windows.`, failed ? 'error' : undefined);
+    route();
+  });
+  refresh();
+}
+
 // Liseuse dont les parametres sont proposes dans le menu du compte : celle de la page
 // ouverte (si modifiable), sinon celle branchee (si modifiable).
 let pageDevice = null;
@@ -609,6 +691,9 @@ async function viewKoboDevice(id) {
   const mine = canManage() || (!!d.owner && !!state.user && d.owner.id === state.user.id);
   const canRemove = mine && connected() && !!kobo.remove;
   pageDevice = mine ? { id: d.id, name: d.name } : null;
+  if (koboSel.deviceId !== d.id) Object.assign(koboSel, { deviceId: d.id, on: false, ids: new Set() });
+  // Selection : livres a supprimer ou mettre a jour d'un coup (liseuse branchee, Chrome).
+  const selecting = koboSel.on && canRemove;
   const f = koboState.filter;
   const items = d.items.filter((i) => f === 'all' || (f === 'nobook' && !i.book) || (f === 'nofile' && i.book && !i.book.hasFile));
   const toCopy = d.items.filter((i) => i.book && !i.book.hasFile && i.path && !i.pending);
@@ -634,6 +719,7 @@ async function viewKoboDevice(id) {
         ${toCreate.length > 1 && canManage() ? `<button class="btn" id="kobo-create-all"><span class="hide-mobile">Créer les ${toCreate.length} fiches</span><span class="show-mobile">Créer (${toCreate.length})</span></button>` : ''}
         ${toCopy.length && canManage() ? `<button class="btn" id="kobo-copy-all"><span class="hide-mobile">Copier les ${toCopy.length} fichier(s) manquant(s)</span><span class="show-mobile">Copier (${toCopy.length})</span></button>` : ''}
         ${toUpdate.length ? `<button class="btn" id="kobo-update-all"><span class="hide-mobile">Mettre à jour ${toUpdate.length} livre(s)</span><span class="show-mobile">Màj (${toUpdate.length})</span></button>` : ''}
+        ${canRemove ? `<button class="btn ${selecting ? 'btn-primary' : ''}" id="kobo-select">Sélectionner</button>` : ''}
         ${connected() ? '<button class="btn" id="kobo-eject" title="Enregistrer les changements dans la liseuse et la libérer, avant de l\'éjecter dans Windows">Terminer</button>' : ''}
       </div></div>
     ${koboWarning()}
@@ -650,13 +736,14 @@ async function viewKoboDevice(id) {
     <div class="seg seg-3" style="max-width:560px">
       ${seg('all', 'Tous', d.items.length)}${seg('nobook', 'Sans fiche', d.items.filter((i) => !i.book).length)}${seg('nofile', 'Sans fichier', d.items.filter((i) => i.book && !i.book.hasFile).length)}
     </div>
-    ${items.length ? `<div class="card table-wrap"><table class="stack"><thead><tr><th>Livre sur la liseuse</th><th>Lecture</th><th>Fiche</th><th>Fichier dans la biblio</th></tr></thead><tbody>
-      ${items.map((i) => `<tr>
+    ${items.length ? `<div class="card table-wrap"><table class="stack"><thead><tr>${selecting ? '<th style="width:32px"><input type="checkbox" id="ksel-all" title="Tout sélectionner" aria-label="Tout sélectionner"></th>' : ''}<th>Livre sur la liseuse</th><th>Lecture</th><th>Fiche</th><th>Fichier dans la biblio</th></tr></thead><tbody>
+      ${items.map((i) => `<tr${selecting && koboSel.ids.has(i.id) ? ' class="row-selected"' : ''}>
+        ${selecting ? `<td><input type="checkbox" data-sel="${i.id}" aria-label="Sélectionner ${esc(i.title)}" ${koboSel.ids.has(i.id) ? 'checked' : ''} ${i.path ? '' : 'disabled title="Fichier inaccessible (carte SD ou pas encore importé)"'}></td>` : ''}
         <td><strong>${esc(i.title)}</strong><div class="small muted">${esc(i.authors || '')}${i.series ? ` · ${esc(i.series)}${i.seriesNumber ? ` #${esc(i.seriesNumber)}` : ''}` : ''}</div>
           ${!i.outdated || i.pending ? '' : started(i)
     ? '<span class="badge badge-muted" title="La fiche a changé, mais le livre est commencé : la mise à jour effacerait sa progression sur la liseuse. Pour la forcer : Envoyer sur la liseuse depuis la fiche.">Fiche modifiée</span>'
     : '<span class="badge badge-warn" title="La fiche a changé depuis l\'envoi : métadonnées et couverture à renvoyer">À mettre à jour</span>'}
-          ${canRemove && i.path ? `<button class="btn btn-small btn-danger" data-remove="${i.id}" title="Supprimer le fichier de la liseuse" aria-label="Supprimer de la liseuse">${iconText('trash', 'Supprimer de la liseuse')}</button>` : ''}</td>
+          ${canRemove && !selecting && i.path ? `<button class="btn btn-small btn-danger" data-remove="${i.id}" title="Supprimer le fichier de la liseuse" aria-label="Supprimer de la liseuse">${iconText('trash', 'Supprimer de la liseuse')}</button>` : ''}</td>
         <td>${reading(i)}</td>
         <td>${i.book
           ? `<a href="#/book/${i.book.id}">${esc(i.book.title)}</a>${mine ? ` <button class="btn btn-small" data-unlink="${i.id}" title="Détacher de cette fiche">✕</button>` : ''}`
@@ -682,6 +769,8 @@ async function viewKoboDevice(id) {
       route();
     });
   });
+  if ($('#kobo-select')) $('#kobo-select').onclick = () => { koboSel.on = !koboSel.on; koboSel.ids.clear(); route(); };
+  if (selecting) bindKoboSelection(d, items, connected);
   // Fichier de la liseuse envoye dans l'exemplaire numerique de la fiche.
   const copyFile = async (i, out) => {
     if (!out.book || out.book.hasFile || !i.path) return;

@@ -1117,3 +1117,6 @@ body.selecting .fab-stack { display: none; }
 .lbl.spine { display: flex; align-items: center; justify-content: center; padding: 0; overflow: hidden; }
 .lbl.spine .spine-code { writing-mode: vertical-rl; font-family: "Courier New", monospace; font-weight: 700; line-height: 1; white-space: nowrap; letter-spacing: .02em; }
 .lbl.spine .spine-code.up { transform: rotate(180deg); }
+
+/* Page d'une liseuse : lignes selectionnees. */
+tr.row-selected td { background: var(--accent-soft); }
