@@ -164,13 +164,29 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   assert.equal((await ctx.users.lecteur.get(`${api}/public/books/${imp.bookId}/epub?download=1`, { buffer: true })).status, 200);
 
   // Envoi vers une liseuse : metadonnees de la fiche reecrites dans l'epub.
-  ok(await a.put(`${api}/books/${imp.bookId}`, { title: 'Titre corrigé', authors: 'Ada Lovelace', series: 'Machines', seriesNumber: '2' }));
+  const fields = { title: 'Titre corrigé', authors: 'Ada Lovelace', series: 'Machines', isbn: '9782070368228' };
+  ok(await a.put(`${api}/books/${imp.bookId}`, { ...fields, seriesNumber: '2',
+    coverData: `data:image/png;base64,${png(4000).toString('base64')}` }));
   const kobo = await ctx.users.lecteur.get(`${api}/kobo/books/${imp.bookId}/epub`, { buffer: true });
   assert.equal(kobo.status, 200);
-  assert.match(decodeURIComponent(kobo.headers.get('x-kobo-path')), /^Bibliotheque\/Machines\/02 - Titre corrigé \[mll-\d+\]\.epub$/);
-  const opf = await (await JSZip.loadAsync(kobo.body)).file('OEBPS/content.opf').async('string');
+  const koboPath = decodeURIComponent(kobo.headers.get('x-kobo-path'));
+  assert.match(koboPath, /^Bibliotheque\/Machines\/02 - Titre corrigé \[mll-\d+\.[0-9a-f]{6}\]\.epub$/);
+  const koboZip = await JSZip.loadAsync(kobo.body);
+  const opf = await koboZip.file('OEBPS/content.opf').async('string');
   assert.ok(opf.includes('<dc:title>Titre corrigé</dc:title>'));
   assert.ok(opf.includes('name="calibre:series" content="Machines"'));
+  // Couverture de la fiche ajoutee a l'epub (qui n'en avait pas).
+  assert.ok(opf.includes('<meta name="cover" content="mll-cover"/>'));
+  assert.ok(/<item id="mll-cover" href="mll-cover\.png" media-type="image\/png"/.test(opf));
+  assert.equal((await koboZip.file('OEBPS/mll-cover.png').async('nodebuffer')).length, 4000);
+  // Fiche modifiee apres l'envoi : autre nom de fichier (la liseuse ne relit pas un livre connu).
+  ok(await a.put(`${api}/books/${imp.bookId}`, { ...fields, seriesNumber: '3' }));
+  const kobo2 = await ctx.users.lecteur.get(`${api}/kobo/books/${imp.bookId}/epub`, { buffer: true });
+  const koboPath2 = decodeURIComponent(kobo2.headers.get('x-kobo-path'));
+  assert.match(koboPath2, /^Bibliotheque\/Machines\/03 - Titre corrigé \[mll-\d+\.[0-9a-f]{6}\]\.epub$/);
+  ok(await a.put(`${api}/books/${imp.bookId}`, { ...fields, seriesNumber: '2' }));
+  const kobo3 = await ctx.users.lecteur.get(`${api}/kobo/books/${imp.bookId}/epub`, { buffer: true });
+  assert.equal(decodeURIComponent(kobo3.headers.get('x-kobo-path')), koboPath);
 
   // Un fichier qui n'est pas un epub est refuse.
   const bad = await a.call('POST', `${api}/import/epub`, undefined, { raw: Buffer.from('pas un zip'), headers: raw.headers });

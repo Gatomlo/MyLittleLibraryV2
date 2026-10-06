@@ -226,18 +226,24 @@ const busy = (fn) => async (e) => {
   try { await fn(btn); } catch (err) { if (err.name !== 'AbortError') toast(err.message, 'error'); } finally { btn.disabled = false; }
 };
 
-// Livres de la liseuse branchee (dernier scan et envois en attente).
-async function koboBookIds() {
-  if (!kobo || !kobo.device) return new Set();
+// Livres de la liseuse branchee (dernier scan et envois en attente), par fiche.
+async function koboItemsByBook() {
+  const out = new Map();
+  if (!kobo || !kobo.device) return out;
   const d = await api(`/api/kobo/devices/${kobo.device.id}`);
-  return new Set(d.items.filter((i) => i.book).map((i) => i.book.id));
+  d.items.filter((i) => i.book).forEach((i) => out.set(i.book.id, [...(out.get(i.book.id) || []), i]));
+  return out;
 }
 
 // Envoi d'un livre sur la liseuse : copie directe (Chrome) ou telechargement.
-// Avec Chrome, la liseuse est scannee au premier envoi de la session.
-async function pushToKobo(bookId, { quiet = false } = {}) {
+// Avec Chrome, la liseuse est scannee au premier envoi de la session. La liseuse ne
+// relit pas un livre deja importe : une version differente (fiche modifiee) est copiee
+// sous un autre nom et l'ancien fichier est supprime.
+async function pushToKobo(bookId, { quiet = false, items = null } = {}) {
   if (KOBO_FS && !kobo) await (koboSavedInfo ? reconnectKobo() : scanKobo());
-  if (!quiet && (await koboBookIds()).has(bookId) && !confirm('Ce livre est déjà sur la liseuse. L\'envoyer quand même ?')) return false;
+  const onDevice = items || (await koboItemsByBook()).get(bookId) || [];
+  if (!quiet && onDevice.length && !onDevice.some((i) => i.outdated)
+    && !confirm('Ce livre est déjà sur la liseuse. L\'envoyer quand même ?')) return false;
   const res = await fetch(`${LIB}/api/kobo/books/${bookId}/epub`, { credentials: 'same-origin' });
   if (!res.ok) {
     let data = null;
@@ -249,8 +255,17 @@ async function pushToKobo(bookId, { quiet = false } = {}) {
   if (kobo && kobo.write) {
     await kobo.write(p, blob);
     if (kobo.device) await api(`/api/kobo/devices/${kobo.device.id}/pushed`, { method: 'POST', body: { bookId, path: p } });
-    if (!quiet) toast(`Copié sur la liseuse (${p}). Éjecte-la pour qu'elle l'importe.`);
-    return true;
+    // Ancienne version retiree : la liseuse importe la nouvelle (metadonnees, couverture).
+    let replaced = 0;
+    for (const i of onDevice.filter((x) => x.path && x.path !== p)) {
+      if (kobo.remove) {
+        try { await kobo.remove(i.path); } catch (e) { if (e.name !== 'NotFoundError') throw e; }
+        await api(`/api/kobo/items/${i.id}`, { method: 'DELETE' });
+        replaced++;
+      }
+    }
+    if (!quiet) toast(`${replaced ? 'Mis à jour' : 'Copié'} sur la liseuse (${p}). Éjecte-la pour qu'elle l'importe.`);
+    return replaced ? 'updated' : true;
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -259,20 +274,25 @@ async function pushToKobo(bookId, { quiet = false } = {}) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  if (!quiet) toast('Fichier téléchargé : copie-le sur la liseuse (dossier Bibliotheque).');
+  if (!quiet) toast(`Fichier téléchargé : copie-le sur la liseuse (dossier Bibliotheque)${onDevice.length ? ' et supprime l\'ancien' : ''}.`);
   return true;
 }
 
-// Envoi de plusieurs livres (selection du catalogue) : ceux deja sur la liseuse sont
-// ignores, comme ceux sans fichier ou sans droit de telechargement.
+// Envoi de plusieurs livres (selection du catalogue) : ceux deja a jour sur la
+// liseuse sont ignores, comme ceux sans fichier ou sans droit de telechargement ;
+// ceux dont la fiche a change sont remplaces.
 async function pushManyToKobo(ids, progress) {
   if (KOBO_FS && !kobo) await (koboSavedInfo ? reconnectKobo() : scanKobo());
-  const already = await koboBookIds();
-  const out = { sent: 0, already: 0, skipped: 0 };
+  const onDevice = await koboItemsByBook();
+  const out = { sent: 0, updated: 0, already: 0, skipped: 0 };
   for (const [n, id] of ids.entries()) {
     progress(n + 1);
-    if (already.has(id)) { out.already++; continue; }
-    try { if (await pushToKobo(id, { quiet: true })) out.sent++; } catch (e) { out.skipped++; }
+    const items = onDevice.get(id) || [];
+    if (items.length && !items.some((i) => i.outdated)) { out.already++; continue; }
+    try {
+      const r = await pushToKobo(id, { quiet: true, items });
+      if (r === 'updated') out.updated++; else if (r) out.sent++;
+    } catch (e) { out.skipped++; }
   }
   return out;
 }
@@ -386,6 +406,8 @@ async function viewKoboDevice(id) {
   const f = koboState.filter;
   const items = d.items.filter((i) => f === 'all' || (f === 'nobook' && !i.book) || (f === 'nofile' && i.book && !i.book.hasFile));
   const toCopy = d.items.filter((i) => i.book && !i.book.hasFile && i.path && !i.pending);
+  // Livres dont la fiche a change (ou copies avant) : renvoyes avec les metadonnees de la fiche.
+  const toUpdate = mine && connected() && kobo.write ? d.items.filter((i) => i.outdated && !i.pending) : [];
   // Livres affiches (filtres compris) sans fiche : fiches creees d'un coup.
   const toCreate = items.filter((i) => !i.book);
   const reading = (i) => {
@@ -405,6 +427,7 @@ async function viewKoboDevice(id) {
         <button class="btn btn-primary" id="kobo-rescan">${connected() ? 'Rescanner' : '<span class="hide-mobile">Brancher et scanner</span><span class="show-mobile">Brancher</span>'}</button>
         ${toCreate.length > 1 && canManage() ? `<button class="btn" id="kobo-create-all"><span class="hide-mobile">Créer les ${toCreate.length} fiches</span><span class="show-mobile">Créer (${toCreate.length})</span></button>` : ''}
         ${toCopy.length && canManage() ? `<button class="btn" id="kobo-copy-all"><span class="hide-mobile">Copier les ${toCopy.length} fichier(s) manquant(s)</span><span class="show-mobile">Copier (${toCopy.length})</span></button>` : ''}
+        ${toUpdate.length ? `<button class="btn" id="kobo-update-all"><span class="hide-mobile">Mettre à jour ${toUpdate.length} livre(s)</span><span class="show-mobile">Màj (${toUpdate.length})</span></button>` : ''}
         ${mine ? '<button class="btn" id="kobo-edit">Modifier</button>' : ''}
       </div></div>
     ${koboWarning()}
@@ -424,6 +447,7 @@ async function viewKoboDevice(id) {
     ${items.length ? `<div class="card table-wrap"><table class="stack"><thead><tr><th>Livre sur la liseuse</th><th>Lecture</th><th>Fiche</th><th>Fichier dans la biblio</th></tr></thead><tbody>
       ${items.map((i) => `<tr>
         <td><strong>${esc(i.title)}</strong><div class="small muted">${esc(i.authors || '')}${i.series ? ` · ${esc(i.series)}${i.seriesNumber ? ` #${esc(i.seriesNumber)}` : ''}` : ''}</div>
+          ${i.outdated && !i.pending ? '<span class="badge badge-warn" title="La fiche a changé depuis l\'envoi : métadonnées et couverture à renvoyer">À mettre à jour</span>' : ''}
           ${canRemove && i.path ? `<button class="btn btn-small btn-danger" data-remove="${i.id}" title="Supprimer le fichier de la liseuse" aria-label="Supprimer de la liseuse">${iconText('trash', 'Supprimer de la liseuse')}</button>` : ''}</td>
         <td>${reading(i)}</td>
         <td>${i.book
@@ -516,6 +540,18 @@ async function viewKoboDevice(id) {
       }
     }
     toast(`${ok} fiche(s) créée(s)${failed ? `, ${failed} échec(s)` : ''}. À vérifier dans Ajout multiple › Suivi des imports.`, failed ? 'error' : undefined);
+    route();
+  });
+  const updateAll = $('#kobo-update-all');
+  if (updateAll) updateAll.onclick = busy(async (btn) => {
+    if (!connected()) throw new Error('Liseuse débranchée.');
+    let ok = 0;
+    let failed = 0;
+    for (const [n, i] of toUpdate.entries()) {
+      btn.textContent = `Envoi ${n + 1} / ${toUpdate.length}…`;
+      try { if (await pushToKobo(i.book.id, { quiet: true, items: d.items.filter((x) => x.book && x.book.id === i.book.id) })) ok++; } catch (e) { failed++; }
+    }
+    toast(`${ok} livre(s) mis à jour${failed ? `, ${failed} échec(s)` : ''}. Éjecte la liseuse pour qu'elle les importe.`, failed ? 'error' : undefined);
     route();
   });
   const copyAll = $('#kobo-copy-all');

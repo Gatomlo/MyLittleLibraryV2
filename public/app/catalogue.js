@@ -418,8 +418,8 @@ function bindSelection(reload) {
     const ids = Array.from(state.selected);
     try {
       const r = await pushManyToKobo(ids, (n) => { btn.textContent = `Envoi ${n} / ${ids.length}…`; });
-      toast(`${r.sent} livre(s) envoyé(s)${r.already ? `, ${r.already} déjà sur la liseuse` : ''}${r.skipped ? `, ${r.skipped} sans fichier ou sans droit` : ''}.`
-        + (r.sent ? (kobo && kobo.write ? ' Éjecte la liseuse pour qu\'elle les importe.' : ' Copie les fichiers téléchargés sur la liseuse.') : ''));
+      toast(`${r.sent} livre(s) envoyé(s)${r.updated ? `, ${r.updated} mis à jour` : ''}${r.already ? `, ${r.already} déjà sur la liseuse` : ''}${r.skipped ? `, ${r.skipped} sans fichier ou sans droit` : ''}.`
+        + (r.sent || r.updated ? (kobo && kobo.write ? ' Éjecte la liseuse pour qu\'elle les importe.' : ' Copie les fichiers téléchargés sur la liseuse.') : ''));
       reload();
     } finally { btn.innerHTML = '<span class="hide-mobile">Envoyer sur la liseuse</span><span class="show-mobile">Liseuse</span>'; }
   });
