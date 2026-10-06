@@ -661,7 +661,7 @@ function listTable(items, withStatus) {
   const conf = new Set(catalogConf().list);
   const terms = (list, prefix = '') => (list && list.length ? list.map((t) => esc(prefix + (t.name || t.username))).join(' · ') : '');
   const cols = [
-    state.selecting && ['select', '', '28px', null, false, () => '<span class="select-check" aria-hidden="true"></span>'],
+    state.selecting && ['select', '', '24px', null, false, () => '<span class="select-check" aria-hidden="true"></span>'],
     conf.has('cover') && ['cover', '', '34px', null, false, (b) => coverHtml(b, '')],
     ['title', 'Titre', 'minmax(150px, 2.4fr)', 'title', false, (b) => `<span class="t">${esc(b.title)}</span>${conf.has('series') && b.series
       ? `<span class="sub">${esc(b.series)}${b.seriesNumber ? ` · tome ${esc(b.seriesNumber)}` : ''}</span>` : ''}${conf.has('authors') && b.authors
@@ -673,10 +673,10 @@ function listTable(items, withStatus) {
     conf.has('categories') && ['categories', 'Catégories', 'minmax(100px, 1.2fr)', null, true, (b) => `<span class="sub">${terms(b.categories)}</span>`],
     conf.has('tags') && features().tags && ['tags', 'Tags', 'minmax(90px, 1fr)', null, true, (b) => `<span class="sub">${terms(b.tags, '#')}</span>`],
     conf.has('readers') && canManage() && ['readers', 'Lecteurs', 'minmax(90px, 1fr)', null, true, (b) => `<span class="sub">${terms(b.readers)}</span>`],
-    conf.has('status') && withStatus && ['status', 'Lecture', '124px', null, false, (b) => statusIcons(b.status)],
+    conf.has('status') && withStatus && ['status', 'Lecture', 'minmax(90px, 124px)', null, false, (b) => statusIcons(b.status)],
     conf.has('rating') && withStatus && ['rating', 'Note', '86px', 'rating', true, (b) => (b.status && b.status.rating ? starsHtml(b.status.rating) : '')],
-    conf.has('availability') && ['availability', 'Dispo.', '118px', null, false, (b) => availabilityBadge(b, true)],
-    conf.has('added') && canManage() && ['added', 'Ajouté le', '92px', 'recent', true, (b) => (b.createdAt ? `<span class="sub">${esc(fmtDate(b.createdAt))}</span>` : '')],
+    conf.has('availability') && ['availability', 'Dispo.', 'minmax(96px, 118px)', null, false, (b) => availabilityBadge(b, true)],
+    conf.has('added') && canManage() && ['added', 'Ajouté le', 'minmax(80px, 92px)', 'recent', true, (b) => (b.createdAt ? `<span class="sub">${esc(fmtDate(b.createdAt))}</span>` : '')],
   ].filter(Boolean);
   const cell = ([key, , , , wide], content) => `<span class="cell cell-${key}${wide ? ' col-wide' : ''}">${content}</span>`;
   const head = `<div class="list-head" role="row">${cols.map((col) => cell(col, col[3]
@@ -691,6 +691,21 @@ function listTable(items, withStatus) {
     colsNarrow: cols.filter((col) => !col[4]).map((col) => col[2]).join(' '),
   };
 }
+
+// Colonnes trop nombreuses pour la largeur (beaucoup de colonnes choisies, case de
+// selection) : le tableau defile horizontalement au lieu de rogner les dernieres.
+function fitListTable() {
+  const list = $('.books.books-table');
+  if (!list) return;
+  list.classList.remove('scroll-x');
+  list.style.removeProperty('--min-w');
+  const rows = [$('.list-head', list), $('.book-row', list)].filter(Boolean);
+  const need = Math.max(0, ...rows.map((r) => r.scrollWidth));
+  if (!rows.length || need <= list.clientWidth + 1) return;
+  list.style.setProperty('--min-w', `${need}px`);
+  list.classList.add('scroll-x');
+}
+window.addEventListener('resize', debounce(fitListTable, 150));
 
 // Tri par l'en-tete : meme colonne = ordre inverse, sinon tri de la colonne dans son
 // sens naturel. Le menu Tri (s'il est affiche) suit.
@@ -747,6 +762,7 @@ async function loadBooks(append) {
   if (append) list.insertAdjacentHTML('beforeend', html);
   else if (table && html) { list.innerHTML = table.head + html; bindListHead(list); }
   else list.innerHTML = html || `<div class="empty" style="grid-column:1/-1">${filtered ? 'Aucun livre ne correspond.' : 'Le catalogue est vide pour le moment.'}</div>`;
+  fitListTable();
   if ($('#count')) $('#count').textContent = `${data.total} livre${data.total > 1 ? 's' : ''}`;
   const shown = (data.page - 1) * data.limit + data.items.length;
   $('#more').innerHTML = shown < data.total ? '<button class="btn" id="more-btn">Afficher plus</button>' : '';
