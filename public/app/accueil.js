@@ -95,7 +95,8 @@ function homeGo(target) {
 const shelfHtml = (books, empty, opts = {}) => (books.length ? `<ul class="home-shelf" role="list">${books.map((b) => `<li><a class="home-book" href="#/book/${b.id}">
     ${coverHtml(b, b.mine ? 'Pour toi' : '')}<span class="t">${esc(b.title)}</span><span class="a">${esc(opts.sub ? opts.sub(b) : b.authors)}</span>
     ${opts.avail ? availabilityBadge(b) : ''}
-    ${b.percent != null && b.percent !== undefined ? `<span class="bar" role="img" aria-label="${b.percent} % lus"><span style="width:${b.percent}%"></span></span>` : ''}</a></li>`).join('')}</ul>`
+    ${b.percent != null ? `<span class="home-progress"><span class="bar" aria-hidden="true"><span style="width:${b.percent}%"></span></span>
+      <strong>${b.percent} %</strong></span>${b.lastReadAt ? `<span class="small muted">Lu le ${fmtDate(b.lastReadAt)}</span>` : ''}` : ''}</a></li>`).join('')}</ul>`
   : `<p class="muted">${empty}</p>`);
 
 function homeCardBody(key, d) {
