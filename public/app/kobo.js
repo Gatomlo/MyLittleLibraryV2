@@ -226,6 +226,10 @@ const busy = (fn) => async (e) => {
   try { await fn(btn); } catch (err) { if (err.name !== 'AbortError') toast(err.message, 'error'); } finally { btn.disabled = false; }
 };
 
+// Livre commence ou lu sur la liseuse : une mise a jour (nouveau nom de fichier) y
+// effacerait sa progression, ses marque-pages et son etat « Lu ».
+const started = (i) => !i.pending && (i.readStatus > 0 || i.percent > 0);
+
 // Livres de la liseuse branchee (dernier scan et envois en attente), par fiche.
 async function koboItemsByBook() {
   const out = new Map();
@@ -244,6 +248,8 @@ async function pushToKobo(bookId, { quiet = false, items = null } = {}) {
   const onDevice = items || (await koboItemsByBook()).get(bookId) || [];
   if (!quiet && onDevice.length && !onDevice.some((i) => i.outdated)
     && !confirm('Ce livre est déjà sur la liseuse. L\'envoyer quand même ?')) return false;
+  if (!quiet && onDevice.some((i) => i.outdated && started(i))
+    && !confirm('Ce livre est commencé ou lu sur la liseuse : la mise à jour y effacera sa progression, ses marque-pages et son état « Lu » (les statuts de lecture de la bibliothèque sont gardés). Continuer ?')) return false;
   const res = await fetch(`${LIB}/api/kobo/books/${bookId}/epub`, { credentials: 'same-origin' });
   if (!res.ok) {
     let data = null;
@@ -284,11 +290,13 @@ async function pushToKobo(bookId, { quiet = false, items = null } = {}) {
 async function pushManyToKobo(ids, progress) {
   if (KOBO_FS && !kobo) await (koboSavedInfo ? reconnectKobo() : scanKobo());
   const onDevice = await koboItemsByBook();
-  const out = { sent: 0, updated: 0, already: 0, skipped: 0 };
+  const out = { sent: 0, updated: 0, already: 0, started: 0, skipped: 0 };
   for (const [n, id] of ids.entries()) {
     progress(n + 1);
     const items = onDevice.get(id) || [];
     if (items.length && !items.some((i) => i.outdated)) { out.already++; continue; }
+    // Livre commence sur la liseuse : laisse tel quel (sa progression serait perdue).
+    if (items.some(started)) { out.started++; continue; }
     try {
       const r = await pushToKobo(id, { quiet: true, items });
       if (r === 'updated') out.updated++; else if (r) out.sent++;
@@ -407,7 +415,7 @@ async function viewKoboDevice(id) {
   const items = d.items.filter((i) => f === 'all' || (f === 'nobook' && !i.book) || (f === 'nofile' && i.book && !i.book.hasFile));
   const toCopy = d.items.filter((i) => i.book && !i.book.hasFile && i.path && !i.pending);
   // Livres dont la fiche a change (ou copies avant) : renvoyes avec les metadonnees de la fiche.
-  const toUpdate = mine && connected() && kobo.write ? d.items.filter((i) => i.outdated && !i.pending) : [];
+  const toUpdate = mine && connected() && kobo.write ? d.items.filter((i) => i.outdated && !i.pending && !started(i)) : [];
   // Livres affiches (filtres compris) sans fiche : fiches creees d'un coup.
   const toCreate = items.filter((i) => !i.book);
   const reading = (i) => {
@@ -447,7 +455,9 @@ async function viewKoboDevice(id) {
     ${items.length ? `<div class="card table-wrap"><table class="stack"><thead><tr><th>Livre sur la liseuse</th><th>Lecture</th><th>Fiche</th><th>Fichier dans la biblio</th></tr></thead><tbody>
       ${items.map((i) => `<tr>
         <td><strong>${esc(i.title)}</strong><div class="small muted">${esc(i.authors || '')}${i.series ? ` · ${esc(i.series)}${i.seriesNumber ? ` #${esc(i.seriesNumber)}` : ''}` : ''}</div>
-          ${i.outdated && !i.pending ? '<span class="badge badge-warn" title="La fiche a changé depuis l\'envoi : métadonnées et couverture à renvoyer">À mettre à jour</span>' : ''}
+          ${!i.outdated || i.pending ? '' : started(i)
+    ? '<span class="badge badge-muted" title="La fiche a changé, mais le livre est commencé : la mise à jour effacerait sa progression sur la liseuse. Pour la forcer : Envoyer sur la liseuse depuis la fiche.">Fiche modifiée</span>'
+    : '<span class="badge badge-warn" title="La fiche a changé depuis l\'envoi : métadonnées et couverture à renvoyer">À mettre à jour</span>'}
           ${canRemove && i.path ? `<button class="btn btn-small btn-danger" data-remove="${i.id}" title="Supprimer le fichier de la liseuse" aria-label="Supprimer de la liseuse">${iconText('trash', 'Supprimer de la liseuse')}</button>` : ''}</td>
         <td>${reading(i)}</td>
         <td>${i.book
