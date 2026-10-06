@@ -83,7 +83,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **Statistiques** (option par bibliothèque, page « Statistiques ») :
   - par compte : livres lus / en cours / abandonnés, pages, rythme mensuel comparé à
     l'année précédente, objectifs de l'année (livres, pages, pile « À lire » maximale, catégories différentes, séries terminées ; réglés dans Mon compte, suivis aussi dans la carte Objectif de l'accueil), durées et pages par jour, lectures qui
-    traînent, goûts (catégories, tags, auteurs, séries), notes (moyenne, répartition, mieux notés) ;
+    traînent, goûts (catégories, tags, auteurs, séries), notes (moyenne, répartition, mieux notés) ; un clic sur « Livres lus » ou sur un statut de la répartition affiche la liste des livres concernés ;
   - privées par défaut, partageables avec les membres de la bibliothèque ; les
     administrateurs n'y ont pas d'accès particulier ;
   - bibliothèque : lecture en totaux anonymes, prêts (par mois, durée, plus empruntés,

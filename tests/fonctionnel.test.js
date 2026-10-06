@@ -250,6 +250,9 @@ test('accueil, statistiques, souhaits', async () => {
   const st = ok(await ctx.users.lecteur.get(`${api}/stats/user/${ctx.users.lecteur.id}`));
   assert.deepEqual(st.goals.map((g) => g.key), ['books', 'pages', 'maxToRead']);
   assert.equal(st.goals.find((g) => g.key === 'maxToRead').kind, 'max');
+  // Livres derriere les chiffres : une liste par statut, de la taille du compteur.
+  assert.equal(st.lists.read.length, st.counts.read);
+  assert.equal(st.lists.toRead.length, st.counts.toRead);
   // Partage des statistiques : avec certains membres seulement, puis avec tous.
   const { lecteur, lecteur2, bibliothecaire } = ctx.users;
   const statsOf = (u) => u.get(`${api}/stats/user/${lecteur.id}`);
