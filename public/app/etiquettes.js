@@ -17,6 +17,9 @@ const LABEL_PRESETS = {
   A70x42: { name: 'Planche 3×7 · 70×42,3 mm (bord à bord)', cols: 3, rows: 7, width: 70, height: 42.3, top: 0.4, left: 0, hPitch: 70, vPitch: 42.3 },
   A105x37: { name: 'Planche 2×8 · 105×37 mm', cols: 2, rows: 8, width: 105, height: 37, top: 0.5, left: 0, hPitch: 105, vPitch: 37 },
 };
+// Taille du texte des etiquettes, en % de la taille automatique.
+const TEXT_SCALES = [50, 60, 70, 80, 90, 100, 110, 120, 130, 150, 175, 200];
+
 const LAYOUT_FIELDS = [['cols', 'Colonnes'], ['rows', 'Lignes'], ['width', 'Largeur (mm)'], ['height', 'Hauteur (mm)'],
   ['left', 'Marge gauche (mm)'], ['top', 'Marge haut (mm)'], ['hPitch', 'Pas horizontal (mm)'], ['vPitch', 'Pas vertical (mm)']];
 
@@ -84,6 +87,8 @@ async function viewLabels() {
           <div class="field" id="spine-opts"><label>Sens du code ${hint('De bas en haut : sens habituel des tranches de livres en français. De haut en bas : sens anglo-saxon. Une lettre par ligne : lettres droites, empilées.')}</label>
             <select id="opt-direction"><option value="up">De bas en haut</option><option value="down">De haut en bas</option>
               <option value="stack">Une lettre par ligne</option></select></div>
+          <div class="field"><label>Taille du texte ${hint('Agrandit ou réduit le texte de l\'étiquette (100 % = taille automatique, ajustée à l\'étiquette).')}</label>
+            <select id="opt-text">${TEXT_SCALES.map((v) => `<option value="${v}">${v} %</option>`).join('')}</select></div>
           <label class="check"><input type="checkbox" id="opt-guides"> Contours dans l'aperçu</label>
           <div class="btn-row" style="margin-top:14px">
             <button class="btn btn-primary" id="print">Imprimer</button>${hint('Dans la fenêtre d\'impression : format A4, marges « Aucune », échelle 100 % (« Taille réelle »).')}
@@ -217,6 +222,7 @@ async function viewLabels() {
       layout.direction = $('#opt-direction').value;
     }
     layout.guides = $('#opt-guides').checked;
+    layout.textScale = Number($('#opt-text').value) || 100;
     start = Math.max(1, parseInt($('#start').value, 10) || 1);
   }
 
@@ -240,6 +246,7 @@ async function viewLabels() {
     $('#opt-author').checked = !!layout.showAuthor;
     $('#opt-direction').value = layout.direction || 'up';
     $('#opt-guides').checked = !!layout.guides;
+    $('#opt-text').value = TEXT_SCALES.includes(Number(layout.textScale)) ? String(layout.textScale) : '100';
   }
 
   function renderSheets() {
@@ -259,6 +266,7 @@ async function viewLabels() {
     // Echelle du texte et du logo : suit la place laissee a cote du QR code
     // (reference : etiquette 63,5×38 mm), bornee pour rester lisible.
     const k = Math.max(0.6, Math.min(2.5, Math.min(layout.height / 38, (layout.width - qrSize) / 35)));
+    const t = (layout.textScale || 100) / 100; // taille du texte choisie
     const showName = layout.showName && data.libraryName;
     const showLogo = layout.showLogo && data.logoUrl;
     let html = '';
@@ -275,14 +283,14 @@ async function viewLabels() {
           // Une lettre par ligne : ~1 em de haut et 0,6 em de large par caractere.
           const len = Math.max(1, String(item.code).length);
           const stack = layout.direction === 'stack';
-          const size = stack
+          const size = t * (stack
             ? Math.max(1.5, Math.min((layout.width - 1.5) / 0.7, (layout.height - 3) / (len * 1.1)))
-            : Math.max(1.5, Math.min((layout.width - 1.5) * 0.85, (layout.height - 2) / (len * 0.62)));
+            : Math.max(1.5, Math.min((layout.width - 1.5) * 0.85, (layout.height - 2) / (len * 0.62))));
           const dir = { up: 'up', down: '', stack: 'stack' }[layout.direction] ?? 'up';
           html += `<div class="lbl spine" style="${pos}"><span class="spine-code ${dir}" style="font-size:${size.toFixed(2)}mm">${esc(item.code)}</span></div>`;
           return;
         }
-        html += `<div class="lbl ${small ? 'small' : ''}" style="${pos};--k:${k.toFixed(3)}">
+        html += `<div class="lbl ${small ? 'small' : ''}" style="${pos};--k:${k.toFixed(3)};--t:${t}">
           <div class="qr" style="width:${qrSize}mm;height:${qrSize}mm">${item.svg}</div>
           <div class="info">
             ${showName || showLogo ? `<div class="lib">${showLogo ? `<img src="${esc(mediaSrc(data.logoUrl))}" alt="">` : ''}${showName ? `<span>${esc(data.libraryName)}</span>` : ''}</div>` : ''}
@@ -319,7 +327,7 @@ async function viewLabels() {
     saveLayout();
   };
   $$('[data-dim]').forEach((input) => input.addEventListener('input', () => { layout.preset = 'custom'; $('#preset').value = 'custom'; renderSheets(); saveLayout(); }));
-  ['#opt-logo', '#opt-name', '#opt-title', '#opt-author', '#opt-guides', '#opt-direction'].forEach((s) => { $(s).onchange = () => { renderSheets(); saveLayout(); }; });
+  ['#opt-logo', '#opt-name', '#opt-title', '#opt-author', '#opt-guides', '#opt-direction', '#opt-text'].forEach((s) => { $(s).onchange = () => { renderSheets(); saveLayout(); }; });
   $$('#kind-seg button').forEach((btn) => {
     btn.onclick = () => { kind = btn.dataset.kind; showKind(); renderMode(); refresh(); saveLayout(); };
   });

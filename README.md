@@ -192,7 +192,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   cliquant sur l'en-tête (titre, auteur, éditeur, année, note, date d'ajout).
 - **Étiquettes** (menu du compte) : planches A4 (Avery L7160, L7159, L7163, L7651, 70×37…, ou format
   personnalisé), QR code + code + titre + nom et logo de la bibliothèque, case de
-  départ pour réutiliser une planche entamée ; étiquettes de tranche au choix (code seul,
+  départ pour réutiliser une planche entamée, taille du texte réglable (50 à 200 %) ; étiquettes de tranche au choix (code seul,
   écrit verticalement, de bas en haut, de haut en bas ou une lettre par ligne, avec leur
   propre format de planche et leur propre liste d'attente, indépendante de celle des
   étiquettes complètes). « Vider la liste » (onglet En attente) retire tous les livres de
