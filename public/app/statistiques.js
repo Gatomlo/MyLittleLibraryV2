@@ -1,7 +1,7 @@
 // Statistiques — module de l'interface (organisation : public/app/README.md).
 import './etiquettes.js';
 import { features } from './etat.js';
-import { $, $$, view, esc, hint, mediaSrc, api, toast } from './utilitaires.js';
+import { $, $$, view, esc, hint, mediaSrc, api, toast, dialog } from './utilitaires.js';
 import { starsHtml, combo, memberPicker } from './catalogue.js';
 
 // Tableau de bord : anneau d'objectif, cartes chiffres avec tendance, donut de
@@ -19,8 +19,8 @@ const miniCover = (b, cls = '') => `<a class="mini-cover ${cls}" href="#/book/${
   ? `<img src="${esc(coverSrc(b.cover))}" alt="" loading="lazy">` : `<span>${initials(b.title || b.name)}</span>`}</a>`;
 
 // Carte chiffre : icone, valeur, libelle, precision, et petite courbe de tendance.
-function kpi(icon, value, label, hint, spark) {
-  return `<div class="kpi"><div class="kpi-top"><span class="kpi-icon" aria-hidden="true">${icon}</span>${spark ? sparkline(spark) : ''}</div>
+function kpi(icon, value, label, hint, spark, list) {
+  return `<div class="kpi${list ? ' kpi-link' : ''}"${list ? ` data-list="${list}" role="button" tabindex="0" title="Voir les livres"` : ''}><div class="kpi-top"><span class="kpi-icon" aria-hidden="true">${icon}</span>${spark ? sparkline(spark) : ''}</div>
     <div class="kpi-value">${value}</div><div class="kpi-label">${esc(label)}</div>${hint ? `<div class="kpi-hint">${hint}</div>` : ''}</div>`;
 }
 
@@ -64,7 +64,7 @@ function donut(segments, centerValue, centerLabel) {
   return `<div class="donut-wrap"><svg class="donut" viewBox="0 0 140 140" width="150" height="150" role="img" aria-label="${esc(centerLabel)}">${arcs}
     <text x="70" y="68" text-anchor="middle" class="ring-center">${fmt(centerValue)}</text>
     <text x="70" y="88" text-anchor="middle" class="ring-sub">${esc(centerLabel)}</text></svg>
-    <ul class="donut-legend">${segments.map((s) => `<li><i style="background:var(${s.color})"></i><span>${esc(s.label)}</span>
+    <ul class="donut-legend">${segments.map((s) => `<li${s.list && s.value ? ` class="legend-link" data-list="${s.list}" role="button" tabindex="0" title="Voir les livres"` : ''}><i style="background:var(${s.color})"></i><span>${esc(s.label)}</span>
       <strong>${fmt(s.value)}</strong><span class="muted">${total ? Math.round((s.value / total) * 100) : 0} %</span></li>`).join('')}</ul></div>`;
 }
 
@@ -249,10 +249,40 @@ async function renderStatsBody(ov) {
       const s = await api(`/api/stats/user/${id}?period=${statsState.period}`);
       $('#st-sub').textContent = `${statsState.who === 'me' ? 'Mes lectures' : `Lectures de ${s.user.username} (partagées)`} · ${s.period.label}`;
       body.innerHTML = userStatsHtml(s, statsState.who === 'me');
+      bindBookLists(body, s);
     }
     bindAreaCharts(body);
   } catch (err) { body.innerHTML = `<div class="error-box">${esc(err.message)}</div>`; }
   body.classList.remove('loading');
+}
+
+// Livres derriere un chiffre (carte ou segment de la repartition) : fenetre avec la liste.
+const LISTS = {
+  read: ['Livres lus', 'terminé le'],
+  reading: ['En cours', 'commencé le'],
+  toRead: ['À lire', ''],
+  abandoned: ['Abandonnés', 'abandonné le'],
+};
+const fmtDay = (d) => (d ? d.split('-').reverse().join('/') : '');
+
+function bindBookLists(root, s) {
+  const open = (key) => {
+    const books = (s.lists && s.lists[key]) || [];
+    const [title, dateLabel] = LISTS[key];
+    dialog(`<h2>${esc(title)} <span class="muted">(${fmt(books.length)})</span></h2>
+      <p class="small muted" style="margin-top:-6px">${esc(s.period.label)}</p>
+      ${books.length ? `<div class="stats-book-list">${books.map((b) => `
+        <a class="list-item" href="#/book/${b.bookId}" data-v="book"><span class="mini-cover">${b.cover ? `<img src="${esc(coverSrc(b.cover))}" alt="" loading="lazy">` : `<span>${initials(b.title)}</span>`}</span>
+          <div class="grow"><strong>${esc(b.title)}</strong>
+            ${b.authors ? `<div class="small muted">${esc(b.authors)}</div>` : ''}
+            <div class="small muted">${dateLabel && b.date ? `${dateLabel} ${fmtDay(b.date)}` : ''}${b.rating ? ` ${starsHtml(b.rating)}` : ''}${b.opinion === 'liked' ? ' ♥' : ''}</div></div></a>`).join('')}</div>`
+        : '<p class="muted small">Aucun livre.</p>'}
+      <div class="btn-row" style="margin-top:12px"><button class="btn" type="button" data-close style="margin-left:auto">Fermer</button></div>`);
+  };
+  $$('[data-list]', root).forEach((el) => {
+    el.onclick = () => open(el.dataset.list);
+    el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(el.dataset.list); } };
+  });
 }
 
 // Objectifs de l'annee (hors nombre de livres) : champ du formulaire et aide.
@@ -353,7 +383,7 @@ function userStatsHtml(s, mine) {
     <div class="hero">
       ${goalCard}
       <div class="kpis">
-        ${kpi('📚', fmt(c.read), 'Livres lus', '', s.monthly.map((m) => m.books))}
+        ${kpi('📚', fmt(c.read), 'Livres lus', c.read ? 'voir la liste' : '', s.monthly.map((m) => m.books), s.lists && c.read ? 'read' : '')}
         ${kpi('📄', fmt(s.pages), 'Pages lues', '', s.monthly.map((m) => m.pages))}
         ${kpi('⚡', d.pagesPerDay != null ? fmt(d.pagesPerDay) : '—', 'Pages par jour', d.count ? `sur ${d.count} livre(s) daté(s)` : 'dates de lecture requises')}
         ${kpi('⏱', d.avgDays != null ? `${fmt(d.avgDays)} j` : '—', 'Durée moyenne d\'un livre')}
@@ -363,10 +393,10 @@ function userStatsHtml(s, mine) {
     ${(s.goals || []).some((x) => x.key !== 'books') ? panel(`Objectifs ${g.year}`, goalRowsHtml(s.goals.filter((x) => x.key !== 'books')), 'goals-panel') : ''}
     <div class="dash-grid">
       ${panel('Répartition', donut([
-        { label: 'Lus', value: c.read, color: '--cat-1' },
-        { label: 'En cours', value: c.reading, color: '--cat-2' },
-        { label: 'À lire', value: c.toRead, color: '--cat-3' },
-        { label: 'Abandonnés', value: c.abandoned, color: '--cat-4' },
+        { label: 'Lus', value: c.read, color: '--cat-1', list: s.lists ? 'read' : '' },
+        { label: 'En cours', value: c.reading, color: '--cat-2', list: s.lists ? 'reading' : '' },
+        { label: 'À lire', value: c.toRead, color: '--cat-3', list: s.lists ? 'toRead' : '' },
+        { label: 'Abandonnés', value: c.abandoned, color: '--cat-4', list: s.lists ? 'abandoned' : '' },
       ], c.read + c.reading + c.toRead + c.abandoned, 'livres') + `<p class="small muted" style="margin-top:8px">${s.abandonRate != null ? `Taux d'abandon : <strong>${s.abandonRate} %</strong>` : ''}${c.liked ? ` · ♥ ${fmt(c.liked)} aimé(s)` : ''}${c.disliked ? ` · ✕ ${fmt(c.disliked)} pas aimé(s)` : ''}</p>`)}
       ${panel('Livres lus par mois', columns(s.monthly.map((m) => ({ month: m.month, value: m.books, prev: m.prevBooks })), { unit: 'livre(s)' }), 'span-2')}
     </div>

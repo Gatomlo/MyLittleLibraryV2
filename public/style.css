@@ -1042,3 +1042,9 @@ fieldset.plain > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font
 .sort-row { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .sort-row select { flex: 1; min-width: 0; }
 .sort-dir { white-space: nowrap; flex-shrink: 0; }
+/* Statistiques : chiffres qui ouvrent la liste des livres */
+.kpi-link, .legend-link { cursor: pointer; }
+.kpi-link:focus-visible, .legend-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.legend-link:hover span:first-of-type { text-decoration: underline; }
+.stats-book-list .list-item { color: inherit; text-decoration: none; align-items: center; }
+.stats-book-list .list-item:hover strong { text-decoration: underline; }
