@@ -180,7 +180,7 @@ function statusEditorHtml(book) {
   const others = (book.statuses || []).map((o) => `<span class="small">${esc(o.username)} : ${[o.reading && READING_LABELS[o.reading], o.opinion && OPINION_LABELS[o.opinion]].filter(Boolean).join(', ')}${o.rating ? ' ' + starsHtml(o.rating) : ''}</span>`);
   const dateField = (field, label) => `<label class="date-field">${label} <input type="date" data-date="${field}" value="${day(s[field])}" max="${new Date().toISOString().slice(0, 10)}"></label>`;
   let dates = '';
-  if (s.reading === 'reading') dates = dateField('startedAt', 'Commencé le');
+  if (s.reading === 'reading') dates = dateField('startedAt', 'Commencé le') + (s.percent ? `<span class="small muted">${s.percent} % sur la liseuse</span>` : '');
   if (s.reading === 'read') {
     dates = dateField('startedAt', 'Commencé le') + dateField('finishedAt', 'Terminé le')
       + (s.startedAt && s.finishedAt ? `<span class="small muted">${daysBetween(s.startedAt, s.finishedAt)} jour(s) de lecture</span>` : '');

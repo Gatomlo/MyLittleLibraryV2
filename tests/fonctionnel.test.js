@@ -313,6 +313,12 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   const cut = await kscan({ 'X-Kobo-Db-Size': String(truncated.length + 10) }, truncated);
   assert.equal(cut.status, 400);
   assert.match(cut.body.error, /incomplète/);
+  // Livre en cours : progression de la liseuse du compte sur la fiche et dans le catalogue.
+  ok(await kscan({}, koboDb([{ id: `file:///mnt/onboard/${koboPath}`, title: 'Titre corrigé', author: 'Ada Lovelace', status: 1, percent: 42 }])));
+  ok(await a.put(`${api}/books/${imp.bookId}/status`, { reading: 'reading' }));
+  assert.equal(ok(await a.get(`${api}/books/${imp.bookId}`)).myStatus.percent, 42);
+  const listed = ok(await a.get(`${api}/books?q=${encodeURIComponent('Titre corrigé')}&statusUser=${ctx.users.admin ? ctx.users.admin.id : ''}`));
+  assert.equal(listed.items[0].status.percent, 42);
   ok(await a.del(`${api}/kobo/devices/${dev.id}`));
   assert.equal(ok(await a.get(`${api}/kobo/devices`)).length, 0);
 

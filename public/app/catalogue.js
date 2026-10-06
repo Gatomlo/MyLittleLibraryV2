@@ -591,7 +591,7 @@ const starsHtml = (n) => `<span class="stars" title="${n} / 5">${'★'.repeat(n)
 
 function statusIcons(s) {
   if (!s || (!s.reading && !s.opinion)) return '';
-  return `<span class="status-icons">${s.reading ? `<span class="st st-${s.reading}">${READING_LABELS[s.reading]}</span>` : ''}${s.opinion ? `<span class="st st-${s.opinion}" title="${OPINION_LABELS[s.opinion]}">${OPINION_ICONS[s.opinion]}</span>` : ''}</span>`;
+  return `<span class="status-icons">${s.reading ? `<span class="st st-${s.reading}">${READING_LABELS[s.reading]}${s.percent ? ` · ${s.percent} %` : ''}</span>` : ''}${s.opinion ? `<span class="st st-${s.opinion}" title="${OPINION_LABELS[s.opinion]}">${OPINION_ICONS[s.opinion]}</span>` : ''}</span>`;
 }
 
 // Parametres de recherche du catalogue (filtres en cours) ; extra : ex. ids=1.
