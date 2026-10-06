@@ -4,7 +4,7 @@ import { ROOT, LIBRARY, libUrl, state, pending, isAdmin, libRole, isMember, canM
 import { $, $$, view, esc, gapi, toast, go } from './utilitaires.js';
 import { scanConf, SCAN_TITLES, refreshLoanBadge } from './scanner.js';
 import { renderHeader } from './entete.js';
-import { TOUCH_ONLY, kobo, koboOn, koboSavedInfo, reconnectKobo, scanKobo, ejectKobo } from './kobo.js';
+import { TOUCH_ONLY, kobo, koboOn, koboSavedInfo, reconnectKobo, scanKobo, ejectKobo, koboSettingsTarget, openKoboSettings } from './kobo.js';
 import { openHomeCustomize } from './accueil.js';
 import { canInstall, installApp } from './installation.js';
 
@@ -147,6 +147,7 @@ function openMenu() {
         ${l.logoUrl ? `<img src="${esc(ROOT + '/' + l.logoUrl)}" alt="">` : ''}<span class="grow">${esc(l.name)}${isAdmin() ? '' : ` <span class="small muted">${roleLabel(l.role)}</span>`}</span></a>
       <button class="star ${l.id === def ? 'on' : ''}" data-default="${l.id}" title="${l.id === def ? 'Bibliothèque par défaut' : 'Définir comme bibliothèque par défaut'}">${l.id === def ? '★' : '☆'}</button>
     </div>`).join('');
+  const koboDev = isMember() && features().kobo ? koboSettingsTarget() : null;
   const menu = document.createElement('div');
   menu.className = 'menu';
   menu.innerHTML = `
@@ -158,11 +159,12 @@ function openMenu() {
     <div class="menu-title">${esc(state.settings.libraryName)}</div>
     <a class="menu-item" href="#/labels">${icon('labels')}Étiquettes</a>
     ${canConfigure() ? `<a class="menu-item" href="#/settings">${icon('settings')}Réglages</a>` : ''}` : ''}
-    ${isMember() && features().kobo && !TOUCH_ONLY ? `<div class="menu-sep"></div>
+    ${isMember() && features().kobo && (!TOUCH_ONLY || koboDev) ? `<div class="menu-sep"></div>
     <div class="menu-title">Liseuses</div>
-    ${koboSavedInfo && !koboOn() ? `<button class="menu-item" type="button" id="menu-kobo-reconnect">${icon('kobo')}Reconnecter ${esc(koboSavedInfo.name)}</button>` : ''}
-    <button class="menu-item" type="button" id="menu-kobo-connect">${icon('kobo')}${koboOn() ? `Rescanner ${esc(kobo.device.name)}` : koboSavedInfo ? 'Brancher une autre liseuse' : 'Brancher une liseuse'}</button>
+    ${!TOUCH_ONLY && koboSavedInfo && !koboOn() ? `<button class="menu-item" type="button" id="menu-kobo-reconnect">${icon('kobo')}Reconnecter ${esc(koboSavedInfo.name)}</button>` : ''}
+    ${!TOUCH_ONLY ? `<button class="menu-item" type="button" id="menu-kobo-connect">${icon('kobo')}${koboOn() ? `Rescanner ${esc(kobo.device.name)}` : koboSavedInfo ? 'Brancher une autre liseuse' : 'Brancher une liseuse'}</button>` : ''}
     ${koboOn() && kobo.write ? `<button class="menu-item" type="button" id="menu-kobo-eject">${icon('kobo')}Terminer avec ${esc(kobo.device.name)}</button>` : ''}
+    ${koboDev ? `<button class="menu-item" type="button" id="menu-kobo-settings">${icon('settings')}Paramètres de ${esc(koboDev.name)}</button>` : ''}
     <a class="menu-item" href="#/kobo">${icon('kobo')}Toutes les liseuses</a>` : ''}
     <div class="menu-sep"></div>
     <a class="menu-item" href="#/account">${icon('user')}Mon compte</a>
@@ -188,6 +190,8 @@ function openMenu() {
   koboMenuAction($('#menu-kobo-reconnect', menu), reconnectKobo);
   const eject = $('#menu-kobo-eject', menu);
   if (eject) eject.onclick = () => { closeMenu(); ejectKobo(); };
+  const koboSettings = $('#menu-kobo-settings', menu);
+  if (koboSettings) koboSettings.onclick = () => { closeMenu(); openKoboSettings(koboDev.id).catch((err) => toast(err.message, 'error')); };
   $$('[data-default]', menu).forEach((btn) => {
     btn.onclick = async () => {
       const id = Number(btn.dataset.default);

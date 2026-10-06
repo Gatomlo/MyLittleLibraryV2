@@ -577,11 +577,27 @@ async function renderKoboBackups(d, connected) {
   }, 'telle qu\'elle était avant la dernière écriture de l\'appli'));
 }
 
+// Liseuse dont les parametres sont proposes dans le menu du compte : celle de la page
+// ouverte (si modifiable), sinon celle branchee (si modifiable).
+let pageDevice = null;
+function koboSettingsTarget() {
+  const m = /^#\/kobo\/(\d+)/.exec(location.hash);
+  if (pageDevice && m && Number(m[1]) === pageDevice.id) return pageDevice;
+  if (koboOn() && (canManage() || (kobo.device.owner && state.user && kobo.device.owner.id === state.user.id))) {
+    return { id: kobo.device.id, name: kobo.device.name };
+  }
+  return null;
+}
+async function openKoboSettings(id) {
+  const [d, members] = await Promise.all([api(`/api/kobo/devices/${id}`), loadMembers().catch(() => [])]);
+  editKoboDialog(d, members);
+}
+
 async function viewKoboDevice(id) {
   const k = koboState;
   const qs = new URLSearchParams(['q', 'category', 'series', 'tag', 'reading', 'sort'].filter((key) => k[key]).map((key) => [key, k[key]]));
-  const [d, members, cats, seriesList, tags] = await Promise.all([
-    api(`/api/kobo/devices/${id}?${qs}`), loadMembers().catch(() => []),
+  const [d, cats, seriesList, tags] = await Promise.all([
+    api(`/api/kobo/devices/${id}?${qs}`),
     api('/api/public/categories').catch(() => []),
     api('/api/public/series').catch(() => []), features().tags ? api('/api/public/tags').catch(() => []) : [],
   ]);
@@ -592,6 +608,7 @@ async function viewKoboDevice(id) {
   // bibliotheque (les autres la consultent ; le serveur applique la meme regle).
   const mine = canManage() || (!!d.owner && !!state.user && d.owner.id === state.user.id);
   const canRemove = mine && connected() && !!kobo.remove;
+  pageDevice = mine ? { id: d.id, name: d.name } : null;
   const f = koboState.filter;
   const items = d.items.filter((i) => f === 'all' || (f === 'nobook' && !i.book) || (f === 'nofile' && i.book && !i.book.hasFile));
   const toCopy = d.items.filter((i) => i.book && !i.book.hasFile && i.path && !i.pending);
@@ -618,7 +635,6 @@ async function viewKoboDevice(id) {
         ${toCopy.length && canManage() ? `<button class="btn" id="kobo-copy-all"><span class="hide-mobile">Copier les ${toCopy.length} fichier(s) manquant(s)</span><span class="show-mobile">Copier (${toCopy.length})</span></button>` : ''}
         ${toUpdate.length ? `<button class="btn" id="kobo-update-all"><span class="hide-mobile">Mettre à jour ${toUpdate.length} livre(s)</span><span class="show-mobile">Màj (${toUpdate.length})</span></button>` : ''}
         ${connected() ? '<button class="btn" id="kobo-eject" title="Enregistrer les changements dans la liseuse et la libérer, avant de l\'éjecter dans Windows">Terminer</button>' : ''}
-        ${mine ? '<button class="btn" id="kobo-edit">Modifier</button>' : ''}
       </div></div>
     ${koboWarning()}
     <div class="filters filters-search-row" id="kobo-filters">
@@ -696,7 +712,6 @@ async function viewKoboDevice(id) {
   });
   $('#kfilters-toggle').onclick = () => $('#kobo-filters').classList.toggle('open');
   if ($('#kclear')) $('#kclear').onclick = () => { Object.assign(k, { q: '', category: '', series: '', tag: '', reading: '' }); refilter(); };
-  if (mine) $('#kobo-edit').onclick = () => editKoboDialog(d, members);
   if ($('#kobo-eject')) $('#kobo-eject').onclick = ejectKobo;
   if (mine) renderKoboBackups(d, connected);
   $('#kobo-rescan').onclick = busy(async () => {
@@ -799,5 +814,5 @@ async function viewKoboDevice(id) {
 
 export {
   TOUCH_ONLY, kobo, koboOn, koboReturn, koboSavedInfo, koboRestore, reconnectKobo, progressBox, sendRawProgress, scanKobo, busy, ejectKobo,
-  pushToKobo, pushManyToKobo, viewKobo, viewKoboDevice,
+  pushToKobo, pushManyToKobo, viewKobo, viewKoboDevice, koboSettingsTarget, openKoboSettings,
 };
