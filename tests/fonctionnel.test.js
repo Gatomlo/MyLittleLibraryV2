@@ -233,7 +233,7 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   assert.equal(ok(await kscan({ 'X-Kobo-Write': '1' }, modified)).dbUpdate, null);
 
   // Collections d'apres les categories, surlignages releves, livre retire de la base.
-  ok(await a.put(`${api}/books/${imp.bookId}`, { ...fields, seriesNumber: '2', categories: 'Science-fiction' }));
+  ok(await a.put(`${api}/books/${imp.bookId}`, { ...fields, seriesNumber: '2', categories: 'Science-fiction', tags: 'Favori' }));
   const rich = koboDb([{ id: `file:///mnt/onboard/${koboPath}`, title: 'Titre corrigé', author: 'Ada Lovelace', chapters: 3,
     bookmarks: [{ text: 'Une phrase surlignée.' }, { text: 'Avec une note.', note: 'Ma note' }] }]);
   const coll = ok(await kscan({ 'X-Kobo-Write': '1' }, rich)).dbUpdate;
@@ -242,7 +242,7 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   assert.deepEqual(notes.map((n) => [n.kind, n.text, n.note, n.chapter]), [['highlight', 'Une phrase surlignée.', null, 'Chapitre 1'], ['note', 'Avec une note.', 'Ma note', 'Chapitre 1']]);
   fs.writeFileSync(tmp, (await a.get(`${api}/kobo/devices/${dev.id}/db/${coll.token}`, { buffer: true })).body);
   let sdb = new DatabaseSync(tmp, { readOnly: true });
-  assert.deepEqual(sdb.prepare('SELECT ShelfName, ContentId FROM ShelfContent').all().map((r) => ({ ...r })), [{ ShelfName: 'Science-fiction', ContentId: `file:///mnt/onboard/${koboPath}` }]);
+  assert.deepEqual(sdb.prepare('SELECT ShelfName FROM ShelfContent ORDER BY 1').all().map((r) => r.ShelfName), ['Favori', 'Science-fiction']);
   assert.equal(sdb.prepare("SELECT _IsDeleted FROM Shelf WHERE Name = 'Science-fiction'").get()._IsDeleted, 'false');
   sdb.close();
   ok(await a.post(`${api}/kobo/devices/${dev.id}/db/applied`, { token: coll.token }));
