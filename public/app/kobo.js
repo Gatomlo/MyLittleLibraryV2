@@ -276,6 +276,7 @@ async function scanKobo(root = null, { retry = false } = {}) {
   } finally { box.close(); }
   koboRemember(src);
   renderNav();
+  if (!result.stale) koboChanged = false;
   // Base qui semblait perimee : relue une fois (lecture fraiche du fichier).
   if (result.stale && !retry && src.root) return scanKobo(src.root, { retry: true });
   if (result.pendingOld) {
@@ -288,7 +289,18 @@ async function scanKobo(root = null, { retry = false } = {}) {
 // plus aucun acces en memoire), puis Windows peut l'ejecter proprement.
 const EJECTED_KEY = 'mll-kobo-ejected';
 const session = (fn) => { try { return fn(sessionStorage); } catch (e) { return null; } };
-function ejectKobo() {
+// Changements faits sur la liseuse depuis le dernier scan (livres retires, remplaces) :
+// ecrits dans sa base en une fois, a l'ejection.
+let koboChanged = false;
+async function ejectKobo() {
+  if (koboChanged && writeDb()) {
+    try {
+      await scanKobo(kobo.root);
+    } catch (e) {
+      if (!confirm(`La liseuse n'a pas pu être mise à jour (${e.message}). L'éjecter quand même ? Elle sera mise à jour au prochain branchement.`)) return;
+    }
+  }
+  koboChanged = false;
   session((st) => st.setItem(EJECTED_KEY, 'toast'));
   location.reload();
 }
@@ -373,9 +385,9 @@ async function koboItemsByBook() {
 // Avec Chrome, la liseuse est scannee au premier envoi de la session. La liseuse ne
 // relit pas un livre deja importe : une version differente (fiche modifiee) est copiee
 // sous un autre nom et l'ancien fichier est supprime ; avec l'ecriture dans la base,
-// elle remplace l'ancien fichier (meme nom) et le scan qui suit (sync) ecrit les
-// informations de la fiche dans la base de la liseuse.
-async function pushToKobo(bookId, { quiet = false, items = null, sync = !quiet } = {}) {
+// elle remplace l'ancien fichier (meme nom) et les informations de la fiche sont
+// ecrites dans la base de la liseuse a l'ejection (« Ejecter », koboChanged).
+async function pushToKobo(bookId, { quiet = false, items = null } = {}) {
   await ensureKobo();
   if (KOBO_FS && !kobo) await (koboSavedInfo ? reconnectKobo() : scanKobo());
   const onDevice = items || (await koboItemsByBook()).get(bookId) || [];
@@ -407,8 +419,8 @@ async function pushToKobo(bookId, { quiet = false, items = null, sync = !quiet }
         replaced++;
       }
     }
-    if ((inPlace || removedInDb) && sync) await scanKobo(kobo.root);
-    if (!quiet) toast(inPlace ? 'Mis à jour sur la liseuse (progression conservée). Éjecte-la pour voir les changements.'
+    if (inPlace || removedInDb) koboChanged = true;
+    if (!quiet) toast(inPlace ? 'Mis à jour sur la liseuse (progression conservée). Clique sur « Éjecter » quand tu as fini.'
       : `${replaced ? 'Mis à jour' : 'Copié'} sur la liseuse. Éjecte-la pour qu'elle l'importe${writeDb() ? ' ; sa série et ses collections seront ajoutées au prochain branchement' : ''}.`);
     return inPlace || replaced ? 'updated' : true;
   }
@@ -443,7 +455,7 @@ async function pushManyToKobo(ids, progress) {
     } catch (e) { out.skipped++; }
   }
   // Fichiers remplaces sur place : informations des fiches ecrites dans la liseuse.
-  if (out.updated && writeDb()) await scanKobo(kobo.root);
+
   return out;
 }
 
@@ -679,8 +691,9 @@ async function viewKoboDevice(id) {
       if (!connected()) throw new Error('Liseuse débranchée.');
       await ensureKobo();
       try { await kobo.remove(i.path); } catch (e) { if (e.name !== 'NotFoundError') throw e; }
-      if (await forgetOnKobo(i)) await scanKobo(kobo.root);
-      toast('Livre supprimé. Éjecte la liseuse pour qu’elle mette sa bibliothèque à jour.');
+      if (await forgetOnKobo(i)) koboChanged = true;
+      toast(writeDb() ? 'Livre supprimé. Clique sur « Éjecter » quand tu as fini : la liseuse sera mise à jour à ce moment-là.'
+        : 'Livre supprimé. Éjecte la liseuse pour qu’elle mette sa bibliothèque à jour.');
       route();
     });
   });
@@ -767,8 +780,8 @@ async function viewKoboDevice(id) {
       btn.textContent = `Envoi ${n + 1} / ${toUpdate.length}…`;
       try { if (await pushToKobo(i.book.id, { quiet: true, items: d.items.filter((x) => x.book && x.book.id === i.book.id) })) ok++; } catch (e) { failed++; }
     }
-    if (ok && writeDb()) await scanKobo(kobo.root);
-    toast(`${ok} livre(s) mis à jour${failed ? `, ${failed} échec(s)` : ''}. Éjecte la liseuse pour qu'elle les importe.`, failed ? 'error' : undefined);
+    if (ok && writeDb()) koboChanged = true;
+    toast(`${ok} livre(s) mis à jour${failed ? `, ${failed} échec(s)` : ''}. Quand tu as fini, clique sur « Éjecter » puis éjecte la liseuse dans Windows.`, failed ? 'error' : undefined);
     route();
   });
   const copyAll = $('#kobo-copy-all');
