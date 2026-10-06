@@ -12,7 +12,7 @@ charge directement ces fichiers (`<script type="module" src="…/app/main.js">` 
 | `routage.js` | Table des routes (`#/…`), droits par route, `onLeave` / `leavePage` |
 | `accueil-site.js` | Racine du site : liste des bibliothèques |
 | `accueil.js` | Accueil personnalisé d'une bibliothèque (`#/home`) |
-| `catalogue.js`, `fiche-livre.js`, `livre-formulaire.js` | Catalogue et filtres (boutons flottants `bindFabs`, vue liste au choix dès 600 px `bindViewToggle`, et aides partagées : `combo` liste avec recherche, `memberPicker` choix de plusieurs comptes, `accordionize` sections repliables), fiche d'un livre, ajout et modification |
+| `catalogue.js`, `fiche-livre.js`, `livre-formulaire.js` | Catalogue et filtres (boutons flottants `bindFabs`, vue liste en tableau au choix dès 600 px `bindViewToggle` / `listTable` / `bindListHead`, et aides partagées : `combo` liste avec recherche, `memberPicker` choix de plusieurs comptes, `accordionize` sections repliables), fiche d'un livre, ajout et modification |
 | `exemplaire.js`, `prets.js`, `emprunteurs.js` | Page d'un exemplaire (cible du QR code), prêts, emprunteurs |
 | `import-suivi.js`, `import.js`, `incompletes.js`, `etiquettes.js` | Suivi des imports (historique local, fiches à vérifier), ajout multiple et import de fichiers, fiches incomplètes, étiquettes |
 | `kobo.js`, `liseuse-epub.js` | Liseuses Kobo (USB), lecture des epub en ligne (`vendor/epub.min.js`) |

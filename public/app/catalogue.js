@@ -1,7 +1,7 @@
 // Catalogue — module de l'interface (organisation : public/app/README.md).
 import './accueil-site.js';
 import { state, isMember, canManage, features, statusesOn, READING_LABELS, OPINION_LABELS, OPINION_ICONS } from './etat.js';
-import { $, $$, view, esc, hint, api, toast, debounce, coverHtml, availabilityBadge } from './utilitaires.js';
+import { $, $$, view, esc, hint, api, toast, debounce, fmtDate, coverHtml, availabilityBadge } from './utilitaires.js';
 import { scanIsbn } from './scanner.js';
 import { onLeave } from './routage.js';
 import { kobo, koboOn, busy, pushManyToKobo } from './kobo.js';
@@ -94,6 +94,15 @@ const CATALOG_CARD_LABELS = [
   ['cover', 'Couverture'], ['title', 'Titre'], ['authors', 'Auteurs'], ['series', 'Série et tome'], ['collection', 'Collection'],
   ['categories', 'Catégories'], ['tags', 'Tags', 'tags'], ['readers', 'Lecteurs (gestion)'], ['status', 'Statut de lecture et avis', 'readingStatus'], ['rating', 'Note (étoiles)', 'readingStatus'], ['availability', 'Disponibilité'], ['ebook', 'Bandeau « Numérique »', 'ebooks'],
 ];
+// Colonnes de la vue liste (tableau ; titre toujours affiche), reglees a part de la
+// miniature : [cle, libelle, option de la bibliotheque necessaire].
+const DEFAULT_CATALOG_LIST = ['cover', 'series', 'authors', 'categories', 'status', 'rating', 'availability'];
+const CATALOG_LIST_LABELS = [
+  ['cover', 'Couverture'], ['series', 'Série et tome (sous le titre)'], ['authors', 'Auteurs'], ['publisher', 'Éditeur'], ['year', 'Année'],
+  ['collection', 'Collection'], ['categories', 'Catégories'], ['tags', 'Tags', 'tags'], ['readers', 'Lecteurs (gestion)'],
+  ['status', 'Statut de lecture et avis', 'readingStatus'], ['rating', 'Note (étoiles)', 'readingStatus'], ['availability', 'Disponibilité'],
+  ['added', 'Date d\'ajout (gestion)'],
+];
 const ALL_CATALOG_FILTERS = ['search', 'scan', 'category', 'collection', 'series', 'tag', 'mine', 'reader', 'availability', 'format',
   'statusUser', 'reading', 'opinion', 'rating', 'sort', 'count'];
 const catalogConf = () => {
@@ -101,6 +110,7 @@ const catalogConf = () => {
   return {
     filters: Array.isArray(conf.filters) ? conf.filters : ALL_CATALOG_FILTERS, position: conf.position === 'left' ? 'left' : 'top',
     card: Array.isArray(conf.card) ? conf.card : ALL_CATALOG_CARD,
+    list: Array.isArray(conf.list) ? conf.list : DEFAULT_CATALOG_LIST,
   };
 };
 
@@ -144,6 +154,7 @@ function sortDirLabel(c) {
   const [normal, reversed] = {
     recent: ['↓ Récents', '↑ Anciens'],
     year: ['↓ Récents', '↑ Anciens'],
+    rating: ['↓ Mieux notés', '↑ Moins bien notés'],
   }[c.sort] || ['↓ A–Z', '↑ Z–A'];
   return c.reverse ? reversed : normal;
 }
@@ -242,7 +253,9 @@ async function viewCatalog() {
       <option value="title">Tri : titre</option>
       <option value="author" ${sel(c.sort, 'author')}>Tri : auteur</option>
       <option value="recent" ${sel(c.sort, 'recent')}>Tri : date d'ajout</option>
-      <option value="year" ${sel(c.sort, 'year')}>Tri : année</option></select>
+      <option value="year" ${sel(c.sort, 'year')}>Tri : année</option>
+      <option value="publisher" ${sel(c.sort, 'publisher')}>Tri : éditeur</option>
+      ${statusesOn() ? `<option value="rating" ${sel(c.sort, 'rating')}>Tri : note</option>` : ''}</select>
       <button type="button" class="btn sort-dir" id="sort-dir" aria-pressed="${!!c.reverse}" title="Inverser l'ordre">${esc(sortDirLabel(c))}</button></div>`]);
   }
 
@@ -363,11 +376,14 @@ async function viewCatalog() {
 // dans le navigateur.
 const VIEW_KEY = 'mll-catalog-view';
 const listView = () => { try { return localStorage.getItem(VIEW_KEY) === 'list'; } catch (e) { return false; } };
+const WIDE = window.matchMedia('(min-width: 600px)');
+// Vue liste affichee en tableau (un livre par ligne) : en dessous de 600 px, cartes.
+const tableView = () => listView() && WIDE.matches;
 function bindViewToggle() {
   const btn = $('#view-toggle');
   const draw = () => {
     const on = listView();
-    $('#books').classList.toggle('books-list', on);
+    $('#books').classList.toggle('books-table', on);
     btn.innerHTML = icon(on ? 'grid' : 'list', 18);
     btn.title = on ? 'Afficher en cartes' : 'Afficher en liste';
     btn.setAttribute('aria-label', btn.title);
@@ -375,8 +391,13 @@ function bindViewToggle() {
   btn.onclick = () => {
     try { localStorage.setItem(VIEW_KEY, listView() ? 'cards' : 'list'); } catch (e) { /* stockage indisponible */ }
     draw();
+    loadBooks(false);
   };
   draw();
+  // Passage sous / au-dessus de 600 px (rotation) : tableau <-> cartes.
+  const onWide = () => { if (listView()) loadBooks(false); };
+  WIDE.addEventListener('change', onWide);
+  onLeave(() => WIDE.removeEventListener('change', onWide));
 }
 
 // Boutons flottants (icones) : Ajouter et Selectionner. Toujours sur smartphone ; sur
@@ -603,9 +624,9 @@ function catalogParams(extra = {}) {
   const show = (k) => catalogConf().filters.includes(k);
   const params = new URLSearchParams({
     q: show('search') ? c.q : '', category: c.category || '', status: show('availability') ? c.status || '' : '',
-    sort: show('sort') ? c.sort : 'title', page: c.page, limit: 48,
+    sort: show('sort') || tableView() ? c.sort || 'title' : 'title', page: c.page, limit: 48,
   });
-  if (show('sort') && c.reverse) params.set('reverse', '1');
+  if ((show('sort') || tableView()) && c.reverse) params.set('reverse', '1');
   if (c.collection) params.set('collection', c.collection);
   if (c.series) params.set('series', c.series);
   if (c.missing && canManage()) params.set('missing', c.missing);
@@ -628,6 +649,66 @@ function catalogParams(extra = {}) {
   return params;
 }
 
+// Vue liste en tableau : colonnes choisies dans les Reglages (catalogConf().list).
+// [cle, entete, largeur, tri, colonne masquee sur ecran etroit, cellule]
+const sortArrow = (key) => {
+  const c = state.catalog;
+  if ((c.sort || 'title') !== key) return '';
+  const asc = ['title', 'author', 'publisher'].includes(key) !== !!c.reverse;
+  return asc ? ' ▲' : ' ▼';
+};
+function listTable(items, withStatus) {
+  const conf = new Set(catalogConf().list);
+  const terms = (list, prefix = '') => (list && list.length ? list.map((t) => esc(prefix + (t.name || t.username))).join(' · ') : '');
+  const cols = [
+    state.selecting && ['select', '', '28px', null, false, () => '<span class="select-check" aria-hidden="true"></span>'],
+    conf.has('cover') && ['cover', '', '34px', null, false, (b) => coverHtml(b, '')],
+    ['title', 'Titre', 'minmax(150px, 2.4fr)', 'title', false, (b) => `<span class="t">${esc(b.title)}</span>${conf.has('series') && b.series
+      ? `<span class="sub">${esc(b.series)}${b.seriesNumber ? ` · tome ${esc(b.seriesNumber)}` : ''}</span>` : ''}${conf.has('authors') && b.authors
+      ? `<span class="sub narrow-only">${esc(b.authors)}</span>` : ''}`],
+    conf.has('authors') && ['authors', 'Auteur(s)', 'minmax(110px, 1.4fr)', 'author', true, (b) => esc(b.authors)],
+    conf.has('publisher') && ['publisher', 'Éditeur', 'minmax(90px, 1fr)', 'publisher', true, (b) => esc(b.publisher)],
+    conf.has('year') && ['year', 'Année', '58px', 'year', true, (b) => esc(b.year || '')],
+    conf.has('collection') && ['collection', 'Collection', 'minmax(90px, 1fr)', null, true, (b) => esc(b.collection)],
+    conf.has('categories') && ['categories', 'Catégories', 'minmax(100px, 1.2fr)', null, true, (b) => `<span class="sub">${terms(b.categories)}</span>`],
+    conf.has('tags') && features().tags && ['tags', 'Tags', 'minmax(90px, 1fr)', null, true, (b) => `<span class="sub">${terms(b.tags, '#')}</span>`],
+    conf.has('readers') && canManage() && ['readers', 'Lecteurs', 'minmax(90px, 1fr)', null, true, (b) => `<span class="sub">${terms(b.readers)}</span>`],
+    conf.has('status') && withStatus && ['status', 'Lecture', '124px', null, false, (b) => statusIcons(b.status)],
+    conf.has('rating') && withStatus && ['rating', 'Note', '86px', 'rating', true, (b) => (b.status && b.status.rating ? starsHtml(b.status.rating) : '')],
+    conf.has('availability') && ['availability', 'Dispo.', '118px', null, false, (b) => availabilityBadge(b, true)],
+    conf.has('added') && canManage() && ['added', 'Ajouté le', '92px', 'recent', true, (b) => (b.createdAt ? `<span class="sub">${esc(fmtDate(b.createdAt))}</span>` : '')],
+  ].filter(Boolean);
+  const cell = ([key, , , , wide], content) => `<span class="cell cell-${key}${wide ? ' col-wide' : ''}">${content}</span>`;
+  const head = `<div class="list-head" role="row">${cols.map((col) => cell(col, col[3]
+    ? `<button type="button" data-sort="${col[3]}" class="${(state.catalog.sort || 'title') === col[3] ? 'sorted' : ''}">${col[1]}${sortArrow(col[3])}</button>` : col[1])).join('')}</div>`;
+  const rows = items.map((b) => `
+    <a class="book-card book-row${state.selecting ? ' selectable' : ''}${state.selecting && state.selected.has(b.id) ? ' selected' : ''}" href="#/book/${b.id}" data-id="${b.id}">
+      ${cols.map((col) => cell(col, col[5](b))).join('')}
+    </a>`).join('');
+  return {
+    head, rows,
+    cols: cols.map((col) => col[2]).join(' '),
+    colsNarrow: cols.filter((col) => !col[4]).map((col) => col[2]).join(' '),
+  };
+}
+
+// Tri par l'en-tete : meme colonne = ordre inverse, sinon tri de la colonne dans son
+// sens naturel. Le menu Tri (s'il est affiche) suit.
+function bindListHead(list) {
+  $$('.list-head [data-sort]', list).forEach((btn) => {
+    btn.onclick = () => {
+      const c = state.catalog;
+      const key = btn.dataset.sort;
+      if ((c.sort || 'title') === key) c.reverse = !c.reverse;
+      else { c.sort = key; c.reverse = false; }
+      c.page = 1;
+      if ($('#sort')) $('#sort').value = c.sort;
+      if ($('#sort-dir')) { $('#sort-dir').textContent = sortDirLabel(c); $('#sort-dir').setAttribute('aria-pressed', String(!!c.reverse)); }
+      loadBooks(false);
+    };
+  });
+}
+
 async function loadBooks(append) {
   const c = state.catalog;
   const withStatus = statusesOn();
@@ -638,7 +719,8 @@ async function loadBooks(append) {
   const card = new Set(catalogConf().card);
   const has = (k) => card.has(k);
   const ribbon = (b) => has('ebook') && features().ebooks && b.ebookCopies > 0 ? 'Numérique' : '';
-  const html = data.items.map((b) => {
+  const table = tableView() ? listTable(data.items, withStatus) : null;
+  const html = table ? table.rows : data.items.map((b) => {
     const meta = [
       has('title') ? `<span class="t">${esc(b.title)}</span>` : '',
       has('authors') ? `<span class="a">${esc(b.authors)}</span>` : '',
@@ -661,7 +743,9 @@ async function loadBooks(append) {
     </a>`;
   }).join('');
   const filtered = c.missing || c.q || c.category || c.tag || c.mine || c.reader || c.collection || c.series || c.status || c.format || c.reading || c.opinion || c.rating;
+  if (table) { list.style.setProperty('--cols', table.cols); list.style.setProperty('--cols-narrow', table.colsNarrow); }
   if (append) list.insertAdjacentHTML('beforeend', html);
+  else if (table && html) { list.innerHTML = table.head + html; bindListHead(list); }
   else list.innerHTML = html || `<div class="empty" style="grid-column:1/-1">${filtered ? 'Aucun livre ne correspond.' : 'Le catalogue est vide pour le moment.'}</div>`;
   if ($('#count')) $('#count').textContent = `${data.total} livre${data.total > 1 ? 's' : ''}`;
   const shown = (data.page - 1) * data.limit + data.items.length;
@@ -725,6 +809,6 @@ function pickBookDialog({ heading, subtitle = '', query = '', exclude = null }) 
 }
 
 export {
-  loadCategories, combo, searchPicker, memberPicker, pickBookDialog, ALL_CATALOG_CARD, CATALOG_CARD_LABELS, ALL_CATALOG_FILTERS, CATALOG_FILTER_LABELS, accordionize,
+  loadCategories, combo, searchPicker, memberPicker, pickBookDialog, ALL_CATALOG_CARD, CATALOG_CARD_LABELS, DEFAULT_CATALOG_LIST, CATALOG_LIST_LABELS, ALL_CATALOG_FILTERS, CATALOG_FILTER_LABELS, accordionize,
   loadMembers, forgetMembers, viewCatalog, starsHtml,
 };

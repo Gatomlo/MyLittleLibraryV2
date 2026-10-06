@@ -187,7 +187,9 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
 - **Catalogue** : boutons flottants (icônes) Ajouter et Sélectionner, toujours sur téléphone,
   et sur ordinateur / tablette dès que l'en-tête sort de l'écran ; Ajout multiple depuis la page
   Ajouter. Vue liste au choix dès 600 px de large (ordinateur, tablette, téléphone en paysage ; bouton
-  à côté de Sélectionner, gardé dans le navigateur).
+  à côté de Sélectionner, gardé dans le navigateur) : tableau, un livre par ligne, colonnes
+  choisies dans Réglages > Affichage du catalogue (indépendamment de la miniature), tri en
+  cliquant sur l'en-tête (titre, auteur, éditeur, année, note, date d'ajout).
 - **Étiquettes** (menu du compte) : planches A4 (Avery L7160, L7159, L7163, L7651, 70×37…, ou format
   personnalisé), QR code + code + titre + nom et logo de la bibliothèque, case de
   départ pour réutiliser une planche entamée ; étiquettes de tranche au choix (code seul,

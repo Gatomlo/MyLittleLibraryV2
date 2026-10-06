@@ -1068,25 +1068,43 @@ body.selecting .fab-stack { display: none; }
 @media (max-width: 760px) { .fab-stack { opacity: 1; transform: none; pointer-events: auto; } }
 @media (max-width: 760px) { .shell:has(.books) { padding-bottom: calc(150px + env(safe-area-inset-bottom)); } }
 
-/* Vue liste au choix, partout ou le catalogue est en cartes (au moins 600 px de large ;
-   en dessous, il est deja en liste). */
+/* Vue liste au choix (au moins 600 px de large ; en dessous, cartes) : tableau, un
+   livre par ligne. Colonnes : --cols (grand ecran) et --cols-narrow (sans les colonnes
+   .col-wide, l'auteur passe sous le titre). */
 .view-toggle { display: none; }
 @media (min-width: 600px) {
   .view-toggle { display: inline-flex; padding-left: 10px; padding-right: 10px; flex: none !important; }
-  .books.books-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 8px; }
-  .books.books-list .book-card { flex-direction: row; align-items: stretch; }
-  .books.books-list .book-card:hover { transform: none; }
-  .books.books-list .book-card .cover { width: 58px; flex: none; align-self: flex-start; }
-  .books.books-list .book-card .cover-ribbon { display: none; }
-  .books.books-list .book-card .cover-fallback { font-size: 10px; padding: 4px; }
-  /* Titre sur sa ligne, le reste a la suite (pastilles, statut, disponibilite). */
-  .books.books-list .book-card .meta { min-width: 0; padding: 8px 12px; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-  .books.books-list .book-card .meta > * { margin: 0; }
-  .books.books-list .book-card .t { width: 100%; -webkit-line-clamp: 1; }
-  .books.books-list .book-card .a { -webkit-line-clamp: 1; max-width: 100%; }
-  .books.books-list .book-card .card-terms { margin: 0; }
-  .books.books-list .book-card .badge { margin-top: 0; }
-  .books.books-list .select-check { top: 4px; left: 4px; width: 22px; height: 22px; }
+  .books.books-table { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: clip; }
+  .books-table .list-head, .books-table .book-row { display: grid; grid-template-columns: var(--cols); gap: 0 12px; align-items: center; padding: 6px 12px; }
+  .books-table .list-head { background: var(--surface-2); padding-top: 9px; padding-bottom: 9px; font-size: 11px; font-weight: 800;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--muted); position: sticky; top: 0; z-index: 3; }
+  .books-table .list-head button { all: unset; cursor: pointer; white-space: nowrap; }
+  .books-table .list-head button:hover, .books-table .list-head button.sorted { color: var(--accent); }
+  .books-table .list-head button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  .books-table .book-card.book-row { border: 0; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; background: transparent;
+    transform: none; color: inherit; text-decoration: none; font-size: 14px; }
+  .books-table .book-row:hover { background: var(--accent-soft); transform: none; box-shadow: none; }
+  .books-table .book-row.selected { outline: 0; background: var(--accent-soft); }
+  .books-table .cell { min-width: 0; overflow: hidden; text-overflow: ellipsis; display: flex; flex-direction: column; gap: 1px; }
+  .books-table .cell-title .t { font-weight: 800; font-size: 14px; -webkit-line-clamp: 2; }
+  .books-table .sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .books-table .cell-categories .sub, .books-table .cell-tags .sub, .books-table .cell-readers .sub { white-space: normal; }
+  .books-table .narrow-only { display: none; }
+  .books-table .cell-cover .cover { width: 30px; border-radius: 4px; }
+  .books-table .cell-cover .cover img:hover, .books-table .book-row:hover .cover img { transform: none; }
+  .books-table .cell-cover .cover-fallback { font-size: 0; }
+  .books-table .cell .badge { align-self: flex-start; margin: 0; }
+  .books-table .cell-availability { flex-direction: row; flex-wrap: wrap; gap: 4px; }
+  .books-table .status-icons { margin: 0; }
+  .books-table .select-check { position: relative; top: auto; left: auto; width: 22px; height: 22px; flex: none;
+    background: var(--surface); border-color: var(--muted); box-shadow: none; }
+  .books-table .book-row.selected .select-check { background: var(--accent); border-color: var(--accent); }
+  .books-table .book-row.selected .select-check::after { left: 5px; top: 1px; width: 6px; height: 11px; }
+}
+@media (min-width: 600px) and (max-width: 899px) {
+  .books-table .list-head, .books-table .book-row { grid-template-columns: var(--cols-narrow); }
+  .books-table .col-wide { display: none; }
+  .books-table .narrow-only { display: block; }
 }
 
 /* Surlignages et notes Kobo (fiche d'un livre). */

@@ -7,7 +7,7 @@ import { renderBrand, renderHeader } from './entete.js';
 import { renderNav } from './icones.js';
 import { route } from './routage.js';
 import {
-  ALL_CATALOG_CARD, CATALOG_CARD_LABELS, ALL_CATALOG_FILTERS, CATALOG_FILTER_LABELS, accordionize, forgetMembers,
+  ALL_CATALOG_CARD, CATALOG_CARD_LABELS, DEFAULT_CATALOG_LIST, CATALOG_LIST_LABELS, ALL_CATALOG_FILTERS, CATALOG_FILTER_LABELS, accordionize, forgetMembers,
 } from './catalogue.js';
 import { FILE_LEVELS } from './fiche-livre.js';
 import { normHeader } from './import.js';
@@ -22,6 +22,7 @@ async function viewSettings() {
   const catalog = {
     filters: (s.catalog && s.catalog.filters) || ALL_CATALOG_FILTERS, position: (s.catalog && s.catalog.position) || 'top',
     card: (s.catalog && s.catalog.card) || ALL_CATALOG_CARD,
+    list: (s.catalog && s.catalog.list) || DEFAULT_CATALOG_LIST,
   };
   const libraryUrl = location.origin + LIB;
   view().innerHTML = `
@@ -157,6 +158,13 @@ async function viewSettings() {
         ${CATALOG_CARD_LABELS.map(([k, l, needs]) => {
           const off = needs && !(feat && feat[needs]);
           return `<label class="check" ${off ? 'title="Active d\'abord l\'option correspondante"' : ''}><input type="checkbox" name="card" value="${k}" ${catalog.card.includes(k) ? 'checked' : ''}> ${l}${off ? ' <span class="small muted">(option désactivée)</span>' : ''}</label>`;
+        }).join('')}
+      </div>
+      <label style="margin-top:14px">Vue liste (tableau) ${hint('Colonnes du catalogue affiché en liste, un livre par ligne (bouton à côté de Sélectionner, écrans d\'au moins 600 px). Le titre est toujours affiché ; sur un écran étroit, l\'auteur passe sous le titre et seules les colonnes Lecture et Dispo. restent.')}</label>
+      <div class="btn-row">
+        ${CATALOG_LIST_LABELS.map(([k, l, needs]) => {
+          const off = needs && !(feat && feat[needs]);
+          return `<label class="check" ${off ? 'title="Active d\'abord l\'option correspondante"' : ''}><input type="checkbox" name="list" value="${k}" ${catalog.list.includes(k) ? 'checked' : ''}> ${l}${off ? ' <span class="small muted">(option désactivée)</span>' : ''}</label>`;
         }).join('')}
       </div>
     </form>
@@ -392,8 +400,9 @@ async function viewSettings() {
     const filters = $$('#catalog-form [name=f]:checked').map((cb) => cb.value);
     const position = ($('#catalog-form [name=position]:checked') || {}).value || 'top';
     const card = $$('#catalog-form [name=card]:checked').map((cb) => cb.value);
+    const list = $$('#catalog-form [name=list]:checked').map((cb) => cb.value);
     try {
-      await api('/api/settings', { method: 'PUT', body: { catalog: { filters, position, card } } });
+      await api('/api/settings', { method: 'PUT', body: { catalog: { filters, position, card, list } } });
       await loadSettings();
       toast('Catalogue mis à jour.');
     } catch (err) { toast(err.message, 'error'); }

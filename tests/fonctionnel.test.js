@@ -148,6 +148,26 @@ test('selection : modification et suppression en masse, classement', async () =>
   assert.equal(ok(await a.post(`${api}/books/bulk-delete`, { ids })).deleted, 2);
 });
 
+test('vue liste : colonnes reglees a part, tri par editeur et par note', async () => {
+  const s0 = ok(await a.get(`${api}/settings`));
+  assert.deepEqual(s0.catalog.list, ['cover', 'series', 'authors', 'categories', 'status', 'rating', 'availability']);
+  ok(await a.put(`${api}/settings`, { catalog: { list: ['publisher', 'year', 'inconnu'] } }));
+  const s1 = ok(await a.get(`${api}/settings`));
+  assert.deepEqual(s1.catalog.list, ['publisher', 'year']);
+  assert.deepEqual(s1.catalog.card, s0.catalog.card, 'miniature inchangee');
+  const ids = [];
+  for (const [title, publisher, rating] of [['Tri B', 'Zeta', 2], ['Tri A', 'Alpha', 5], ['Tri C', '', 4]]) {
+    const b = ok(await a.post(`${api}/books`, { title, publisher }));
+    ok(await a.put(`${api}/books/${b.id}/status`, { rating }));
+    ids.push(b.id);
+  }
+  const titles = async (qs) => ok(await a.get(`${api}/books?q=tri&${qs}`)).items.map((b) => b.title);
+  assert.deepEqual(await titles('sort=publisher'), ['Tri A', 'Tri B', 'Tri C']);
+  assert.deepEqual(await titles('sort=publisher&reverse=1'), ['Tri B', 'Tri A', 'Tri C']);
+  assert.deepEqual(await titles('sort=rating'), ['Tri A', 'Tri C', 'Tri B']);
+  ok(await a.post(`${api}/books/bulk-delete`, { ids }));
+});
+
 test('etiquettes : QR code et marquage', async () => {
   const pending = ok(await a.get(`${api}/labels/pending`));
   assert.ok(pending.length > 0);
