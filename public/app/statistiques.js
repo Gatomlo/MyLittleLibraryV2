@@ -1,7 +1,7 @@
 // Statistiques — module de l'interface (organisation : public/app/README.md).
 import './etiquettes.js';
 import { features } from './etat.js';
-import { $, $$, view, esc, hint, mediaSrc, api, toast, dialog } from './utilitaires.js';
+import { $, $$, view, esc, hint, mediaSrc, fmtDuration, api, toast, dialog } from './utilitaires.js';
 import { starsHtml, combo, memberPicker } from './catalogue.js';
 
 // Tableau de bord : anneau d'objectif, cartes chiffres avec tendance, donut de
@@ -411,6 +411,13 @@ function userStatsHtml(s, mine) {
       ${s.tastes.series && s.tastes.series.length ? panel('Séries', rankList(s.tastes.series)) : ''}
     </div>
 
+    ${s.koboTime ? panel(`⏱ Temps de lecture sur la liseuse ${hint('Relevé sur les liseuses Kobo à chaque scan : livres lus ou abandonnés sur la période et lectures en cours.')}`, `<div class="kpis kpis-wide">
+      ${kpi('⏱', fmtDuration(s.koboTime.total), 'Temps de lecture')}
+      ${kpi('📚', s.koboTime.avgPerBook != null ? fmtDuration(s.koboTime.avgPerBook) : '—', 'Par livre lu', s.koboTime.books ? `sur ${fmt(s.koboTime.books)} livre(s)` : '')}
+      ${kpi('⚡', s.koboTime.pagesPerHour != null ? fmt(s.koboTime.pagesPerHour) : '—', 'Pages par heure')}
+      ${s.koboTime.longest ? kpi('🐢', fmtDuration(s.koboTime.longest.seconds), 'Plus long à lire', `<a href="#/book/${s.koboTime.longest.bookId}">${esc(s.koboTime.longest.title)}</a>`) : ''}
+    </div>`) : ''}
+
     ${panel('Records', `<div class="records">${records.map(([icon, label, b, val]) => `
       <div class="record">${b ? miniCover(b, 'record-cover') : '<span class="mini-cover record-cover"><span>?</span></span>'}
         <div><div class="record-label">${icon} ${label}</div>${b ? `<a href="#/book/${b.bookId}" class="record-title">${esc(b.title)}</a><div class="record-value">${val}</div>` : '<div class="muted small">Pas encore de données</div>'}</div></div>`).join('')}</div>`)}
@@ -419,7 +426,7 @@ function userStatsHtml(s, mine) {
       ${panel('📖 En cours', s.current.length ? `<div class="reading-now">${s.current.map((b) => `
         <div class="now-item">${miniCover(b)}
           <div class="now-info"><a href="#/book/${b.bookId}">${esc(b.title)}</a>
-            <div class="small muted">${b.days != null ? `${b.days} jour(s)` : 'début inconnu'}${b.pages ? ` · ${fmt(b.pages)} p.` : ''}</div>
+            <div class="small muted">${b.days != null ? `${b.days} jour(s)` : 'début inconnu'}${b.pages ? ` · ${fmt(b.pages)} p.` : ''}${b.koboSeconds ? ` · ⏱ ${fmtDuration(b.koboSeconds)}` : ''}</div>
             ${b.days != null ? `<div class="now-bar ${b.stale ? 'stale' : ''}"><span style="width:${Math.min(100, (b.days / s.staleDays) * 100)}%"></span></div>` : ''}
             ${b.stale ? `<span class="badge badge-warn">Traîne (+ de ${s.staleDays} j)</span>` : ''}</div></div>`).join('')}</div>`
         : '<p class="muted small">Aucune lecture en cours.</p>', 'span-2')}

@@ -1,7 +1,7 @@
 // Fiche livre — module de l'interface (organisation : public/app/README.md).
 import './catalogue.js';
 import { LIB, state, isMember, canManage, features, statusesOn, READING_LABELS, OPINION_LABELS } from './etat.js';
-import { $, $$, view, esc, hint, fmtDate, api, toast, go, coverHtml, availabilityBadge } from './utilitaires.js';
+import { $, $$, view, esc, hint, fmtDate, fmtDuration, api, toast, go, coverHtml, availabilityBadge } from './utilitaires.js';
 import { iconText } from './icones.js';
 import { route } from './routage.js';
 import { starsHtml, pickBookDialog } from './catalogue.js';
@@ -186,6 +186,7 @@ function statusEditorHtml(book) {
       + (s.startedAt && s.finishedAt ? `<span class="small muted">${daysBetween(s.startedAt, s.finishedAt)} jour(s) de lecture</span>` : '');
   }
   if (s.reading === 'abandoned') dates = dateField('startedAt', 'Commencé le') + dateField('abandonedAt', 'Abandonné le');
+  if (s.koboSeconds) dates += `<span class="small muted">⏱ ${fmtDuration(s.koboSeconds)} de lecture sur la liseuse</span>`;
   return `<div class="status-editor">
     <div class="btn-row">
       <span class="small muted">Ma lecture</span>${btn('reading', 'to_read', 'À lire')}${btn('reading', 'reading', 'En cours')}${btn('reading', 'read', 'Lu')}${btn('reading', 'abandoned', 'Abandonné')}

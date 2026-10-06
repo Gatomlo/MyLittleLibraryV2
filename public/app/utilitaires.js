@@ -76,6 +76,13 @@ function fmtDate(s, withTime) {
     : d.toLocaleDateString('fr-BE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+// Duree en secondes -> "5 h 12", "42 min".
+function fmtDuration(sec) {
+  const m = Math.round((Number(sec) || 0) / 60);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}`;
+}
+
 async function request(base, path, { method = 'GET', body } = {}) {
   // POST / PUT / PATCH toujours en JSON (corps vide = {}) : le serveur refuse le reste (415).
   if (body === undefined && ['POST', 'PUT', 'PATCH'].includes(method)) body = {};
@@ -322,6 +329,6 @@ function sessionStorageTake(k) {
 }
 
 export {
-  $, $$, view, esc, hint, mediaSrc, fmtDate, api, gapi, toast, fmtDay, dueHtml, REMINDER_DEFAULT, sendReminder, loanCache, remindedHtml,
+  $, $$, view, esc, hint, mediaSrc, fmtDate, fmtDuration, api, gapi, toast, fmtDay, dueHtml, REMINDER_DEFAULT, sendReminder, loanCache, remindedHtml,
   dialog, go, debounce, coverHtml, availabilityBadge, imageToDataUrl, loadScript, sessionStorageSet, sessionStorageTake,
 };

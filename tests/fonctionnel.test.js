@@ -384,6 +384,55 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   assert.equal(ok(await a.get(`${api}/books/${imp.bookId}`)).myStatus.percent, 42);
   const listed = ok(await a.get(`${api}/books?q=${encodeURIComponent('Titre corrigé')}&statusUser=${ctx.users.admin ? ctx.users.admin.id : ''}`));
   assert.equal(listed.items[0].status.percent, 42);
+
+  // Livre termine sur la liseuse : statut, temps de lecture et note repris (note de la
+  // fiche jamais remplacee, temps garde au plus grand releve).
+  const kid = `file:///mnt/onboard/${koboPath}`;
+  const finishedDb = (extra) => koboDb([{ id: kid, title: 'Titre corrigé', author: 'Ada Lovelace', status: 2, percent: 100, timeSpent: 7200, rating: 4, ...extra }]);
+  ok(await a.put(`${api}/books/${imp.bookId}/status`, { reading: 'reading', rating: null }));
+  ok(await kscan({}, finishedDb()));
+  let mine = ok(await a.get(`${api}/books/${imp.bookId}`)).myStatus;
+  assert.deepEqual([mine.reading, mine.rating, mine.koboSeconds, mine.finishedAt], ['read', 4, 7200, '2026-01-02 10:00:00']);
+  ok(await a.put(`${api}/books/${imp.bookId}/status`, { reading: 'read', rating: 5 }));
+  ok(await kscan({}, finishedDb({ rating: 3, timeSpent: 3600 })));
+  mine = ok(await a.get(`${api}/books/${imp.bookId}`)).myStatus;
+  assert.deepEqual([mine.rating, mine.koboSeconds], [5, 7200]);
+  const me = ok(await a.get(`${api}/stats/overview`)).me;
+  assert.equal(ok(await a.get(`${api}/stats/user/${me.id}`)).koboTime.total, 7200);
+  assert.equal(ok(await a.get(`${api}/kobo/devices/${dev.id}`)).items[0].timeSpent, 3600);
+
+  // Statut change dans l'appli : reporte sur la liseuse (« Non lu », puis « Lu »).
+  const statusOnKobo = async (raw) => {
+    const r = ok(await kscan({ 'X-Kobo-Write': '1' }, raw)).dbUpdate;
+    const out = (await a.get(`${api}/kobo/devices/${dev.id}/db/${r.token}`, { buffer: true })).body;
+    fs.writeFileSync(tmp, out);
+    const sdb2 = new DatabaseSync(tmp, { readOnly: true });
+    const row2 = sdb2.prepare('SELECT ReadStatus, ___PercentRead, FirstTimeReading, ChapterIDBookmarked FROM content WHERE ContentID = ?').get(kid);
+    sdb2.close();
+    ok(await a.post(`${api}/kobo/devices/${dev.id}/db/applied`, { token: r.token }));
+    return { r, row: row2, out };
+  };
+  ok(await a.put(`${api}/books/${imp.bookId}/status`, { reading: null, rating: 5 }));
+  const unread = await statusOnKobo(finishedDb());
+  assert.equal(unread.r.statuses, 1);
+  assert.deepEqual({ ...unread.row }, { ReadStatus: 0, ___PercentRead: 0, FirstTimeReading: 'true', ChapterIDBookmarked: null });
+  ok(await kscan({}, unread.out));
+  assert.equal(ok(await a.get(`${api}/books/${imp.bookId}`)).myStatus.reading, null, 'non lu garde apres le scan suivant');
+  ok(await a.put(`${api}/books/${imp.bookId}/status`, { reading: 'read', rating: 5 }));
+  const read2 = await statusOnKobo(unread.out);
+  assert.equal(read2.row.ReadStatus, 2);
+  assert.equal(ok(await kscan({ 'X-Kobo-Write': '1' }, read2.out)).dbUpdate, null, 'rien de plus a ecrire');
+
+  // Option « Retirer les livres termines » : livre termine (fichier garde par la
+  // bibliotheque) propose au navigateur ; surlignages gardes quand il a quitte la liseuse.
+  assert.deepEqual(ok(await kscan({}, finishedDb())).finished, []);
+  ok(await a.put(`${api}/kobo/devices/${dev.id}`, { removeFinished: true }));
+  const fin = ok(await kscan({}, finishedDb({ bookmarks: [{ text: 'Passage gardé.' }] })));
+  assert.equal(fin.removeFinished, true);
+  assert.deepEqual(fin.finished.map((i) => i.path), [koboPath]);
+  ok(await kscan({}, koboDb([{ id: 'file:///mnt/onboard/autre.epub', title: 'Autre livre' }])));
+  assert.deepEqual(ok(await a.get(`${api}/kobo/books/${imp.bookId}/annotations`)).map((n) => n.text), ['Passage gardé.']);
+  assert.equal(ok(await a.get(`${api}/books/${imp.bookId}`)).myStatus.koboSeconds, 7200);
   ok(await a.del(`${api}/kobo/devices/${dev.id}`));
   assert.equal(ok(await a.get(`${api}/kobo/devices`)).length, 0);
 

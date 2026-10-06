@@ -1,7 +1,7 @@
 // Liseuses Kobo (USB) — module de l'interface (organisation : public/app/README.md).
 import './fiche-livre.js';
 import { state, LIBRARY, LIB, isMember, canManage, features } from './etat.js';
-import { $, $$, view, esc, hint, fmtDate, api, toast, go, debounce } from './utilitaires.js';
+import { $, $$, view, esc, hint, fmtDate, fmtDuration, api, toast, go, debounce } from './utilitaires.js';
 import { iconText, renderNav } from './icones.js';
 import { route, onLeave } from './routage.js';
 import { searchPicker, loadMembers, pickBookDialog } from './catalogue.js';
@@ -266,12 +266,12 @@ async function scanKobo(root = null, { retry = false } = {}) {
       ...(write ? { 'X-Kobo-Write': '1' } : {}), ...(retry ? { 'X-Kobo-Retry': '1' } : {}) };
     box.step(`Envoi de la base de la liseuse (${mb})…`, 0);
     const body = walBusy ? new Blob([dbFile, wal]) : dbFile;
-    const { dbUpdate, warning, pendingOld, stale, ...device } = await sendRawProgress('/api/kobo/scan', body, 'application/x-sqlite3', headers, (p) => {
+    const { dbUpdate, warning, pendingOld, stale, finished, ...device } = await sendRawProgress('/api/kobo/scan', body, 'application/x-sqlite3', headers, (p) => {
       if (p < 1) box.step(`Envoi de la base de la liseuse (${mb})… ${Math.round(p * 100)} %`, Math.round(p * 100));
       else box.step('Analyse des livres et rapprochement avec les fiches…');
     });
     src.device = device;
-    result = { pendingOld, stale };
+    result = { pendingOld, stale, finished: finished || [] };
     if (warning) toast(warning, 'error');
     if (dbUpdate && dbUpdate.error) toast(`Scan fait, mais informations des fiches non écrites dans la liseuse : ${dbUpdate.error}`, 'error');
     else if (dbUpdate) await applyDbUpdate(src, dbUpdate, dbFile, walBusy ? wal : null, box);
@@ -281,10 +281,30 @@ async function scanKobo(root = null, { retry = false } = {}) {
   if (!result.stale) koboChanged = false;
   // Base qui semblait perimee : relue une fois (lecture fraiche du fichier).
   if (result.stale && !retry && src.root) return scanKobo(src.root, { retry: true });
+  if (result.finished.length && src.remove) await removeFinished(result.finished);
   if (result.pendingOld) {
     toast(`${result.pendingOld} livre(s) envoyé(s) pas encore importé(s) par la liseuse : éjecte-la, laisse-la les importer, puis rebranche-la (leur série et leurs collections seront ajoutées à ce moment-là).`);
   }
   return src.device;
+}
+
+// Livres termines retires de la liseuse (option de la liseuse) : fichiers effaces, puis
+// oublies comme une suppression a la main (base de la liseuse nettoyee a « Terminer »).
+async function removeFinished(list) {
+  let ok = 0;
+  for (const i of list) {
+    try {
+      let gone = false;
+      try { await kobo.remove(i.path); gone = true; } catch (e) { if (e.name !== 'NotFoundError') throw e; }
+      if (await forgetOnKobo(i)) koboChanged = true;
+      if (gone) ok++;
+    } catch (e) { /* reessaye au prochain scan */ }
+  }
+  if (ok) {
+    toast(`${ok} livre(s) terminé(s) retiré(s) de la liseuse. ${writeDb()
+      ? 'Quand tu as fini, clique sur « Terminer » : la liseuse sera mise à jour à ce moment-là.'
+      : 'Éjecte la liseuse pour qu’elle mette sa bibliothèque à jour.'}`);
+  }
 }
 
 // Terminer : la page est rechargee sans toucher a la liseuse (comme un onglet ferme :
@@ -343,9 +363,10 @@ async function applyDbUpdate(src, u, original, wal, box) {
   if (u.token) {
     toast([u.merged ? 'Écriture laissée en suspens par la liseuse terminée.' : '',
       u.changed ? `${u.changed} livre(s) mis à jour dans la liseuse.` : '',
+      u.statuses ? `Statut de lecture de ${u.statuses} livre(s) reporté sur la liseuse.` : '',
       u.removed ? `${u.removed} livre(s) retiré(s) de sa base.` : '',
       u.collections ? 'Collections mises à jour.' : '',
-      u.changed || u.removed || u.collections ? 'Éjecte-la pour voir les changements.' : ''].filter(Boolean).join(' '));
+      u.changed || u.statuses || u.removed || u.collections ? 'Éjecte-la pour voir les changements.' : ''].filter(Boolean).join(' '));
   }
 }
 
@@ -498,7 +519,9 @@ function editKoboDialog(d, members) {
         <select name="collections">${[['both', 'Catégories et tags'], ['categories', 'Catégories'], ['tags', 'Tags'], ['none', 'Aucune']]
           .map(([v, l]) => `<option value="${v}" ${(d.collections || 'both') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <label class="check"><input type="checkbox" name="writeDb" ${d.writeDb ? 'checked' : ''}> Écrire les informations des fiches dans la liseuse
-        ${hint('Avec Chrome : titre, auteurs, résumé, série et tome des fiches écrits dans la base de la liseuse à chaque scan (onglet Séries de la Kobo), livres mis à jour sans perdre la progression. La base saine est gardée par l\'appli à chaque scan (10 dernières) et copiée sur la liseuse avant chaque écriture ; une écriture laissée en suspens par la liseuse est terminée, comme avec Calibre.')}</label>
+        ${hint('Avec Chrome : titre, auteurs, résumé, série et tome des fiches écrits dans la base de la liseuse à chaque scan (onglet Séries de la Kobo), livres mis à jour sans perdre la progression, statut « Lu » ou « Non lu » changé dans l\'appli reporté sur la liseuse. La base saine est gardée par l\'appli à chaque scan (10 dernières) et copiée sur la liseuse avant chaque écriture ; une écriture laissée en suspens par la liseuse est terminée, comme avec Calibre.')}</label>
+      <label class="check"><input type="checkbox" name="removeFinished" ${d.removeFinished ? 'checked' : ''}> Retirer de la liseuse les livres terminés
+        ${hint('Avec Chrome : à chaque scan, les livres marqués « Terminé » sur la liseuse en sont effacés, seulement si la bibliothèque garde leur fichier epub. Statut, temps de lecture, note et surlignages restent dans l\'appli.')}</label>
       <div class="btn-row">
         <button class="btn btn-primary" type="submit">Enregistrer</button>
         <button class="btn" type="button" data-close>Annuler</button>
@@ -522,7 +545,7 @@ function editKoboDialog(d, members) {
     try {
       const r = await api(`/api/kobo/devices/${d.id}`, { method: 'PUT', body: {
         name: e.target.name.value, userId: e.target.userId.value || null, writeDb: e.target.writeDb.checked,
-        kepub: e.target.kepub.checked, collections: e.target.collections.value,
+        kepub: e.target.kepub.checked, collections: e.target.collections.value, removeFinished: e.target.removeFinished.checked,
       } });
       if (kobo && kobo.device && kobo.device.id === r.id) { kobo.device = r; renderNav(); }
       close();
@@ -706,8 +729,10 @@ async function viewKoboDevice(id) {
     const main = i.readStatus === 2 ? '<span class="badge badge-ok">Lu</span>'
       : i.readStatus === 1 || i.percent > 0 ? `<span class="badge badge-muted">${Math.round(i.percent)} %</span>`
         : '<span class="small muted">Pas commencé</span>';
+    const extra = [i.lastReadAt ? fmtDate(i.lastReadAt) : '', i.timeSpent >= 60 ? `⏱ ${fmtDuration(i.timeSpent)}` : '', i.rating ? '★'.repeat(i.rating) : '']
+      .filter(Boolean).join(' · ');
     return main + (i.status === 'abandoned' ? ' <span class="badge badge-warn">Abandonné</span>' : '')
-      + (i.lastReadAt ? `<div class="small muted">${fmtDate(i.lastReadAt)}</div>` : '');
+      + (extra ? `<div class="small muted">${extra}</div>` : '');
   };
   const seg = (key, label, n) => `<button type="button" data-filter="${key}" class="${f === key ? 'active' : ''}">${label} (${n})</button>`;
   view().innerHTML = `

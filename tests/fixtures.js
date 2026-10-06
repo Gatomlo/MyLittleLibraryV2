@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const JSZip = require('jszip');
 const { DatabaseSync } = require('node:sqlite');
 
-// Base KoboReader.sqlite minimale. books : [{ id, title, author, isbn, status, percent }].
+// Base KoboReader.sqlite minimale. books : [{ id, title, author, isbn, status, percent, timeSpent, rating }].
 // withWal : base en mode journal (WAL) dont tout le contenu est encore dans le journal,
 // renvoyee comme { main, wal } (fichier principal illisible seul).
 // corrupt : 'index' (index de ContentType abime) ou 'table' (index et une page de la
@@ -19,7 +19,9 @@ function koboDb(books, { withWal = false, corrupt = null } = {}) {
   if (withWal) db.exec('PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;');
   db.exec(`CREATE TABLE content (ContentID TEXT, ContentType INTEGER, Title TEXT, Attribution TEXT, ISBN TEXT, Publisher TEXT,
     Series TEXT, SeriesNumber TEXT, ReadStatus INTEGER, ___PercentRead INTEGER, DateLastRead TEXT, ___FileSize INTEGER,
-    Description TEXT, SeriesID TEXT, SeriesNumberFloat REAL, ImageId TEXT, BookID TEXT);
+    Description TEXT, SeriesID TEXT, SeriesNumberFloat REAL, ImageId TEXT, BookID TEXT, TimeSpentReading INTEGER,
+    FirstTimeReading BOOL, ChapterIDBookmarked TEXT);
+    CREATE TABLE ratings (ContentID TEXT NOT NULL PRIMARY KEY, Rating INTEGER, Review TEXT, DateModified TEXT NOT NULL DEFAULT '');
     CREATE TABLE user (UserDisplayName TEXT);
     CREATE TABLE volume_shortcovers (volumeId TEXT, shortcoverId TEXT, VolumeIndex INTEGER);
     CREATE TABLE Bookmark (BookmarkID TEXT NOT NULL PRIMARY KEY, VolumeID TEXT NOT NULL, ContentID TEXT NOT NULL, Text TEXT, Annotation TEXT,
@@ -27,13 +29,16 @@ function koboDb(books, { withWal = false, corrupt = null } = {}) {
     CREATE TABLE Shelf (CreationDate TEXT, Id TEXT, InternalName TEXT, LastModified TEXT, Name TEXT, Type TEXT, _IsDeleted BOOL, _IsVisible BOOL,
       _IsSynced BOOL, _SyncTime TEXT, LastAccessed TEXT, PRIMARY KEY(Id));
     CREATE TABLE ShelfContent (ShelfName TEXT, ContentId TEXT, DateModified TEXT, _IsDeleted BOOL, _IsSynced BOOL, PRIMARY KEY(ShelfName, ContentId));`);
-  const ins = db.prepare(`INSERT INTO content (ContentID, ContentType, Title, Attribution, ISBN, ReadStatus, ___PercentRead, DateLastRead, ___FileSize, ImageId)
-    VALUES (?, 6, ?, ?, ?, ?, ?, ?, 1000, ?)`);
+  const ins = db.prepare(`INSERT INTO content (ContentID, ContentType, Title, Attribution, ISBN, ReadStatus, ___PercentRead, DateLastRead, ___FileSize, ImageId,
+      TimeSpentReading, ChapterIDBookmarked) VALUES (?, 6, ?, ?, ?, ?, ?, ?, 1000, ?, ?, ?)`);
+  const rate = db.prepare('INSERT INTO ratings (ContentID, Rating) VALUES (?, ?)');
   const chapter = db.prepare("INSERT INTO content (ContentID, ContentType, Title, BookID) VALUES (?, 9, ?, ?)");
   const cover = db.prepare('INSERT INTO volume_shortcovers VALUES (?, ?, ?)');
   const mark = db.prepare("INSERT INTO Bookmark (BookmarkID, VolumeID, ContentID, Text, Annotation, DateCreated, ChapterProgress, Type) VALUES (?, ?, ?, ?, ?, '2026-02-03T08:00:00Z', 0.5, ?)");
   for (const b of books) {
-    ins.run(b.id, b.title, b.author || null, b.isbn || null, b.status || 0, b.percent || 0, '2026-01-02T10:00:00Z', b.id.replace(/[^a-zA-Z0-9]/g, '_'));
+    ins.run(b.id, b.title, b.author || null, b.isbn || null, b.status || 0, b.percent || 0, '2026-01-02T10:00:00Z', b.id.replace(/[^a-zA-Z0-9]/g, '_'),
+      b.timeSpent || 0, b.percent ? 'ch1.xhtml' : null);
+    if (b.rating) rate.run(b.id, b.rating);
     for (let i = 1; i <= (b.chapters || 0); i++) {
       chapter.run(`${b.id.slice(7)}!OEBPS!ch${i}.xhtml`, `Chapitre ${i}`, b.id);
       cover.run(b.id, `${b.id.slice(7)}!OEBPS!ch${i}.xhtml`, i);
