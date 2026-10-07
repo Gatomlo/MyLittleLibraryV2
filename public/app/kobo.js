@@ -410,20 +410,28 @@ function askConvert(items) {
     el.className = 'modal-backdrop';
     el.innerHTML = `<div class="modal" role="dialog" aria-modal="true">
       <h2>Convertir en ${to} ?</h2>
-      <p class="small muted">${rows.length > 1 ? `${rows.length} livres sont` : 'Ce livre est'} sur la liseuse en ${from}. Coché : converti, la liseuse le voit comme un nouveau livre (progression, marque-pages et état « Lu » perdus). Décoché : gardé en ${from}, mis à jour quand même.</p>
+      <div class="warn-box"><strong>Livre coché = progression perdue.</strong> Converti, il devient un nouveau livre pour la liseuse : sa progression, ses marque-pages et son état « Lu » sont effacés. Décoché : gardé en ${from}, mis à jour quand même.</div>
       ${rows.length > 3 ? `<div class="btn-row"><button class="btn btn-small" type="button" data-all="1">Tout cocher</button>
         <button class="btn btn-small" type="button" data-all="0">Tout décocher</button></div>` : ''}
-      <div class="kobo-convert-list">${rows.map((r) => `<label class="check"><input type="checkbox" value="${r.id}" ${r.started ? '' : 'checked'}>
-        <span>${esc(r.title)} <span class="small ${r.started ? 'kobo-convert-started' : 'muted'}">${esc(r.state)}</span></span></label>`).join('')}</div>
+      <div class="kobo-convert-list">${rows.map((r) => `<label class="check${r.started ? ' kobo-convert-read' : ''}"><input type="checkbox" value="${r.id}" ${r.started ? '' : 'checked'}>
+        <span>${esc(r.title)} <span class="small ${r.started ? 'kobo-convert-started' : 'muted'}">${esc(r.state)}</span>${r.started ? ' <span class="kobo-convert-loss">Progression perdue</span>' : ''}</span></label>`).join('')}</div>
+      <p class="kobo-convert-summary" data-loss></p>
       <div class="btn-row" style="margin-top:14px">
         <button class="btn btn-primary" type="button" data-ok>Continuer</button>
         <button class="btn" type="button" data-close>Annuler</button>
       </div></div>`;
     document.body.appendChild(el);
+    // Livres commences ou lus coches : rappel au-dessus des boutons.
+    const summary = () => {
+      const n = $$('.kobo-convert-read input:checked', el).length;
+      $('[data-loss]', el).textContent = n ? `${n} livre(s) commencé(s) ou lu(s) coché(s) : leur progression sera perdue.` : '';
+    };
+    summary();
+    el.addEventListener('change', summary);
     const close = (v) => { el.remove(); resolve(v); };
     el.addEventListener('click', (e) => {
       const all = e.target.closest('[data-all]');
-      if (all) $$('input[type=checkbox]', el).forEach((c) => { c.checked = all.dataset.all === '1'; });
+      if (all) { $$('input[type=checkbox]', el).forEach((c) => { c.checked = all.dataset.all === '1'; }); summary(); }
       else if (e.target.closest('[data-ok]')) close(new Set($$('input[type=checkbox]:checked', el).map((c) => Number(c.value))));
       else if (e.target === el || e.target.closest('[data-close]')) close(null);
     });

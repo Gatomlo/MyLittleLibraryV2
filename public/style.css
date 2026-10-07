@@ -886,6 +886,11 @@ span.wish-heart:not(.on) { visibility: hidden; }
 .kobo-convert-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow: auto; margin-top: 10px; }
 .kobo-convert-list .check { font-weight: 400; align-items: flex-start; }
 .kobo-convert-started { color: var(--warn); font-weight: 500; }
+.kobo-convert-loss { display: none; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.kobo-convert-read:has(input:checked) { background: var(--danger-soft); border-radius: 10px; padding: 6px 8px; }
+.kobo-convert-read:has(input:checked) .kobo-convert-loss { display: inline-block; }
+.kobo-convert-summary { color: var(--danger); font-weight: 600; font-size: 14px; margin: 12px 0 0; }
+.kobo-convert-summary:empty { display: none; }
 .wish-owner-pick { flex-wrap: nowrap; }
 .wish-owner-pick .combo { flex: 1 1 240px; max-width: 360px; }
 /* Au-dessus des blocs suivants (animation d'apparition = transform, donc empilement propre). */
