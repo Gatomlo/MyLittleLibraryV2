@@ -480,7 +480,7 @@ function bindSelection(reload) {
   if (selKobo) selKobo.onclick = busy(async (btn) => {
     const ids = Array.from(state.selected);
     try {
-      const r = await pushManyToKobo(ids, (n) => { btn.textContent = `Envoi ${n} / ${ids.length}…`; });
+      const r = await pushManyToKobo(ids, (n, total) => { btn.textContent = `Envoi ${n} / ${total}…`; });
       toast(`${r.sent} livre(s) envoyé(s)${r.updated ? `, ${r.updated} mis à jour` : ''}${r.already ? `, ${r.already} déjà sur la liseuse` : ''}${r.started ? `, ${r.started} commencé(s) sur la liseuse laissé(s) tel(s) quel(s)` : ''}${r.skipped ? `, ${r.skipped} sans fichier ou sans droit` : ''}.`
         + (r.sent || r.updated ? (kobo && kobo.write ? ` Quand tu as fini, clique sur « Terminer » (menu du compte), puis éjecte la liseuse dans Windows${kobo.device && kobo.device.writeDb ? ' ; série et collections des nouveaux livres au prochain branchement' : ''}.` : ' Copie les fichiers téléchargés sur la liseuse.') : ''));
       reload();
