@@ -114,8 +114,9 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   ouverture dans le catalogue pour une sélection en masse. Export Excel / CSV des
   fiches de l'onglet, à corriger puis réimporter en « Mettre à jour la fiche ».
   « Compléter tout » relance la recherche pour tous les livres de l'onglet (seules
-  les informations vides sont complétées) : ISBN lu dans le fichier epub, sinon retrouvé par titre + auteur seulement
-  si une seule édition correspond, catégorie attribuée seulement si une catégorie
+  les informations vides sont complétées) : ISBN lu dans le fichier epub (s'il est
+  inconnu en ligne, souvent numérique, ISBN papier préféré), sinon retrouvé par titre +
+  auteur seulement si une seule édition correspond, catégorie attribuée seulement si une catégorie
   existante correspond aux sujets en ligne. ISBN inconnu en ligne (souvent un ISBN
   numérique) : résumé, couverture, auteurs, catégorie (et éditeur s'il est le même pour
   toutes les éditions) repris d'une édition de même titre et même auteur, sans changer
