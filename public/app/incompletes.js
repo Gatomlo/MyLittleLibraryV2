@@ -18,8 +18,10 @@ const MISSING_REFILL = ['isbn', 'category', 'cover', 'authors', 'publisher', 'ye
 const MISSING_ASSIGN = { location: 'Emplacement (ex. Étagère A)', tags: 'Tag(s), séparés par des virgules' };
 const REFILL_HINT = {
   isbn: 'ISBN cité dans le fichier epub, sinon recherche par titre + auteur (BnF) : l\'ISBN n\'est retenu que si une seule édition correspond (année, éditeur et pages de la fiche).',
-  category: 'Seules tes catégories existantes sont attribuées, quand elles correspondent aux sujets trouvés en ligne.',
+  category: 'Seules tes catégories existantes sont attribuées, quand elles correspondent aux sujets trouvés en ligne (ISBN inconnu en ligne, souvent numérique : sujets d\'une édition papier de même titre et même auteur).',
 };
+// ISBN inconnu en ligne (souvent numerique) : autre edition reprise par le serveur.
+const OTHER_EDITION_HINT = ' ISBN inconnu en ligne (souvent un ISBN numérique) : informations reprises d\'une édition papier de même titre et même auteur, sans changer l\'ISBN de la fiche.';
 
 // Relance la recherche en ligne pour chaque livre sans cette information.
 // Deux livres a la fois ; le champ n'est rempli que s'il est toujours vide.
@@ -78,7 +80,7 @@ async function viewIncomplete(key) {
             <a class="btn btn-small" href="${LIB}/api/export/inventory.csv?missing=${key}">CSV</a>
             ${hint('Exporte ces fiches pour les corriger dans Excel, puis réimporte le fichier : Ajout multiple › Fichier complet › « ISBN déjà au catalogue : Mettre à jour la fiche ». Seules les colonnes remplies écrasent les fiches.')}</span>
           <button class="btn btn-small" type="button" id="missing-catalog" title="Ouvrir dans le catalogue (sélection en masse)">Catalogue</button>
-          ${MISSING_REFILL.includes(key) ? `<button class="btn btn-small btn-primary" type="button" id="missing-refill" hidden><span class="hide-mobile">Compléter tout</span><span class="show-mobile">Tout</span></button>${hint(REFILL_HINT[key] || 'Relance la recherche en ligne pour chaque livre concerné ; le champ n\'est rempli que s\'il est toujours vide.')}` : ''}
+          ${MISSING_REFILL.includes(key) ? `<button class="btn btn-small btn-primary" type="button" id="missing-refill" hidden><span class="hide-mobile">Compléter tout</span><span class="show-mobile">Tout</span></button>${hint(REFILL_HINT[key] || `Relance la recherche en ligne pour chaque livre concerné ; le champ n'est rempli que s'il est toujours vide.${['summary', 'cover', 'authors', 'publisher'].includes(key) ? OTHER_EDITION_HINT : ''}`)}` : ''}
         </div>
       </div>
       <div id="refill-progress" class="small muted" hidden></div>
