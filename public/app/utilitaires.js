@@ -111,8 +111,8 @@ function toast(message, type) {
   if (type === 'error') el.setAttribute('role', 'alert');
   el.textContent = message;
   $('#toasts').appendChild(el);
-  // Erreur : gardee jusqu'a sa fermeture (bouton ou clic). Autres : duree selon la
-  // longueur du texte (3,5 a 12 s), suspendue tant que la souris est dessus.
+  // Duree selon la longueur du texte (erreur : 10 a 30 s, fermable par la croix ou
+  // un clic ; autres : 3,5 a 12 s), suspendue tant que la souris est dessus.
   if (type === 'error') {
     const close = document.createElement('button');
     close.type = 'button';
@@ -121,9 +121,9 @@ function toast(message, type) {
     close.textContent = '×';
     el.appendChild(close);
     el.addEventListener('click', () => el.remove());
-    return;
   }
-  const delay = Math.min(12000, Math.max(3500, message.length * 70));
+  const delay = type === 'error' ? Math.min(30000, Math.max(10000, message.length * 150))
+    : Math.min(12000, Math.max(3500, message.length * 70));
   let timer = setTimeout(() => el.remove(), delay);
   el.addEventListener('mouseenter', () => clearTimeout(timer));
   el.addEventListener('mouseleave', () => { timer = setTimeout(() => el.remove(), 2000); });
