@@ -116,7 +116,8 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   « Compléter tout » relance la recherche pour tous les livres de l'onglet (seules
   les informations vides sont complétées) : ISBN lu dans le fichier epub (s'il est
   inconnu en ligne, souvent numérique, ISBN papier préféré), sinon retrouvé par titre +
-  auteur seulement si une seule édition correspond, catégorie attribuée seulement si une catégorie
+  auteur seulement si une seule édition correspond (case « Choisir en cas de doute » :
+  livres à plusieurs éditions possibles proposés un par un à la fin, pour choisir l'ISBN), catégorie attribuée seulement si une catégorie
   existante correspond aux sujets en ligne. ISBN inconnu en ligne (souvent un ISBN
   numérique) : informations reprises d'une édition de même titre et même auteur (la plus
   proche de la fiche : éditeur, année, pages), sans changer l'ISBN de la fiche. Emplacement et tags : cases à cocher et

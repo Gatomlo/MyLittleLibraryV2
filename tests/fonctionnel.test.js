@@ -604,3 +604,14 @@ test('envoi vers une liseuse : toutes les metadonnees de l\'epub remplacees par 
   assert.ok(!/dc:creator|dc:publisher|dc:description|calibre:series/.test(bare));
   assert.ok(bare.includes('<dc:identifier id="uid">urn:mll:7</dc:identifier>'));
 });
+
+test('fiches sans ISBN : ISBN choisi parmi les editions proposees', async () => {
+  const b = ok(await a.post(`${api}/books`, { title: 'Livre sans ISBN choisi', authors: 'Auteur Test' }));
+  assert.equal((await a.post(`${api}/books/${b.id}/refill`, { field: 'isbn', value: 'pas un isbn' })).status, 400);
+  assert.equal(ok(await a.post(`${api}/books/${b.id}/refill`, { field: 'isbn', value: '978-2-8112-1918-5' })).status, 'filled');
+  assert.equal(ok(await a.get(`${api}/books/${b.id}`)).isbn, '9782811219185');
+  // Fiche qui a deja un ISBN : jamais remplace.
+  assert.equal(ok(await a.post(`${api}/books/${b.id}/refill`, { field: 'isbn', value: '9782811228903' })).status, 'notfound');
+  assert.equal(ok(await a.get(`${api}/books/${b.id}`)).isbn, '9782811219185');
+  ok(await a.del(`${api}/books/${b.id}`));
+});
