@@ -76,6 +76,10 @@ async function koboRestore() {
       session((st) => st.setItem(EJECTED_KEY, '1'));
       toast(`Terminé : tu peux maintenant éjecter ${info.name || 'la liseuse'} dans Windows.`);
     }
+    // Erreurs affichees juste avant le rechargement de « Terminer » : remontrees.
+    const errors = session((st) => st.getItem(ERRORS_KEY));
+    session((st) => st.removeItem(ERRORS_KEY));
+    try { JSON.parse(errors || '[]').forEach((m) => toast(m, 'error')); } catch (e) { /* rien a remontrer */ }
     renderNav();
     return;
   }
@@ -310,6 +314,7 @@ async function removeFinished(list) {
 // Terminer : la page est rechargee sans toucher a la liseuse (comme un onglet ferme :
 // plus aucun acces en memoire), puis Windows peut l'ejecter proprement.
 const EJECTED_KEY = 'mll-kobo-ejected';
+const ERRORS_KEY = 'mll-kobo-errors';
 const session = (fn) => { try { return fn(sessionStorage); } catch (e) { return null; } };
 // Changements faits sur la liseuse depuis le dernier scan (livres retires, remplaces) :
 // ecrits dans sa base en une fois, a « Terminer ».
@@ -324,6 +329,8 @@ async function ejectKobo() {
   }
   koboChanged = false;
   session((st) => st.setItem(EJECTED_KEY, 'toast'));
+  const errors = $$('#toasts .toast.error').map((el) => el.firstChild.textContent);
+  if (errors.length) session((st) => st.setItem(ERRORS_KEY, JSON.stringify(errors)));
   location.reload();
 }
 const clearEjected = () => session((st) => st.removeItem(EJECTED_KEY));

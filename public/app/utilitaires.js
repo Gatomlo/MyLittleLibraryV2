@@ -111,7 +111,22 @@ function toast(message, type) {
   if (type === 'error') el.setAttribute('role', 'alert');
   el.textContent = message;
   $('#toasts').appendChild(el);
-  setTimeout(() => el.remove(), type === 'error' ? 6000 : 3500);
+  // Erreur : gardee jusqu'a sa fermeture (bouton ou clic). Autres : duree selon la
+  // longueur du texte (3,5 a 12 s), suspendue tant que la souris est dessus.
+  if (type === 'error') {
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'toast-close';
+    close.setAttribute('aria-label', 'Fermer');
+    close.textContent = '×';
+    el.appendChild(close);
+    el.addEventListener('click', () => el.remove());
+    return;
+  }
+  const delay = Math.min(12000, Math.max(3500, message.length * 70));
+  let timer = setTimeout(() => el.remove(), delay);
+  el.addEventListener('mouseenter', () => clearTimeout(timer));
+  el.addEventListener('mouseleave', () => { timer = setTimeout(() => el.remove(), 2000); });
 }
 
 // Date sans heure ('YYYY-MM-DD') : date de retour prevue d'un pret.
