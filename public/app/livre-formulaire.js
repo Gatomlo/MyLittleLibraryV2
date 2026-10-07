@@ -1,7 +1,7 @@
 // Ajout / modification d'un livre — module de l'interface (organisation : public/app/README.md).
 import './administration.js';
 import { LIBRARY, state, pending, features } from './etat.js';
-import { $, $$, view, esc, hint, mediaSrc, api, gapi, toast, go, debounce, imageToDataUrl, sessionStorageTake } from './utilitaires.js';
+import { $, $$, view, esc, hint, mediaSrc, api, gapi, toast, go, debounce, imageToDataUrl, sessionStorageTake, sessionStorageSet } from './utilitaires.js';
 import { openCoverSearch, scanIsbn } from './scanner.js';
 import { icon, iconText } from './icones.js';
 import { loadCategories, combo, loadMembers, memberPicker } from './catalogue.js';
@@ -34,6 +34,8 @@ async function viewBookForm(id) {
     const r = JSON.parse(sessionStorage.getItem('mll-after-edit') || 'null');
     if (editing && r && r.id === b.id) { fromIncomplete = r.hash; if (r.label) backLabel = r.label; }
   } catch (e) { /* rien */ }
+  // Ouvert depuis un onglet des fiches incompletes : « Enregistrer et suivante ».
+  const missingKey = editing && fromIncomplete ? (/^#\/incomplete\/([\w-]+)$/.exec(fromIncomplete) || [])[1] : null;
   view().innerHTML = `
     <p><a href="${fromIncomplete || (editing ? `#/book/${b.id}` : '#/')}">← ${fromIncomplete ? esc(backLabel) : editing ? 'Retour à la fiche' : 'Catalogue'}</a></p>
     ${editing ? '<h1>Modifier le livre</h1>' : `<div class="page-head"><div><h1>Ajouter un livre</h1></div>
@@ -113,7 +115,8 @@ async function viewBookForm(id) {
         <div id="readers-pick"></div></div>` : ''}
       <div class="field"><label for="notes">Notes internes ${hint('Visibles uniquement par les gestionnaires.')}</label><textarea id="notes" name="notes" style="min-height:70px">${esc(b.notes)}</textarea></div>
       <div id="form-err"></div>
-      <div class="btn-row"><button class="btn btn-primary" type="submit">${icon('check', 16)}${editing ? 'Enregistrer' : 'Ajouter<span class="hide-mobile"> au catalogue</span>'}</button></div>
+      <div class="btn-row"><button class="btn btn-primary" type="submit">${icon('check', 16)}${editing ? 'Enregistrer' : 'Ajouter<span class="hide-mobile"> au catalogue</span>'}</button>
+        ${missingKey ? `<button class="btn" type="submit" data-next title="Enregistrer cette fiche et ouvrir la fiche incomplète suivante"><span class="hide-mobile">Enregistrer et suivante</span><span class="show-mobile">Suivante</span> →</button>` : ''}</div>
     </form>`;
 
   const f = $('#book-form');
@@ -341,7 +344,11 @@ async function viewBookForm(id) {
     addCat();
     addTag();
     const btn = $('button[type=submit]', f);
-    btn.disabled = true;
+    const buttons = $$('button[type=submit]', f);
+    buttons.forEach((x) => { x.disabled = true; });
+    // Fiche incomplete suivante : ordre de la liste avant l'enregistrement (celle-ci peut en sortir).
+    const next = !!(missingKey && e.submitter && e.submitter.hasAttribute('data-next'));
+    const before = next ? (await api(`/api/books/missing/${missingKey}/ids`).catch(() => ({ ids: [] }))).ids : [];
     const body = {
       isbn: f.isbn.value, title: f.title.value, subtitle: f.subtitle.value, authors: authorParts().filter(Boolean).join(', '),
       publisher: f.publisher.value, collection: f.collection.value, series: f.series.value, seriesNumber: f.seriesNumber.value, year: f.year.value, pages: f.pages.value, summary: f.summary.value,
@@ -378,10 +385,21 @@ async function viewBookForm(id) {
       }
       if (fromIncomplete) sessionStorageTake('mll-after-edit');
       if (fromIncomplete === '#/import') markImportChecked(saved.id);
+      if (next) {
+        const { ids } = await api(`/api/books/missing/${missingKey}/ids`).catch(() => ({ ids: [] }));
+        const left = new Set(ids);
+        const nextId = before.slice(before.indexOf(saved.id) + 1).find((id) => left.has(id));
+        if (nextId) {
+          sessionStorageSet('mll-after-edit', JSON.stringify({ id: nextId, hash: fromIncomplete }));
+          go(`#/book/${nextId}/edit`);
+          return;
+        }
+        toast('Plus de fiche incomplète après celle-ci.');
+      }
       go(fromIncomplete || `#/book/${saved.id}`);
     } catch (err) {
       $('#form-err').innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
-      btn.disabled = false;
+      buttons.forEach((x) => { x.disabled = false; });
     }
   };
 }

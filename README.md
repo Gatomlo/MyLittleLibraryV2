@@ -110,7 +110,8 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   l'import (+ « ID fiche »), donc réimportable (y compris dans une autre bibliothèque).
 - **Fiches incomplètes** (Ajout multiple ou Réglages) : livres sans catégorie, ISBN,
   couverture, auteur, éditeur, année, pages, résumé, tag ou emplacement d'exemplaire,
-  avec leur nombre ; bouton « Compléter » (retour à la liste après enregistrement) ou
+  avec leur nombre ; bouton « Compléter » (retour à la liste après enregistrement, ou
+  « Enregistrer et suivante » pour ouvrir la fiche incomplète suivante) ou
   ouverture dans le catalogue pour une sélection en masse. Export Excel / CSV des
   fiches de l'onglet, à corriger puis réimporter en « Mettre à jour la fiche ».
   « Compléter tout » relance la recherche pour tous les livres de l'onglet (seules
