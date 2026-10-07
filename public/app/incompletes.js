@@ -78,47 +78,65 @@ const refillAsk = () => { try { return localStorage.getItem(ASK_KEY) === '1'; } 
 const ALL_KEY = 'mll-refill-all';
 const refillAll = () => { try { return localStorage.getItem(ALL_KEY) === '1'; } catch (e) { return false; } };
 
-// Choix de l'edition pour chaque livre en doute (une fenetre par livre) : Choisir,
-// garder l'ISBN du fichier epub, Passer ou Arrêter.
+// Choix de l'edition pour chaque livre en doute : une seule fenetre, qui passe tout de
+// suite au livre suivant ; chaque choix est enregistre en arriere-plan (avec « Autres
+// champs vides aussi », l'enregistrement fait des recherches en ligne et prend du temps).
+// Choisir, garder l'ISBN du fichier epub, Passer ou Arrêter.
 async function chooseEditions(doubts, all = false) {
-  let chosen = 0;
-  for (const [n, d] of doubts.entries()) {
-    const pick = await new Promise((resolve) => {
-      const b = d.book;
-      const el = document.createElement('div');
-      el.className = 'modal-backdrop';
-      el.innerHTML = `<div class="modal modal-wide" role="dialog" aria-modal="true">
-        <h2>Choisir l'édition (${n + 1} / ${doubts.length})</h2>
-        <p><strong>${esc(b.title)}</strong>${b.authors ? ` — ${esc(b.authors)}` : ''}
-          <span class="small muted">${esc([b.publisher, b.year, b.pages ? `${b.pages} p.` : ''].filter(Boolean).join(' · '))}</span></p>
-        ${d.fromFile ? `<div class="info-box small">ISBN du fichier epub (sans doute numérique) : <strong>${esc(d.fromFile)}</strong>
-          <button class="btn btn-small" type="button" data-pick="${esc(d.fromFile)}">Garder celui-ci</button></div>` : ''}
-        <ul class="edition-list">${d.candidates.map((e) => `<li>
-          <div class="ed-cover">${e.coverUrl ? `<img src="${esc(e.coverUrl)}" alt="" loading="lazy">` : ''}</div>
-          <div><strong>${esc(e.title || 'Sans titre')}</strong>${e.authors ? ` — ${esc(e.authors)}` : ''}
-            <div class="small muted">${[e.publisher, e.year, e.pages ? `${e.pages} p.` : '', e.isbn, (e.sources || []).join(', ')].filter(Boolean).map(esc).join(' · ')}</div></div>
-          <button class="btn btn-small btn-primary" type="button" data-pick="${esc(e.isbn)}">Choisir</button></li>`).join('')}</ul>
-        <div class="btn-row" style="margin-top:14px">
-          <button class="btn" type="button" data-skip>Passer</button>
-          <button class="btn" type="button" data-close>Arrêter</button>
-        </div></div>`;
-      document.body.appendChild(el);
-      const close = (v) => { el.remove(); resolve(v); };
-      el.addEventListener('click', (e) => {
-        const p = e.target.closest('[data-pick]');
-        if (p) close(p.dataset.pick);
-        else if (e.target.closest('[data-skip]')) close('');
-        else if (e.target === el || e.target.closest('[data-close]')) close(null);
-      });
+  const saves = [];
+  let chosen = 0, saving = 0;
+  const el = document.createElement('div');
+  el.className = 'modal-backdrop';
+  el.innerHTML = '<div class="modal modal-wide" role="dialog" aria-modal="true"></div>';
+  const box = $('.modal', el);
+  const status = () => (saving ? `<p class="small muted" data-saving>Enregistrement en cours : ${saving} choix…</p>` : '<p class="small muted" data-saving></p>');
+  const render = (n) => {
+    const d = doubts[n];
+    const b = d.book;
+    box.innerHTML = `<h2>Choisir l'édition (${n + 1} / ${doubts.length})</h2>
+      <p><strong>${esc(b.title)}</strong>${b.authors ? ` — ${esc(b.authors)}` : ''}
+        <span class="small muted">${esc([b.publisher, b.year, b.pages ? `${b.pages} p.` : ''].filter(Boolean).join(' · '))}</span></p>
+      ${d.fromFile ? `<div class="info-box small">ISBN du fichier epub (sans doute numérique) : <strong>${esc(d.fromFile)}</strong>
+        <button class="btn btn-small" type="button" data-pick="${esc(d.fromFile)}">Garder celui-ci</button></div>` : ''}
+      <ul class="edition-list">${d.candidates.map((e) => `<li>
+        <div class="ed-cover">${e.coverUrl ? `<img src="${esc(e.coverUrl)}" alt="" loading="lazy">` : ''}</div>
+        <div><strong>${esc(e.title || 'Sans titre')}</strong>${e.authors ? ` — ${esc(e.authors)}` : ''}
+          <div class="small muted">${[e.publisher, e.year, e.pages ? `${e.pages} p.` : '', e.isbn, (e.sources || []).join(', ')].filter(Boolean).map(esc).join(' · ')}</div></div>
+        <button class="btn btn-small btn-primary" type="button" data-pick="${esc(e.isbn)}">Choisir</button></li>`).join('')}</ul>
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn" type="button" data-skip>Passer</button>
+        <button class="btn" type="button" data-close>Arrêter</button>
+      </div>${status()}`;
+    box.scrollTop = 0;
+    const first = $('[data-pick]', box);
+    if (first) first.focus();
+  };
+  const showSaving = () => { const p = $('[data-saving]', box); if (p) p.outerHTML = status(); };
+  const save = (d, isbn) => {
+    saving++;
+    saves.push(api(`/api/books/${d.id}/refill`, { method: 'POST', body: { field: 'isbn', value: isbn, ...(all ? { all: true } : {}) } })
+      .then(() => { chosen++; }, (e) => toast(`${d.book.title} : ${e.message}`, 'error'))
+      .finally(() => { saving--; showSaving(); }));
+  };
+  await new Promise((resolve) => {
+    let n = 0;
+    const done = () => { el.remove(); resolve(); };
+    el.addEventListener('click', (e) => {
+      const p = e.target.closest('[data-pick]');
+      if (p) save(doubts[n], p.dataset.pick);
+      else if (!e.target.closest('[data-skip]')) {
+        if (e.target === el || e.target.closest('[data-close]')) done();
+        return;
+      }
+      n++;
+      if (n < doubts.length) render(n); else done();
     });
-    if (pick === null) break;
-    if (!pick) continue;
-    try {
-      await api(`/api/books/${d.id}/refill`, { method: 'POST', body: { field: 'isbn', value: pick, ...(all ? { all: true } : {}) } });
-      chosen++;
-    } catch (e) { toast(e.message, 'error'); }
-  }
-  if (chosen) toast(`${chosen} ISBN choisi${chosen > 1 ? 's' : ''}.`);
+    document.body.appendChild(el);
+    render(0);
+  });
+  if (saving) toast(`Enregistrement des ${saving} dernier${saving > 1 ? 's' : ''} choix…`);
+  await Promise.all(saves);
+  if (chosen) toast(`${chosen} ISBN choisi${chosen > 1 ? 's' : ''}${all ? ', autres champs vides complétés' : ''}.`);
 }
 
 function missingPills(m, current) {
