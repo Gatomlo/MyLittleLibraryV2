@@ -389,16 +389,45 @@ const started = (i) => !writeDb() && !i.pending && (i.readStatus > 0 || i.percen
 const isKepubPath = (p) => /\.kepub\.epub$/i.test(p || '');
 const wantKepub = () => !!(kobo && kobo.device && kobo.device.kepub);
 const toConvert = (i) => !!(i && i.path && !i.pending && isKepubPath(i.path) !== wantKepub());
-// Question posee une fois pour un ou plusieurs livres : null si aucun n'est concerne.
+const readOnKobo = (i) => i.readStatus > 0 || i.percent > 0;
+// Choix des livres a convertir (fenetre posee une fois pour un ou plusieurs livres) :
+// livres non commences coches, livres commences ou lus decoches (progression gardee).
+// Renvoie les fiches a convertir (vide si aucun livre n'est concerne), null si annule.
 function askConvert(items) {
-  const list = items.filter(toConvert);
-  if (!list.length) return null;
-  const books = new Set(list.map((i) => (i.book ? i.book.id : i.id))).size;
-  const read = list.filter((i) => i.readStatus > 0 || i.percent > 0).length;
+  const byBook = new Map();
+  items.filter((i) => i.book && toConvert(i)).forEach((i) => byBook.set(i.book.id, [...(byBook.get(i.book.id) || []), i]));
+  if (!byBook.size) return Promise.resolve(new Set());
   const [from, to] = wantKepub() ? ['epub', 'kepub'] : ['kepub', 'epub'];
-  return confirm(`${books > 1 ? `${books} de ces livres sont` : 'Ce livre est'} sur la liseuse au format ${from}. Les convertir en ${to} ?\n\n`
-    + `La liseuse les verra comme de nouveaux livres : leur progression, leurs marque-pages et leur état « Lu » seront perdus${read ? ` (${read} commencé(s) ou lu(s))` : ''}.\n\n`
-    + `OK : convertir. Annuler : les garder en ${from} (mis à jour quand même).`);
+  const stateOf = (list) => {
+    const i = list.find(readOnKobo);
+    if (!i) return 'non commencé';
+    return i.readStatus === 2 ? 'lu' : `commencé${i.percent > 0 ? ` (${Math.round(i.percent)} %)` : ''}`;
+  };
+  const rows = [...byBook].map(([id, list]) => ({ id, title: list[0].book.title || list[0].title || 'Sans titre', started: list.some(readOnKobo), state: stateOf(list) }))
+    .sort((a, b) => (a.started === b.started ? a.title.localeCompare(b.title, 'fr') : a.started ? -1 : 1));
+  return new Promise((resolve) => {
+    const el = document.createElement('div');
+    el.className = 'modal-backdrop';
+    el.innerHTML = `<div class="modal" role="dialog" aria-modal="true">
+      <h2>Convertir en ${to} ?</h2>
+      <p class="small muted">${rows.length > 1 ? `${rows.length} livres sont` : 'Ce livre est'} sur la liseuse en ${from}. Coché : converti, la liseuse le voit comme un nouveau livre (progression, marque-pages et état « Lu » perdus). Décoché : gardé en ${from}, mis à jour quand même.</p>
+      ${rows.length > 3 ? `<div class="btn-row"><button class="btn btn-small" type="button" data-all="1">Tout cocher</button>
+        <button class="btn btn-small" type="button" data-all="0">Tout décocher</button></div>` : ''}
+      <div class="kobo-convert-list">${rows.map((r) => `<label class="check"><input type="checkbox" value="${r.id}" ${r.started ? '' : 'checked'}>
+        <span>${esc(r.title)} <span class="small ${r.started ? 'kobo-convert-started' : 'muted'}">${esc(r.state)}</span></span></label>`).join('')}</div>
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn btn-primary" type="button" data-ok>Continuer</button>
+        <button class="btn" type="button" data-close>Annuler</button>
+      </div></div>`;
+    document.body.appendChild(el);
+    const close = (v) => { el.remove(); resolve(v); };
+    el.addEventListener('click', (e) => {
+      const all = e.target.closest('[data-all]');
+      if (all) $$('input[type=checkbox]', el).forEach((c) => { c.checked = all.dataset.all === '1'; });
+      else if (e.target.closest('[data-ok]')) close(new Set($$('input[type=checkbox]:checked', el).map((c) => Number(c.value))));
+      else if (e.target === el || e.target.closest('[data-close]')) close(null);
+    });
+  });
 }
 
 // Livre efface de la liseuse : avec l'ecriture dans la base, marque pour etre aussi
@@ -429,7 +458,7 @@ async function koboItemsByBook() {
 // elle remplace l'ancien fichier (meme nom) et les informations de la fiche sont
 // ecrites dans la base de la liseuse a « Terminer » (koboChanged).
 // convert : conversion d'un livre deja copie dans l'autre format (null = demander,
-// sauf en envoi groupe ou elle est refusee).
+// sauf en envoi groupe : choix fait avant par askConvert, refusee par defaut).
 async function pushToKobo(bookId, { quiet = false, items = null, convert = null } = {}) {
   await ensureKobo();
   if (KOBO_FS && !kobo) await (koboSavedInfo ? reconnectKobo() : scanKobo());
@@ -437,7 +466,11 @@ async function pushToKobo(bookId, { quiet = false, items = null, convert = null 
   if (!quiet && onDevice.length && !onDevice.some((i) => i.outdated)
     && !confirm('Ce livre est déjà sur la liseuse. L\'envoyer quand même ?')) return false;
   const existing = onDevice.find(toConvert);
-  if (existing && convert == null) convert = quiet ? false : askConvert(onDevice);
+  if (existing && convert == null) {
+    const chosen = quiet ? new Set() : await askConvert(onDevice);
+    if (!chosen) return false;
+    convert = chosen.has(bookId);
+  }
   if (!quiet && !existing && onDevice.some((i) => i.outdated && started(i))
     && !confirm('Ce livre est commencé ou lu sur la liseuse : la mise à jour y effacera sa progression, ses marque-pages et son état « Lu » (les statuts de lecture de la bibliothèque sont gardés). Continuer ?')) return false;
   // Conversion refusee : format du fichier deja present garde (mis a jour sur place).
@@ -498,11 +531,12 @@ async function pushManyToKobo(ids, progress) {
     if (items.some(started)) { out.started++; continue; }
     todo.push([id, items]);
   }
-  const convert = askConvert(todo.flatMap(([, items]) => items));
+  const convert = await askConvert(todo.flatMap(([, items]) => items));
+  if (!convert) return null;
   for (const [n, [id, items]] of todo.entries()) {
     progress(n + 1, todo.length);
     try {
-      const r = await pushToKobo(id, { quiet: true, items, convert });
+      const r = await pushToKobo(id, { quiet: true, items, convert: convert.has(id) });
       if (r === 'updated') out.updated++; else if (r) out.sent++;
     } catch (e) { out.skipped++; }
   }
@@ -543,7 +577,7 @@ function editKoboDialog(d, members) {
         ${members.map((m) => `<option value="${m.id}" ${d.owner && d.owner.id === m.id ? 'selected' : ''}>${esc(m.username)}</option>`).join('')}
       </select></div>
       <label class="check"><input type="checkbox" name="kepub" ${d.kepub ? 'checked' : ''}> Envoyer au format kepub
-        ${hint('Format natif des Kobo (comme Calibre) : mise en page plus fiable, statistiques de lecture et temps restant par chapitre. Décoche si un livre s\'affiche mal. Les livres déjà sur la liseuse ne sont convertis qu\'à ta demande, lors d\'une mise à jour : la liseuse les voit alors comme de nouveaux livres (progression perdue).')}</label>
+        ${hint('Format natif des Kobo (comme Calibre) : mise en page plus fiable, statistiques de lecture et temps restant par chapitre. Décoche si un livre s\'affiche mal. Les livres déjà sur la liseuse ne sont convertis qu\'à ta demande, lors d\'une mise à jour (choix livre par livre) : la liseuse les voit alors comme de nouveaux livres (progression perdue).')}</label>
       <div class="field"><label>Collections de la liseuse ${hint('Avec l\'écriture dans la liseuse : collections Kobo créées d\'après les fiches. Les collections faites sur la liseuse ne sont jamais modifiées.')}</label>
         <select name="collections">${[['both', 'Catégories et tags'], ['categories', 'Catégories'], ['tags', 'Tags'], ['none', 'Aucune']]
           .map(([v, l]) => `<option value="${v}" ${(d.collections || 'both') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -697,12 +731,13 @@ function bindKoboSelection(d, items, connected) {
     if (list.some(started) && !confirm('Certains de ces livres sont commencés ou lus sur la liseuse : la mise à jour y effacera leur progression, leurs marque-pages et leur état « Lu » (les statuts de lecture de la bibliothèque sont gardés). Continuer ?')) return;
     if (!connected()) throw new Error('Liseuse débranchée.');
     await ensureKobo();
-    const convert = askConvert(list);
+    const convert = await askConvert(list);
+    if (!convert) return;
     let ok = 0;
     let failed = 0;
     for (const [n, bookId] of books.entries()) {
       btn.textContent = `Envoi ${n + 1} / ${books.length}…`;
-      try { if (await pushToKobo(bookId, { quiet: true, convert, items: d.items.filter((x) => x.book && x.book.id === bookId) })) ok++; } catch (e) { failed++; }
+      try { if (await pushToKobo(bookId, { quiet: true, convert: convert.has(bookId), items: d.items.filter((x) => x.book && x.book.id === bookId) })) ok++; } catch (e) { failed++; }
     }
     if (ok && writeDb()) koboChanged = true;
     koboSel.ids.clear();
@@ -902,12 +937,13 @@ async function viewKoboDevice(id) {
   if (updateAll) updateAll.onclick = busy(async (btn) => {
     if (!connected()) throw new Error('Liseuse débranchée.');
     await ensureKobo();
-    const convert = askConvert(toUpdate);
+    const convert = await askConvert(toUpdate);
+    if (!convert) return;
     let ok = 0;
     let failed = 0;
     for (const [n, i] of toUpdate.entries()) {
       btn.textContent = `Envoi ${n + 1} / ${toUpdate.length}…`;
-      try { if (await pushToKobo(i.book.id, { quiet: true, convert, items: d.items.filter((x) => x.book && x.book.id === i.book.id) })) ok++; } catch (e) { failed++; }
+      try { if (await pushToKobo(i.book.id, { quiet: true, convert: convert.has(i.book.id), items: d.items.filter((x) => x.book && x.book.id === i.book.id) })) ok++; } catch (e) { failed++; }
     }
     if (ok && writeDb()) koboChanged = true;
     toast(`${ok} livre(s) mis à jour${failed ? `, ${failed} échec(s)` : ''}. Quand tu as fini, clique sur « Terminer », puis éjecte la liseuse dans Windows.`, failed ? 'error' : undefined);

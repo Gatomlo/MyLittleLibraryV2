@@ -883,6 +883,9 @@ span.wish-heart:not(.on) { visibility: hidden; }
 .wish-share { margin-top: 18px; }
 .wish-share summary { cursor: pointer; display: flex; align-items: center; gap: 8px; }
 .check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px 14px; }
+.kobo-convert-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow: auto; margin-top: 10px; }
+.kobo-convert-list .check { font-weight: 400; align-items: flex-start; }
+.kobo-convert-started { color: var(--warn); font-weight: 500; }
 .wish-owner-pick { flex-wrap: nowrap; }
 .wish-owner-pick .combo { flex: 1 1 240px; max-width: 360px; }
 /* Au-dessus des blocs suivants (animation d'apparition = transform, donc empilement propre). */
