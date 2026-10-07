@@ -17,7 +17,7 @@ const MISSING_REFILL = ['isbn', 'category', 'cover', 'authors', 'publisher', 'ye
 // Informations absentes des catalogues en ligne : attribution en masse aux livres coches.
 const MISSING_ASSIGN = { location: 'Emplacement (ex. Étagère A)', tags: 'Tag(s), séparés par des virgules' };
 const REFILL_HINT = {
-  isbn: 'ISBN cité dans le fichier epub ; s\'il est inconnu en ligne (souvent un ISBN numérique) ou absent, recherche de l\'ISBN papier par titre + auteur (BnF) : retenu seulement si une seule édition correspond (année, éditeur et pages de la fiche), sinon l\'ISBN du fichier est gardé.',
+  isbn: 'ISBN cité dans le fichier epub ; s\'il est inconnu en ligne (souvent un ISBN numérique) ou absent, recherche de l\'ISBN papier par titre + auteur (BnF, puis BnF et Google Books comme dans la fiche) : retenu seulement si une seule édition correspond (année, éditeur et pages de la fiche), sinon l\'ISBN du fichier est gardé.',
   category: 'Seules tes catégories existantes sont attribuées, quand elles correspondent aux sujets trouvés en ligne (ISBN inconnu en ligne, souvent numérique : sujets d\'une édition papier de même titre et même auteur).',
 };
 // ISBN inconnu en ligne (souvent numerique) : autre edition reprise par le serveur.
