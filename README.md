@@ -117,7 +117,9 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   les informations vides sont complétées) : ISBN lu dans le fichier epub (s'il est
   inconnu en ligne, souvent numérique, ISBN papier préféré), sinon retrouvé par titre +
   auteur seulement si une seule édition correspond (case « Choisir en cas de doute » :
-  livres à plusieurs éditions possibles proposés un par un à la fin, pour choisir l'ISBN), catégorie attribuée seulement si une catégorie
+  livres à plusieurs éditions possibles proposés un par un à la fin, pour choisir l'ISBN ;
+  case « Autres champs vides aussi », dans tous les onglets : les autres champs vides de
+  chaque fiche sont remplis avec les mêmes informations en ligne), catégorie attribuée seulement si une catégorie
   existante correspond aux sujets en ligne. ISBN inconnu en ligne (souvent un ISBN
   numérique) : informations reprises d'une édition de même titre et même auteur (la plus
   proche de la fiche : éditeur, année, pages), sans changer l'ISBN de la fiche. Emplacement et tags : cases à cocher et

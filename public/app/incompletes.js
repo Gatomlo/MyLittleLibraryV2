@@ -34,14 +34,17 @@ async function refillMissing(key) {
   // ISBN, mode « choisir en cas de doute » : livres a plusieurs editions possibles mis
   // de cote, puis proposes un par un a la fin.
   const ask = key === 'isbn' && refillAsk();
+  // Case « Autres champs vides aussi » : memes informations en ligne pour tous les champs vides.
+  const all = refillAll();
   const doubts = [];
-  let done = 0, filled = 0, stop = false;
+  let done = 0, filled = 0, extra = 0, stop = false;
   btn.textContent = 'Arrêter';
   btn.onclick = () => { stop = true; btn.disabled = true; };
   out.hidden = false;
   window.addEventListener('beforeunload', warnBeforeLeaving);
   const show = () => {
     out.textContent = `Recherche en cours : ${done} / ${ids.length} · ${filled} complété${filled > 1 ? 's' : ''}`
+      + (extra ? ` · ${extra} autre${extra > 1 ? 's' : ''} champ${extra > 1 ? 's' : ''} rempli${extra > 1 ? 's' : ''}` : '')
       + (doubts.length ? ` · ${doubts.length} à choisir` : '');
   };
   show();
@@ -50,9 +53,10 @@ async function refillMissing(key) {
     while (queue.length && !stop) {
       const id = queue.shift();
       try {
-        const r = await api(`/api/books/${id}/refill`, { method: 'POST', body: { field: key, ...(ask ? { ask: true } : {}) } });
+        const r = await api(`/api/books/${id}/refill`, { method: 'POST', body: { field: key, ...(ask ? { ask: true } : {}), ...(all ? { all: true } : {}) } });
         if (r.status === 'filled') filled++;
         else if (r.status === 'ambiguous') doubts.push({ id, ...r });
+        extra += (r.extra || []).length;
       } catch (e) { /* livre suivant */ }
       done++;
       show();
@@ -61,18 +65,22 @@ async function refillMissing(key) {
   await Promise.all([worker(), worker()]);
   window.removeEventListener('beforeunload', warnBeforeLeaving);
   toast(`${filled} livre${filled > 1 ? 's' : ''} complété${filled > 1 ? 's' : ''} sur ${done} recherché${done > 1 ? 's' : ''}.`
+    + (extra ? ` ${extra} autre${extra > 1 ? 's' : ''} champ${extra > 1 ? 's' : ''} vide${extra > 1 ? 's' : ''} rempli${extra > 1 ? 's' : ''}.` : '')
     + (doubts.length ? ` ${doubts.length} à choisir parmi plusieurs éditions.` : ''));
-  if (doubts.length) await chooseEditions(doubts);
+  if (doubts.length) await chooseEditions(doubts, all);
   if (location.hash.startsWith('#/incomplete')) viewIncomplete(key);
 }
 
 // Mode intermediaire de « Compléter tout » (ISBN), garde dans le navigateur.
 const ASK_KEY = 'mll-refill-ask';
 const refillAsk = () => { try { return localStorage.getItem(ASK_KEY) === '1'; } catch (e) { return false; } };
+// « Compléter aussi les autres champs vides » (tous les onglets), garde dans le navigateur.
+const ALL_KEY = 'mll-refill-all';
+const refillAll = () => { try { return localStorage.getItem(ALL_KEY) === '1'; } catch (e) { return false; } };
 
 // Choix de l'edition pour chaque livre en doute (une fenetre par livre) : Choisir,
 // garder l'ISBN du fichier epub, Passer ou Arrêter.
-async function chooseEditions(doubts) {
+async function chooseEditions(doubts, all = false) {
   let chosen = 0;
   for (const [n, d] of doubts.entries()) {
     const pick = await new Promise((resolve) => {
@@ -106,7 +114,7 @@ async function chooseEditions(doubts) {
     if (pick === null) break;
     if (!pick) continue;
     try {
-      await api(`/api/books/${d.id}/refill`, { method: 'POST', body: { field: 'isbn', value: pick } });
+      await api(`/api/books/${d.id}/refill`, { method: 'POST', body: { field: 'isbn', value: pick, ...(all ? { all: true } : {}) } });
       chosen++;
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -138,6 +146,7 @@ async function viewIncomplete(key) {
             ${hint('Exporte ces fiches pour les corriger dans Excel, puis réimporte le fichier : Ajout multiple › Fichier complet › « ISBN déjà au catalogue : Mettre à jour la fiche ». Seules les colonnes remplies écrasent les fiches.')}</span>
           <button class="btn btn-small" type="button" id="missing-catalog" title="Ouvrir dans le catalogue (sélection en masse)">Catalogue</button>
           ${MISSING_REFILL.includes(key) ? `<button class="btn btn-small btn-primary" type="button" id="missing-refill" hidden><span class="hide-mobile">Compléter tout</span><span class="show-mobile">Tout</span></button>${hint(REFILL_HINT[key] || `Relance la recherche en ligne pour chaque livre concerné ; le champ n'est rempli que s'il est toujours vide.${key !== 'isbn' ? OTHER_EDITION_HINT : ''}`)}` : ''}
+          ${MISSING_REFILL.includes(key) ? `<label class="small" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="refill-all"${refillAll() ? ' checked' : ''}> Autres champs vides aussi</label>${hint('Coché : pour chaque fiche, les autres champs vides (auteurs, éditeur, année, pages, résumé, couverture, catégorie) sont aussi remplis avec les informations trouvées en ligne. Un champ déjà rempli n\'est jamais modifié.')}` : ''}
           ${key === 'isbn' ? `<label class="small" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="refill-ask"${refillAsk() ? ' checked' : ''}> Choisir en cas de doute</label>${hint('Coché : quand plusieurs éditions correspondent, le livre est mis de côté puis proposé à la fin pour que tu choisisses l\'ISBN. Décoché : tout est automatique (seuls les ISBN sûrs sont enregistrés).')}` : ''}
         </div>
       </div>
@@ -150,6 +159,7 @@ async function viewIncomplete(key) {
       <div class="list" id="missing-list"></div>
       <div class="more" id="missing-more"></div>
     </div>`;
+  if ($('#refill-all')) $('#refill-all').onchange = (e) => { try { localStorage.setItem(ALL_KEY, e.target.checked ? '1' : '0'); } catch (err) { /* choix non garde */ } };
   if ($('#refill-ask')) $('#refill-ask').onchange = (e) => { try { localStorage.setItem(ASK_KEY, e.target.checked ? '1' : '0'); } catch (err) { /* choix non garde */ } };
   $('#missing-catalog').onclick = () => {
     state.catalog = { q: '', category: '', status: '', sort: 'title', page: 1, missing: key };
