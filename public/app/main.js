@@ -1,7 +1,7 @@
 // Demarrage — module de l'interface (organisation : public/app/README.md).
 import './installation.js';
 import { LIBRARY, state } from './etat.js';
-import { $, api, gapi } from './utilitaires.js';
+import { $, api, gapi, toast } from './utilitaires.js';
 import { scanAndOpen } from './scanner.js';
 import { renderHeader } from './entete.js';
 import { route } from './routage.js';
@@ -21,6 +21,7 @@ async function loadStatus() {
     state.needsSetup = s.needsSetup;
     state.libraries = s.libraries || [];
     state.backupReminder = !!s.backupReminder;
+    state.mailErrors = s.mailErrors || [];
   } catch (e) { /* hors ligne */ }
 }
 
@@ -54,6 +55,18 @@ async function refreshIfStale() {
   route();
   koboRestore();
   showBackupReminder();
+  showMailErrors();
 })();
+
+// Administrateur : bibliotheques dont l'envoi des e-mails est en erreur (une fois par session).
+function showMailErrors() {
+  const names = state.mailErrors || [];
+  try {
+    if (!names.length || sessionStorage.getItem('mll-mail-errors-shown')) return;
+    sessionStorage.setItem('mll-mail-errors-shown', '1');
+  } catch (e) { /* stockage indisponible : message affiche */ }
+  if (!names.length) return;
+  toast(`Envoi des e-mails en erreur : ${names.join(', ')}. Voir Administration › E-mails.`, 'error');
+}
 
 export { loadSettings, loadStatus };

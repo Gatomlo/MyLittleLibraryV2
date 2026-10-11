@@ -16,6 +16,7 @@ Utilisateur francophone : interface, commentaires et réponses **en français**.
 - `lib/db.js` : base **centrale** `data/central.db` (comptes, sessions, bibliothèques et leurs réglages) + **une base par bibliothèque** `data/libraries/<id>/library.db` (centrale attachée, pas de clé étrangère entre bases). `db` suit le contexte `inLibrary(id, fn)`. Migrations : `CENTRAL_MIGRATIONS` / `LIBRARY_MIGRATIONS` (`PRAGMA user_version`).
 - `lib/library-api.js` : routeur d'une bibliothèque et **gardes d'accès** ; `lib/library/catalog.js` (lecture), `fiches.js` (écriture), `routes-*.js` (une par domaine).
 - `lib/auth.js` (scrypt, sessions, rôles `admin` / par bibliothèque `manager` · `librarian` · `user`), `lib/security.js` (CSP), `lib/net.js` (téléchargements sûrs), `lib/zip.js` (zip plafonnés), `lib/util.js`.
+- E-mails : `lib/mail.js` (SMTP propre à chaque bibliothèque, réglé par l'admin, jamais de repli), `lib/reminders.js` (rappels manuels et automatiques), `lib/password-reset.js` (mot de passe oublié). Clé de chiffrement `MLL_SECRET` ou `data/secret.key` (à garder sur le serveur).
 - Autres domaines : `lib/wishes.js`, `home.js`, `stats.js`, `kobo.js`, `ebooks.js`, `epub-meta.js`, `archives.js`, `invitations.js`, `isbn.js`, `covers.js`, `media.js`.
 - `public/app/*.js` (interface, entrée `main.js`), `public/style.css`, `public/vendor/` (scanner, Excel, liseuse epub), `public/embed.js` + `wordpress/` (widget catalogue).
 

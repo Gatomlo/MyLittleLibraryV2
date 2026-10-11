@@ -148,10 +148,28 @@ function reminderText(tpl, borrower, loans) {
     nom: borrower.name, livres: lines, bibliotheque: state.settings.libraryName, date_retour: fmtDay(due) })[k]);
   return { subject: fill(tpl.subject || REMINDER_DEFAULT.subject), body: fill(tpl.body || REMINDER_DEFAULT.body) };
 }
-// Ouvre le message dans la messagerie de l'appareil, puis note la relance si elle est envoyee.
+// Envoi operationnel (SMTP de la bibliotheque) : le serveur envoie le message. Sinon,
+// ou au choix : message ouvert dans la messagerie de l'appareil, relance notee ensuite.
 async function sendReminder(borrower, loans) {
-  const { reminder } = await api('/api/loans/summary');
+  const { reminder, mail } = await api('/api/loans/summary');
   const msg = reminderText(reminder || {}, borrower, loans);
+  if (mail === 'active' && borrower.email) {
+    const v = await dialog(`<h2>Relance de ${esc(borrower.name)}</h2>
+      <p>Envoyer le rappel à <strong>${esc(borrower.email)}</strong> ?</p>
+      <pre class="mail-preview">${esc(`${msg.subject}\n\n${msg.body}`)}</pre>
+      <div class="btn-row">
+        <button class="btn btn-primary" type="button" data-v="send">Envoyer</button>
+        <button class="btn" type="button" data-v="mailto"><span class="hide-mobile">Ouvrir dans ma messagerie</span><span class="show-mobile">Messagerie</span></button>
+        <button class="btn" type="button" data-close>Annuler</button>
+      </div>`);
+    if (v === 'send') {
+      await api('/api/loans/send-reminder', { method: 'POST', body: { borrowerId: borrower.id, ids: loans.map((l) => l.id) } });
+      toast(`Rappel envoyé à ${borrower.name}.`);
+      refreshLoanBadge();
+      return true;
+    }
+    if (v !== 'mailto') return false;
+  }
   if (!borrower.email) {
     const v = await dialog(`<h2>Pas d'adresse e-mail</h2>
       <p><strong>${esc(borrower.name)}</strong> n'a pas d'adresse e-mail enregistrée.</p>

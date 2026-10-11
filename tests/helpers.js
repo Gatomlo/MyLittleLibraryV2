@@ -8,6 +8,9 @@ const path = require('path');
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'mll-test-'));
 process.env.MLL_DATA_DIR = DATA_DIR;
 process.env.MLL_OFFLINE = '1'; // aucune recherche en ligne pendant les tests
+// E-mails ecrits dans ce fichier au lieu d'etre envoyes (voir lib/mail.js), pas d'envoi automatique.
+process.env.MLL_MAIL_OUTBOX = path.join(DATA_DIR, 'outbox.jsonl');
+process.env.MLL_NO_SCHEDULER = '1';
 
 const app = require('../server');
 

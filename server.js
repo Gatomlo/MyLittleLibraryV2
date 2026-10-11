@@ -10,6 +10,9 @@ const auth = require('./lib/auth');
 const archives = require('./lib/archives');
 const { registerWishes } = require('./lib/wishes');
 const { registerInvitations } = require('./lib/invitations');
+const { registerPasswordReset } = require('./lib/password-reset');
+const mail = require('./lib/mail');
+const reminders = require('./lib/reminders');
 const security = require('./lib/security');
 const compression = require('compression');
 const crypto = require('crypto');
@@ -68,6 +71,7 @@ function jsonOnly(req, res, next) {
 
 function apiErrors(err, req, res, next) { // eslint-disable-line no-unused-vars
   if (err && /UNIQUE constraint failed: categories/.test(err.message)) err = httpError(409, 'Cette catégorie existe déjà.');
+  if (err && /UNIQUE constraint failed: users\.email/.test(err.message)) err = httpError(409, 'Cette adresse e-mail est déjà utilisée par un autre compte.');
   if (err && /UNIQUE constraint failed: users/.test(err.message)) err = httpError(409, 'Cet identifiant est déjà utilisé.');
   if (err && /UNIQUE constraint failed: tags/.test(err.message)) err = httpError(409, 'Ce tag existe déjà.');
   const status = err.status || err.statusCode || 500;
@@ -100,6 +104,11 @@ api.get('/auth/status', (req, res) => {
     libraries: auth.librariesOf(req.user).map(libraryInfo),
     // Rappel mensuel de sauvegarde (administrateurs).
     backupReminder: !!req.user && req.user.role === 'admin' && archives.reminderDue(),
+    // Bibliotheques dont l'envoi des e-mails est en erreur (administrateurs).
+    mailErrors: req.user && req.user.role === 'admin'
+      ? db.prepare('SELECT l.name FROM library_mail m JOIN libraries l ON l.id = m.library_id WHERE m.verified_at IS NOT NULL AND m.failures >= ?')
+        .all(mail.MAX_FAILURES).map((l) => l.name)
+      : [],
   });
 });
 
@@ -155,7 +164,7 @@ api.post('/auth/login', h(async (req, res) => {
   const username = str(req.body.username, 60);
   const password = String(req.body.password || '');
   if (auth.tooManyFailures(username)) throw httpError(429, 'Trop de tentatives pour ce compte, réessaie dans 15 minutes.');
-  const user = db.prepare('SELECT id, username, role, default_library_id, password_hash FROM users WHERE username = ?').get(username);
+  const user = db.prepare('SELECT id, username, role, default_library_id, email, password_hash FROM users WHERE username = ?').get(username);
   // Meme calcul que le compte existe ou non (voir verifyPasswordAsync).
   const valid = await auth.verifyPasswordAsync(password, user && user.password_hash);
   if (!user || !valid) {
@@ -164,7 +173,7 @@ api.post('/auth/login', h(async (req, res) => {
     throw httpError(401, 'Identifiant ou mot de passe incorrect.');
   }
   auth.createSession(req, res, user.id);
-  const u = { id: user.id, username: user.username, role: user.role, defaultLibraryId: user.default_library_id };
+  const u = { id: user.id, username: user.username, role: user.role, defaultLibraryId: user.default_library_id, email: user.email || '' };
   res.json({ user: u, libraries: auth.librariesOf(u).map(libraryInfo) });
 }));
 
@@ -184,6 +193,13 @@ api.post('/me/password', h(async (req, res) => {
   // Les autres appareils connectes avec l'ancien mot de passe sont deconnectes.
   auth.revokeSessions(req.user.id, req.sessionHash);
   res.json({ ok: true });
+}));
+
+// Adresse e-mail du compte (mot de passe oublie). Vide : retiree.
+api.put('/me/email', h((req, res) => {
+  const email = mail.readEmail(req.body.email);
+  db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email || null, req.user.id);
+  res.json({ ok: true, email });
 }));
 
 api.put('/me/default-library', h((req, res) => {
@@ -207,6 +223,7 @@ function userRow(u) {
   return {
     id: u.id,
     username: u.username,
+    email: u.email || '',
     role: u.role === 'admin' ? 'admin' : 'user',
     defaultLibraryId: u.default_library_id,
     createdAt: u.created_at,
@@ -246,9 +263,10 @@ api.post('/admin/users', h((req, res) => {
   const username = readUsername(req.body.username);
   const password = readPassword(req.body.password);
   const role = readRole(req.body.role);
+  const email = mail.readEmail(req.body.email);
   const id = tx(() => {
-    const newId = Number(db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
-      .run(username, auth.hashPassword(password), role).lastInsertRowid);
+    const newId = Number(db.prepare('INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)')
+      .run(username, auth.hashPassword(password), role, email || null).lastInsertRowid);
     applyUserLinks(newId, { ...req.body, role });
     return newId;
   });
@@ -263,6 +281,7 @@ api.put('/admin/users/:id', h((req, res) => {
   if (user.role === 'admin' && role !== 'admin' && adminCount(id) === 0) throw httpError(409, 'Il doit rester au moins un administrateur.');
   tx(() => {
     db.prepare('UPDATE users SET username = ?, role = ? WHERE id = ?').run(readUsername(req.body.username), role, id);
+    if (req.body.email !== undefined) db.prepare('UPDATE users SET email = ? WHERE id = ?').run(mail.readEmail(req.body.email) || null, id);
     if (req.body.password) {
       db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(auth.hashPassword(readPassword(req.body.password)), id);
       if (id !== req.user.id) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
@@ -285,6 +304,53 @@ api.delete('/admin/users/:id', h((req, res) => {
 
 // ---------- Liens d'invitation (voir lib/invitations.js) ----------
 registerInvitations(api, { readUsername, readPassword, libraryInfo });
+
+// ---------- Mot de passe oublie (voir lib/password-reset.js) ----------
+registerPasswordReset(api, { readPassword, libraryInfo });
+
+// ---------- Envoi des e-mails : SMTP de chaque bibliotheque (voir lib/mail.js) ----------
+// Adresse publique de l'app : base des liens envoyes par e-mail.
+api.get('/admin/public-url', (req, res) => res.json({ url: getSetting('publicUrl') || '' }));
+api.put('/admin/public-url', h((req, res) => {
+  const url = str(req.body.url, 300).replace(/\/+$/, '');
+  if (url && !/^https?:\/\/[^\s/?#]+(\/[^\s?#]*)?$/i.test(url)) throw httpError(400, 'Adresse invalide (ex. https://exemple.org/mylittlelibrary).');
+  setSetting('publicUrl', url);
+  res.json({ url });
+}));
+
+api.get('/admin/mail', (req, res) => {
+  res.json(db.prepare('SELECT id, slug, name FROM libraries ORDER BY name COLLATE NOCASE').all()
+    .map((l) => ({ id: l.id, slug: l.slug, name: l.name, mail: mail.adminConfig(l.id) })));
+});
+
+const mailLibrary = (req) => {
+  const lib = db.prepare('SELECT * FROM libraries WHERE id = ?').get(intOrNull(req.params.id));
+  if (!lib) throw httpError(404, 'Bibliothèque introuvable.');
+  return lib;
+};
+api.put('/admin/libraries/:id/mail', h((req, res) => {
+  const lib = mailLibrary(req);
+  mail.saveConfig(lib.id, req.body || {});
+  res.json(mail.adminConfig(lib.id));
+}));
+api.delete('/admin/libraries/:id/mail', h((req, res) => {
+  const lib = mailLibrary(req);
+  mail.removeConfig(lib.id);
+  res.json(mail.adminConfig(lib.id));
+}));
+// Message de test (a l'adresse indiquee, sinon a celle de l'administrateur) : un test
+// reussi rend l'envoi operationnel.
+api.post('/admin/libraries/:id/mail/test', h(async (req, res) => {
+  const lib = mailLibrary(req);
+  const me = db.prepare('SELECT email FROM users WHERE id = ?').get(req.user.id);
+  const to = mail.readEmail(req.body.to, 'Adresse du test') || (me && me.email);
+  if (!to) throw httpError(400, "Indique l'adresse qui recevra le message de test.");
+  await mail.sendMail(lib.id, {
+    to, kind: 'test', userId: req.user.id, subject: `${lib.name} : message de test`,
+    text: `Ce message confirme que l'envoi des e-mails de « ${lib.name} » fonctionne.\n\nIl a été demandé depuis l'administration par ${req.user.username}.`,
+  });
+  res.json(mail.adminConfig(lib.id));
+}));
 
 api.get('/admin/libraries', (req, res) => {
   res.json(db.prepare(`SELECT l.*, (SELECT COUNT(*) FROM user_libraries ul WHERE ul.library_id = l.id) AS users
@@ -541,6 +607,9 @@ app.get('/:slug/', libraryPage);
 app.use((req, res) => { security.pagePolicy(res); res.status(404).type('html').send(
   `<!doctype html><meta charset="utf-8"><title>Introuvable</title><p style="font-family:sans-serif;padding:24px">Page introuvable. <a href="${auth.rootPath(req)}/">Voir les bibliothèques</a></p>`);
 });
+
+// Rappels de retour envoyes automatiquement (voir lib/reminders.js).
+if (!process.env.MLL_NO_SCHEDULER) reminders.startReminderScheduler();
 
 // Lance seul en developpement (node server.js) ; charge par la passerelle, on se
 // contente d'exporter l'app, c'est elle qui ecoute sur le port.

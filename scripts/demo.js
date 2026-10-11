@@ -13,6 +13,8 @@ const PASSWORD = 'demo-demo-demo';
 const PORT = Number(process.env.PORT) || 3100;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mll-demo-'));
 process.env.MLL_DATA_DIR = dir;
+// E-mails jamais envoyes : ecrits dans outbox.jsonl du dossier temporaire (voir lib/mail.js).
+process.env.MLL_MAIL_OUTBOX = process.env.MLL_MAIL_OUTBOX || path.join(dir, 'outbox.jsonl');
 
 const app = require('../server');
 

@@ -157,6 +157,20 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   Mode « Programmés » : onglet « À relancer » de la page Prêts (un message par emprunteur) et pastille, à partir
   de la date de retour + J jours (négatif = avant), puis tous les 7 jours tant que le livre est en retard.
   Objet et message personnalisables ({nom}, {livres}, {bibliotheque}, {date_retour}). Sans e-mail : copie du message.
+  Avec l'**envoi des e-mails** actif (voir ci-dessous) : « Relancer » envoie le message par la bibliothèque après
+  confirmation (ou l'ouvre dans la messagerie, au choix), « Envoyer tous les rappels » sur l'onglet « À relancer »,
+  et option « Envoyer automatiquement » (gestionnaire, rappels programmés : chaque jour vers 9 h). Journal des envois
+  dans les réglages (« Derniers e-mails envoyés »).
+- **Envoi des e-mails** (Administration › E-mails, administrateur uniquement) : un serveur SMTP **propre à chaque
+  bibliothèque** (serveur, port, SSL/STARTTLS, identifiant, mot de passe chiffré, adresse et nom d'expéditeur, adresse
+  de réponse). Jamais de repli sur un autre serveur : sans SMTP, la bibliothèque n'envoie rien. Actif après un message
+  de test réussi (tout changement demande un nouveau test) ; trois échecs d'envoi d'affilée = « en erreur » (envoi
+  automatique suspendu, alerte à l'administrateur). Le gestionnaire voit seulement l'état (actif / inactif / en erreur).
+- **Mot de passe oublié** (page de connexion) : identifiant ou adresse e-mail ; lien valable 1 h envoyé par le SMTP
+  de la bibliothèque de la page (si le compte en est membre), sinon de sa bibliothèque par défaut (sinon de sa seule
+  bibliothèque). Adresse e-mail du compte dans « Mon compte » (et à l'inscription par invitation, facultative).
+  L'administrateur peut aussi copier un **lien de réinitialisation** (48 h) depuis la fiche du compte. Les liens
+  utilisent l'adresse publique réglée dans Administration › E-mails.
 - **ISBN inconnu au scan** : proposition d'ajouter le livre (fiche pré-remplie par l'ISBN) ou de l'ajouter à ses souhaits.
 - **Accueil personnalisé** (lien « Accueil », page d'arrivée d'un compte connecté ; visiteur : catalogue) :
   cartes À faire (prêts à relancer ou en retard, retours de la semaine, réservations prêtes, souhaits des
@@ -261,6 +275,10 @@ de session est limité à ce chemin.
 | `MLL_CSP` | `report` : la politique de contenu signale les violations dans la console sans rien bloquer ; `off` : aucune politique. À n'utiliser que pour diagnostiquer. |
 | `MLL_ALLOW_LOCAL_FETCH` | `1` : autorise le téléchargement de couvertures depuis `localhost` (développement : réimport d'un export local). |
 | `MLL_OFFLINE` | `1` : aucune recherche en ligne (ISBN, couvertures). Utilisé par les tests. |
+| `MLL_SECRET` | Clé de chiffrement des mots de passe SMTP. Absente : fichier `data/secret.key` créé au premier besoin (ne pas le perdre : sinon mots de passe SMTP à ressaisir). |
+| `MLL_REMINDER_HOUR` | Heure locale de l'envoi automatique des rappels (9 par défaut). |
+| `MLL_MAIL_OUTBOX` | Fichier où écrire les e-mails au lieu de les envoyer (tests, `scripts/demo.js`). |
+| `MLL_NO_SCHEDULER` | `1` : pas d'envoi automatique des rappels (tests). |
 | `GOOGLE_BOOKS_API_KEY` | Clé Google Books (gratuite) : sans elle, le quota anonyme est souvent épuisé et seules BnF/Open Library répondent. Peut aussi être saisie dans **Administration › Google Books** (prioritaire, avec guide pas à pas). |
 
 ## Sécurité
@@ -269,7 +287,8 @@ de session est limité à ce chemin.
   matrice complète est vérifiée par `tests/droits.test.js`.
 - **Sessions** : mot de passe haché (scrypt), jeton de session haché en base, cookie `HttpOnly`.
   Huit échecs de connexion bloquent le compte visé 15 minutes ; changer son mot de passe ferme les
-  autres sessions.
+  autres sessions. Mot de passe oublié : même réponse que le compte existe ou non, 3 demandes par heure
+  et par identifiant, jeton haché à usage unique, toutes les sessions fermées après la réinitialisation.
 - **Page** : politique de contenu (CSP) avec nonce, aucun script en ligne ni CDN (scanner, liseuse et
   police Nunito sont servis par l'app depuis `public/vendor/` et `public/fonts/`).
 - **Fichiers reçus** : images vérifiées (type, 5 Mo), couvertures par adresse limitées aux sites

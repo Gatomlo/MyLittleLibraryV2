@@ -82,7 +82,34 @@ test('bibliothecaire : catalogue et prets, pas les reglages', async () => {
     ['PUT', '/values/series', { from: 'a', name: 'b' }],
     ['POST', '/values/series/merge', { ids: ['a'], name: 'b' }],
     ['POST', '/values/series/delete', { name: 'a' }],
+    ['GET', '/mail-log'],
+    ['PUT', '/settings', { reminders: { autoSend: false } }],
   ]) await check('bibliothecaire', method, path, body, 403);
+  // Rappels par e-mail : ouverts aux bibliothecaires (refuses ici faute de SMTP).
+  await check('bibliothecaire', 'POST', '/loans/send-reminders', {}, 409);
+  await check('bibliothecaire', 'POST', '/loans/send-reminder', {}, 400);
+});
+
+test('e-mails : envoi des rappels ferme aux lecteurs, SMTP reserve a l\'administrateur', async () => {
+  for (const name of ['anonyme', 'etranger', 'lecteur']) {
+    const expected = name === 'anonyme' ? 401 : 403;
+    await check(name, 'POST', '/loans/send-reminders', {}, expected);
+    await check(name, 'POST', '/loans/send-reminder', { borrowerId: 1, ids: [1] }, expected);
+    await check(name, 'GET', '/mail-log', null, expected);
+  }
+  await check('gestionnaire', 'GET', '/mail-log', null, 200);
+  for (const name of ['gestionnaire', 'bibliothecaire', 'lecteur']) {
+    for (const [method, path, body] of [
+      ['GET', '/api/admin/mail'], ['PUT', `/api/admin/libraries/${ctx.lib.id}/mail`, { host: 'x.org' }],
+      ['DELETE', `/api/admin/libraries/${ctx.lib.id}/mail`], ['POST', `/api/admin/libraries/${ctx.lib.id}/mail/test`, {}],
+      ['GET', '/api/admin/public-url'], ['PUT', '/api/admin/public-url', { url: 'https://x.org' }],
+      ['POST', `/api/admin/users/${ctx.users.lecteur.id}/reset-link`, {}],
+    ]) {
+      const r = await who(name).call(method, path, body);
+      assert.equal(r.status, 403, `${name} ${method} ${path} -> ${r.status}`);
+    }
+  }
+  assert.equal((await ctx.anonyme.get('/api/admin/mail')).status, 401);
 });
 
 test('reglages : la casse et le / final ne contournent pas la garde', async () => {

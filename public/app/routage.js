@@ -9,7 +9,7 @@ import { viewBook } from './fiche-livre.js';
 import { viewKobo, viewKoboDevice } from './kobo.js';
 import { viewReader } from './liseuse-epub.js';
 import { viewCopy } from './exemplaire.js';
-import { viewInvite, viewLogin } from './connexion.js';
+import { viewInvite, viewLogin, viewReset } from './connexion.js';
 import { viewAccount } from './compte.js';
 import { viewAdmin } from './administration.js';
 import { viewBookForm } from './livre-formulaire.js';
@@ -36,6 +36,7 @@ const LIBRARY_ROUTES = [
   [/^\/book\/(\d+)\/edit$/, viewBookForm, 'manage'],
   [/^\/c\/([^/]+)$/, viewCopy],
   [/^\/login$/, viewLogin],
+  [/^\/reset\/([a-f0-9]{64})$/, viewReset],
   [/^\/add$/, viewBookForm, 'manage'],
   [/^\/import$/, viewImport, 'manage'],
   [/^\/incomplete(?:\/(\w+))?$/, viewIncomplete, 'manage'],
@@ -53,6 +54,7 @@ const HOME_ROUTES = [
   [/^\/?$/, viewHome],
   [/^\/invite\/([\w-]+)$/, viewInvite],
   [/^\/login$/, viewLogin],
+  [/^\/reset\/([a-f0-9]{64})$/, viewReset],
   [/^\/account$/, viewAccount, 'user'],
   [/^\/wishes$/, viewWishes, 'user'],
   [/^\/admin$/, viewAdmin, 'admin'],

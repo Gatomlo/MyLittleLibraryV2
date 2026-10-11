@@ -15,6 +15,7 @@
     "compression": "^1.8.2",
     "express": "^4.19.2",
     "jszip": "^3.10.2",
+    "nodemailer": "^10.0.10",
     "qrcode": "^1.5.4",
     "write-excel-file": "^4.1.1",
     "yauzl": "^3.4.0"

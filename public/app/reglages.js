@@ -1,7 +1,7 @@
 // Reglages de la bibliotheque — module de l'interface (organisation : public/app/README.md).
 import './statistiques.js';
 import { LIBRARY, LIB, state } from './etat.js';
-import { $, $$, view, esc, hint, mediaSrc, api, toast, REMINDER_DEFAULT, go, debounce, imageToDataUrl } from './utilitaires.js';
+import { $, $$, view, esc, hint, mediaSrc, fmtDate, api, toast, REMINDER_DEFAULT, go, debounce, imageToDataUrl } from './utilitaires.js';
 import { scanConf, refreshLoanBadge } from './scanner.js';
 import { renderBrand, renderHeader } from './entete.js';
 import { renderNav } from './icones.js';
@@ -14,9 +14,19 @@ import { normHeader } from './import.js';
 import { missingPills } from './incompletes.js';
 import { loadSettings, loadStatus } from './main.js';
 
+// Etat de l'envoi des e-mails (SMTP regle par l'administrateur) et types du journal.
+const MAIL_STATUS = {
+  active: '<span class="badge badge-ok">actif</span>',
+  inactive: '<span class="badge badge-muted">inactif</span>',
+  error: '<span class="badge badge-late">en erreur</span>',
+};
+const MAIL_KINDS = { reminder: 'Rappel', reset: 'Mot de passe oublié', test: 'Message de test' };
+
 async function viewSettings() {
   const s = await api('/api/settings');
   const rem = s.reminders || { mode: 'manual', offset: 0, subject: '', body: '' };
+  const mailStatus = (s.mail && s.mail.status) || 'inactive';
+  const mailActive = mailStatus === 'active';
   // Options absentes : le serveur tourne encore une version precedente de l'app.
   const feat = s.features || null;
   const catalog = {
@@ -110,7 +120,7 @@ async function viewSettings() {
     <h2>Rappels de retour</h2>
     <form class="card" id="reminder-form">
       <fieldset class="plain">
-        <legend>Mode ${hint("Le rappel ouvre un e-mail prêt à envoyer dans ta messagerie (mailto) : rien n'est envoyé sans toi.")}</legend>
+        <legend>Mode ${hint(mailActive ? "Le rappel est envoyé par la bibliothèque après confirmation, ou ouvert dans ta messagerie si tu préfères." : "Le rappel ouvre un e-mail prêt à envoyer dans ta messagerie (mailto) : rien n'est envoyé sans toi.")}</legend>
         <div class="btn-row" style="margin-bottom:14px">
           <label class="check"><input type="radio" name="mode" value="manual" ${rem.mode !== 'auto' ? 'checked' : ''}> Manuels (bouton « Relancer »)</label>
           <label class="check"><input type="radio" name="mode" value="auto" ${rem.mode === 'auto' ? 'checked' : ''}> Programmés (onglet « À relancer »)</label>
@@ -118,11 +128,15 @@ async function viewSettings() {
       </fieldset>
       <div class="field" id="rem-offset-field" ${rem.mode === 'auto' ? '' : 'hidden'}><label for="rem-offset">Relancer à J + … jours de la date de retour ${hint('0 : le jour de la date de retour. Négatif : avant (-2 = deux jours avant). Ensuite, nouvelle relance tous les 7 jours tant que le livre est en retard.')}</label>
         <input id="rem-offset" name="offset" type="number" min="-60" max="365" value="${rem.offset}" style="max-width:120px"></div>
+      <p class="small" style="margin:0 0 10px">Envoi des e-mails : ${MAIL_STATUS[mailStatus]} ${hint("Serveur d'envoi (SMTP) propre à la bibliothèque, réglé par l'administrateur. Sans envoi actif, les rappels passent par ta messagerie.")}</p>
+      <div class="field" id="rem-auto-field" ${rem.mode === 'auto' ? '' : 'hidden'}><label class="check"><input type="checkbox" name="autoSend" ${rem.autoSend ? 'checked' : ''} ${mailActive || rem.autoSend ? '' : 'disabled'}>
+        <span>Envoyer automatiquement ${hint(mailActive ? 'Chaque jour vers 9 h, la bibliothèque envoie les rappels de l\'onglet « À relancer » (emprunteurs avec une adresse e-mail).' : "Possible quand l'envoi des e-mails est actif.")}</span></label></div>
       <div class="field"><label for="rem-subject">Objet</label><input id="rem-subject" name="subject" value="${esc(rem.subject)}" placeholder="${esc(REMINDER_DEFAULT.subject)}"></div>
       <div class="field"><label for="rem-body">Message ${hint("Remplacés à l'envoi : {nom}, {livres} (liste des livres et dates), {bibliotheque}, {date_retour}. Vide : modèle par défaut.")}</label>
         <textarea id="rem-body" name="body" rows="8" placeholder="${esc(REMINDER_DEFAULT.body)}">${esc(rem.body)}</textarea></div>
       <div class="btn-row"><button class="btn btn-primary" type="submit"><span class="hide-mobile">Enregistrer le message</span><span class="show-mobile">Enregistrer</span></button><button class="btn" type="button" id="rem-reset"><span class="hide-mobile">Modèle par défaut</span><span class="show-mobile">Par défaut</span></button></div>
     </form>
+    <details class="card" id="mail-log" style="margin-top:12px"><summary>Derniers e-mails envoyés</summary><div id="mail-log-list"><p class="muted small">Chargement…</p></div></details>
 
     <h2>Bouton Scanner</h2>
     <form class="card" id="scan-form">
@@ -377,10 +391,24 @@ async function viewSettings() {
     try { await api('/api/settings', { method: 'PUT', body: { reminders: body } }); toast(msg); refreshLoanBadge(); } catch (err) { toast(err.message, 'error'); }
   };
   remForm.addEventListener('change', (e) => {
-    if (e.target.name === 'mode') { $('#rem-offset-field').hidden = e.target.value !== 'auto'; saveReminders({ mode: e.target.value }, 'Mode des rappels enregistré.'); }
+    if (e.target.name === 'mode') { $('#rem-offset-field').hidden = e.target.value !== 'auto'; $('#rem-auto-field').hidden = e.target.value !== 'auto'; saveReminders({ mode: e.target.value }, 'Mode des rappels enregistré.'); }
     if (e.target.name === 'offset') saveReminders({ offset: Number(e.target.value) }, 'Délai des rappels enregistré.');
+    if (e.target.name === 'autoSend') saveReminders({ autoSend: e.target.checked }, e.target.checked ? 'Envoi automatique activé.' : 'Envoi automatique désactivé.');
   });
   remForm.onsubmit = (e) => { e.preventDefault(); saveReminders({ subject: remForm.subject.value, body: remForm.body.value }, 'Message de rappel enregistré.'); };
+  // Journal des e-mails : charge a l'ouverture.
+  $('#mail-log').addEventListener('toggle', async (e) => {
+    if (!e.target.open) return;
+    try {
+      const list = await api('/api/mail-log');
+      $('#mail-log-list').innerHTML = list.length ? `<div class="list">${list.map((m) => `<div class="list-item"><div class="grow">
+          <strong>${esc(MAIL_KINDS[m.kind] || m.kind)}</strong>${m.origin === 'auto' ? ' <span class="badge badge-muted">automatique</span>' : ''}
+          ${m.ok ? '' : '<span class="badge badge-late">échec</span>'}
+          <div class="small muted">${fmtDate(m.sentAt)} · ${esc(m.borrower ? `${m.borrower.name} (${m.recipient})` : m.recipient)}</div>
+          ${m.ok ? '' : `<div class="small error-text">${esc(m.error)}</div>`}</div></div>`).join('')}</div>`
+        : '<p class="muted small">Aucun e-mail envoyé.</p>';
+    } catch (err) { $('#mail-log-list').innerHTML = `<p class="small error-text">${esc(err.message)}</p>`; }
+  });
   $('#rem-reset').onclick = () => { remForm.subject.value = ''; remForm.body.value = ''; saveReminders({ subject: '', body: '' }, 'Modèle par défaut rétabli.'); };
 
   // Bouton Scanner : enregistre des qu'on change.

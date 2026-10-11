@@ -4,7 +4,7 @@ import { pending } from './etat.js';
 import {
   $, $$, view, esc, hint, mediaSrc, fmtDate, api, toast, dueHtml, sendReminder, loanCache, remindedHtml, go,
 } from './utilitaires.js';
-import { copyCodeFromScan, scanAndOpen } from './scanner.js';
+import { copyCodeFromScan, scanAndOpen, refreshLoanBadge } from './scanner.js';
 import { icon } from './icones.js';
 
 async function viewLoans() {
@@ -65,12 +65,35 @@ async function viewLoans() {
       const groups = new Map();
       loans.forEach((l) => { if (!groups.has(l.borrower.id)) groups.set(l.borrower.id, []); groups.get(l.borrower.id).push(l); });
       const list = [...groups.values()];
-      $('#loan-list').innerHTML = list.length ? list.map((ls, i) => `<section class="remind-group" aria-labelledby="rg-${i}">
+      // Envoi operationnel : tous les rappels en une fois, par le serveur.
+      const { mail } = list.length ? await api('/api/loans/summary') : {};
+      const withMail = list.filter((ls) => ls[0].borrower.email).length;
+      $('#loan-list').innerHTML = (mail === 'active' && withMail ? `<div class="btn-row" style="margin-bottom:12px">
+          <button class="btn btn-primary" type="button" id="send-all">${icon('mail', 16)}<span class="hide-mobile">Envoyer tous les rappels (${withMail})</span><span class="show-mobile">Tout envoyer (${withMail})</span></button>
+          ${hint("Un e-mail par emprunteur, envoyé par la bibliothèque. Les emprunteurs sans adresse restent à relancer à la main.")}</div>` : '')
+        + (list.length ? list.map((ls, i) => `<section class="remind-group" aria-labelledby="rg-${i}">
           <div class="remind-head"><h3 id="rg-${i}"><a href="#/borrower/${ls[0].borrower.id}">${esc(ls[0].borrower.name)}</a></h3>
             <span class="small muted grow">${esc(ls[0].borrower.email || "pas d'e-mail")}</span>
             <button class="btn btn-small btn-primary" type="button" data-remind-group="${i}">${icon('mail', 16)}Relancer (${ls.length} livre${ls.length > 1 ? 's' : ''})</button></div>
           <div class="list">${ls.map((l) => loanItemHtml(l, true)).join('')}</div></section>`).join('')
-        : '<div class="empty">Aucun prêt à relancer.</div>';
+        : '<div class="empty">Aucun prêt à relancer.</div>');
+      if ($('#send-all')) {
+        $('#send-all').onclick = async (e) => {
+          if (!confirm(`Envoyer ${withMail} rappel${withMail > 1 ? 's' : ''} par e-mail ?`)) return;
+          e.currentTarget.disabled = true;
+          toast('Envoi en cours…');
+          try {
+            const r = await api('/api/loans/send-reminders', { method: 'POST', body: {} });
+            const parts = [`${r.sent} rappel${r.sent > 1 ? 's' : ''} envoyé${r.sent > 1 ? 's' : ''}`];
+            if (r.skipped.length) parts.push(`sans adresse : ${r.skipped.join(', ')}`);
+            if (r.failed) parts.push(`échec : ${r.error}${r.remaining ? ` (${r.remaining} non envoyé${r.remaining > 1 ? 's' : ''})` : ''}`);
+            toast(parts.join(' · ') + '.', r.failed ? 'error' : undefined);
+          } catch (err) { toast(err.message, 'error'); }
+          refreshLoanBadge();
+          tabs();
+          load();
+        };
+      }
       $$('[data-remind-group]').forEach((btn) => {
         btn.onclick = async () => {
           const ls = list[Number(btn.dataset.remindGroup)];

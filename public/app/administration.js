@@ -14,6 +14,7 @@ async function viewAdmin() {
     <div class="tabs">
       <button data-tab="libraries" class="${adminTab === 'libraries' ? 'active' : ''}">Bibliothèques</button>
       <button data-tab="users" class="${adminTab === 'users' ? 'active' : ''}">Comptes</button>
+      <button data-tab="mail" class="${adminTab === 'mail' ? 'active' : ''}">E-mails</button>
       <button data-tab="google" class="${adminTab === 'google' ? 'active' : ''}">Google Books</button>
       <button data-tab="data" class="${adminTab === 'data' ? 'active' : ''}">Sauvegarde</button>
     </div>
@@ -21,6 +22,7 @@ async function viewAdmin() {
   $$('.tabs button').forEach((btn) => { btn.onclick = () => { adminTab = btn.dataset.tab; viewAdmin(); }; });
   if (adminTab === 'libraries') await adminLibraries();
   else if (adminTab === 'users') await adminUsers();
+  else if (adminTab === 'mail') await adminMail();
   else if (adminTab === 'google') await adminGoogleKey();
   else await adminBackup();
 }
@@ -194,6 +196,116 @@ async function adminGoogleKey() {
   };
 }
 
+// ---------- E-mails ----------
+// Chaque bibliotheque envoie par son propre serveur SMTP (jamais par celui d'une autre) :
+// rappels de retour, mot de passe oublie. Operationnel apres un test reussi.
+const MAIL_BADGE = {
+  active: '<span class="badge badge-ok">Envoi actif</span>',
+  inactive: '<span class="badge badge-muted">Inactif</span>',
+  error: '<span class="badge badge-late">En erreur</span>',
+};
+async function adminMail() {
+  const [libs, pub] = await Promise.all([gapi('/api/admin/mail'), gapi('/api/admin/public-url')]);
+  $('#admin-body').innerHTML = `
+    <form class="card" id="public-url-form" style="margin-bottom:18px">
+      <div class="field"><label for="pub-url">Adresse publique de l'application ${hint('Début des liens envoyés par e-mail (mot de passe oublié). Sans elle, aucun lien de réinitialisation n\'est envoyé.')}</label>
+        <input id="pub-url" name="url" type="url" value="${esc(pub.url)}" placeholder="${esc(location.origin + ROOT)}"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" type="submit">Enregistrer</button>
+        ${pub.url ? '' : `<button class="btn" type="button" id="pub-url-here"><span class="hide-mobile">Utiliser l'adresse actuelle</span><span class="show-mobile">Adresse actuelle</span></button>`}
+      </div>
+    </form>
+    <h2>Serveur d'envoi de chaque bibliothèque ${hint("Les e-mails d'une bibliothèque partent uniquement de son serveur SMTP. Après chaque modification, un message de test réussi active l'envoi.")}</h2>
+    <div class="card">${libs.length ? `<div class="list">${libs.map((l) => `
+      <div class="list-item">
+        <div class="grow">
+          <strong>${esc(l.name)}</strong> ${MAIL_BADGE[l.mail.status]}
+          <div class="small muted">${l.mail.configured ? `${esc(l.mail.fromAddress)} · ${esc(l.mail.host)}:${l.mail.port}` : 'Aucun serveur réglé'}</div>
+          ${l.mail.lastError ? `<div class="small error-text">${esc(l.mail.lastError)}</div>` : ''}
+        </div>
+        <button class="btn btn-small" type="button" data-mail-lib="${l.id}">${iconText('edit', 'Régler')}</button>
+      </div>`).join('')}</div>` : '<p class="muted">Aucune bibliothèque.</p>'}</div>`;
+  const f = $('#public-url-form');
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    try { await gapi('/api/admin/public-url', { method: 'PUT', body: { url: f.url.value } }); toast('Adresse enregistrée.'); adminMail(); } catch (err) { toast(err.message, 'error'); }
+  };
+  if ($('#pub-url-here')) $('#pub-url-here').onclick = () => { f.url.value = location.origin + ROOT; };
+  $$('[data-mail-lib]').forEach((btn) => { btn.onclick = () => mailDialog(libs.find((l) => l.id === Number(btn.dataset.mailLib))); });
+}
+
+function mailDialog(lib) {
+  const m = lib.mail;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.innerHTML = `
+    <form class="modal">
+      <h2>E-mails de ${esc(lib.name)}</h2>
+      <p>${MAIL_BADGE[m.status]}${m.verifiedAt ? ` <span class="small muted">testé le ${fmtDate(m.verifiedAt)}</span>` : ''}</p>
+      ${m.lastError ? `<div class="error-box small">${esc(m.lastError)}</div>` : ''}
+      ${m.passwordUnreadable ? '<div class="error-box small">Mot de passe illisible (clé du serveur changée) : ressaisis-le.</div>' : ''}
+      <div class="grid-2">
+        <div class="field"><label>Serveur SMTP *</label><input name="host" required value="${esc(m.host || '')}" placeholder="mail.infomaniak.com" autocomplete="off" spellcheck="false"></div>
+        <div class="field"><label>Sécurité ${hint('SSL : port 465 en général. STARTTLS : port 587.')}</label>
+          <select name="security">${[['ssl', 'SSL / TLS'], ['starttls', 'STARTTLS'], ['none', 'Aucune']].map(([v, t]) => `<option value="${v}" ${m.security === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+        <div class="field"><label>Port *</label><input name="port" type="number" min="1" max="65535" required value="${m.port || 465}"></div>
+        <div class="field"><label>Identifiant</label><input name="username" value="${esc(m.username || '')}" autocomplete="off" spellcheck="false"></div>
+        <div class="field"><label>Mot de passe ${m.passwordSaved ? hint('Laisser vide pour garder le mot de passe enregistré.') : ''}</label>
+          <input name="password" type="password" autocomplete="new-password" placeholder="${m.passwordSaved ? '•••••• (inchangé)' : ''}"></div>
+        <div class="field"><label>Adresse d'expédition *</label><input name="fromAddress" type="email" required value="${esc(m.fromAddress || '')}" placeholder="bibliotheque@exemple.org"></div>
+        <div class="field"><label>Nom de l'expéditeur ${hint('Vide : nom de la bibliothèque.')}</label><input name="fromName" value="${esc(m.fromName || '')}" placeholder="${esc(lib.name)}"></div>
+        <div class="field"><label>Adresse de réponse ${hint('Facultative : les réponses des emprunteurs arrivent à cette adresse.')}</label><input name="replyTo" type="email" value="${esc(m.replyTo || '')}"></div>
+      </div>
+      <div class="field"><label>Envoyer un test à</label>
+        <div class="isbn-row"><input name="testTo" type="email" value="${esc(state.user.email || '')}" placeholder="ton adresse">
+          <button class="btn" type="button" id="mail-test"><span class="hide-mobile">Enregistrer et tester</span><span class="show-mobile">Tester</span></button></div></div>
+      <div id="dlg-err"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" type="submit">Enregistrer</button>
+        ${m.configured ? '<button class="btn btn-danger" type="button" id="mail-del">Retirer</button>' : ''}
+        <button class="btn" type="button" data-close>Fermer</button>
+      </div>
+    </form>`;
+  document.body.appendChild(backdrop);
+  const form = $('form', backdrop);
+  const close = () => backdrop.remove();
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) { close(); adminMail(); } });
+  // Port propose selon la securite (tant qu'il n'a pas ete choisi a la main).
+  form.security.onchange = () => { if (['465', '587', '25'].includes(form.port.value)) form.port.value = { ssl: 465, starttls: 587, none: 25 }[form.security.value]; };
+  const err = (msg) => { $('#dlg-err', backdrop).innerHTML = msg ? `<div class="error-box">${esc(msg)}</div>` : ''; };
+  const save = () => gapi(`/api/admin/libraries/${lib.id}/mail`, { method: 'PUT', body: {
+    host: form.host.value.trim(), port: Number(form.port.value), security: form.security.value, username: form.username.value.trim(),
+    password: form.password.value, fromAddress: form.fromAddress.value.trim(), fromName: form.fromName.value.trim(), replyTo: form.replyTo.value.trim(),
+  } });
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    err('');
+    try {
+      const r = await save();
+      toast(r.status === 'active' ? 'Réglages enregistrés.' : 'Réglages enregistrés : envoie un message de test pour activer l\'envoi.');
+      close();
+      adminMail();
+    } catch (e2) { err(e2.message); }
+  };
+  $('#mail-test', backdrop).onclick = async (e) => {
+    if (!form.reportValidity()) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    err('');
+    try {
+      await save();
+      await gapi(`/api/admin/libraries/${lib.id}/mail/test`, { method: 'POST', body: { to: form.testTo.value.trim() } });
+      toast(`Message de test envoyé : l'envoi des e-mails de ${lib.name} est actif.`);
+      close();
+      adminMail();
+    } catch (e2) { err(e2.message); btn.disabled = false; }
+  };
+  if ($('#mail-del', backdrop)) $('#mail-del', backdrop).onclick = async () => {
+    if (!confirm(`Retirer le serveur d'envoi de ${lib.name} ? La bibliothèque n'enverra plus d'e-mails (rappels automatiques coupés).`)) return;
+    try { await gapi(`/api/admin/libraries/${lib.id}/mail`, { method: 'DELETE' }); toast('Serveur retiré.'); close(); adminMail(); } catch (e2) { err(e2.message); }
+  };
+}
+
 async function refreshMyLibraries() {
   await loadStatus();
   renderHeader();
@@ -301,6 +413,7 @@ async function adminUsers() {
         <div class="grow">
           <strong>${esc(u.username)}</strong> ${u.role === 'admin' ? '<span class="badge badge-ok">Administrateur</span>' : ''}
           ${u.id === state.user.id ? '<span class="small muted">(toi)</span>' : ''}
+          ${u.email ? `<div class="small muted">${esc(u.email)}</div>` : ''}
           <div class="small muted">${u.role === 'admin' ? 'Toutes les bibliothèques' : (u.libraries.map((l) => `${esc(libName(l.id))} (${roleLabel(l.role)})${l.id === u.defaultLibraryId ? ' ★' : ''}`).join(', ') || 'Aucune bibliothèque')}</div>
         </div>
         <button class="btn btn-small" data-edit-user="${u.id}" title="Modifier" aria-label="Modifier ${esc(u.username)}">${iconText('edit', 'Modifier')}</button>
@@ -370,8 +483,11 @@ function userDialog(user, libs) {
     <form class="modal">
       <h2>${user ? `Compte ${esc(user.username)}` : 'Nouveau compte'}</h2>
       <div class="field"><label>Identifiant *</label><input name="username" required value="${esc(u.username)}" autocomplete="off"></div>
+      <div class="field"><label>Adresse e-mail ${hint('Facultative : lien envoyé en cas de mot de passe oublié.')}</label><input name="email" type="email" maxlength="200" value="${esc(u.email || '')}" autocomplete="off"></div>
       <div class="field"><label>${user ? `Nouveau mot de passe ${hint('Laisser vide pour ne pas changer.')}` : `Mot de passe * ${hint('8 caractères minimum.')}`}</label>
         <input name="password" type="password" autocomplete="new-password" minlength="8" ${user ? '' : 'required'}></div>
+      ${user ? `<div class="field"><button class="btn btn-small" type="button" id="reset-link">${iconText('share', 'Lien de réinitialisation')}</button>
+        ${hint('Crée un lien (valable 48 h) à transmettre toi-même : la personne y choisit un nouveau mot de passe.')}</div>` : ''}
       <div class="field"><label class="check"><input type="checkbox" name="admin" ${u.role === 'admin' ? 'checked' : ''}>
         <span>Administrateur ${hint(ROLE_HELP.admin)}</span></label></div>
       <div class="field"><label>Bibliothèques et rôle dans chacune (★ = par défaut) ${hint(LIBRARY_ROLES.map((r) => ROLE_HELP[r]).join(' '))}</label>
@@ -402,12 +518,19 @@ function userDialog(user, libs) {
   adminBox.onchange = syncRoles;
   syncRoles();
   $$('[data-lib-role]', backdrop).forEach((s) => { s.onchange = () => { $(`#lib-${s.dataset.libRole}`, backdrop).checked = true; }; });
+  if ($('#reset-link', backdrop)) $('#reset-link', backdrop).onclick = async () => {
+    try {
+      const r = await gapi(`/api/admin/users/${user.id}/reset-link`, { method: 'POST', body: {} });
+      const url = `${location.origin}${r.slug ? libUrl(r.slug) : ROOT + '/'}#/reset/${r.token}`;
+      try { await navigator.clipboard.writeText(url); toast(`Lien copié (valable ${r.hours} h).`); } catch (e) { prompt('Lien de réinitialisation :', url); }
+    } catch (err) { toast(err.message, 'error'); }
+  };
   $('form', backdrop).onsubmit = async (e) => {
     e.preventDefault();
     const t = e.target;
     const libraries = $$('input[name=lib]:checked', backdrop).map((x) => ({ id: Number(x.value), role: $(`[data-lib-role="${x.value}"]`, backdrop).value }));
     const def = $('input[name=def]:checked', backdrop);
-    const body = { username: t.username.value, role: t.admin.checked ? 'admin' : 'user', libraries, defaultLibraryId: def ? Number(def.value) : null };
+    const body = { username: t.username.value, email: t.email.value, role: t.admin.checked ? 'admin' : 'user', libraries, defaultLibraryId: def ? Number(def.value) : null };
     if (t.password.value) body.password = t.password.value;
     try {
       await gapi(user ? `/api/admin/users/${user.id}` : '/api/admin/users', { method: user ? 'PUT' : 'POST', body });

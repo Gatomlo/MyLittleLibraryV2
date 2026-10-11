@@ -1133,3 +1133,6 @@ body.selecting .fab-stack { display: none; }
 
 /* Page d'une liseuse : lignes selectionnees. */
 tr.row-selected td { background: var(--accent-soft); }
+
+/* ---------- E-mails ---------- */
+.mail-preview { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14em; overflow-y: auto; font: inherit; font-size: 13px; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; }

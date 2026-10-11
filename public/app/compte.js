@@ -31,6 +31,12 @@ async function viewAccount() {
       <div class="field"><label>Ma liste de souhaits ${hint('Ces comptes voient ta liste de souhaits (sans la modifier), dans les bibliothèques que vous partagez.')}</label>
         <div id="acc-share-wishes"><p class="muted small">Chargement…</p></div></div>
     </div>
+    <h2>Adresse e-mail</h2>
+    <form class="card" id="email-form">
+      <div class="field"><label for="acc-email">Adresse e-mail ${hint('Sert uniquement à recevoir un lien si tu oublies ton mot de passe.')}</label>
+        <input id="acc-email" name="email" type="email" maxlength="200" autocomplete="email" value="${esc(u.email || '')}"></div>
+      <button class="btn" type="submit">Enregistrer</button>
+    </form>
     <h2>Mot de passe</h2>
     <form class="card" id="pwd-form">
       <div class="grid-2">
@@ -61,6 +67,14 @@ async function viewAccount() {
       } catch (err) { toast(err.message, 'error'); }
     };
   });
+  $('#email-form').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await gapi('/api/me/email', { method: 'PUT', body: { email: e.target.email.value } });
+      state.user.email = r.email;
+      toast(r.email ? 'Adresse e-mail enregistrée.' : 'Adresse e-mail retirée.');
+    } catch (err) { toast(err.message, 'error'); }
+  };
   $('#pwd-form').onsubmit = async (e) => {
     e.preventDefault();
     try {
