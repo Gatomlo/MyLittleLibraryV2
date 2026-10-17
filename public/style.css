@@ -1136,3 +1136,7 @@ tr.row-selected td { background: var(--accent-soft); }
 
 /* ---------- E-mails ---------- */
 .mail-preview { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14em; overflow-y: auto; font: inherit; font-size: 13px; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; }
+
+/* Bandeau hors connexion */
+.offline-bar { background: #8a5a00; color: #fff; text-align: center; font-size: 13px; padding: 6px 12px; }
+.offline-bar[hidden] { display: none; }

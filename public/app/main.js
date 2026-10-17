@@ -25,6 +25,16 @@ async function loadStatus() {
   } catch (e) { /* hors ligne */ }
 }
 
+// Bandeau hors connexion : consultation des pages deja vues, ecritures impossibles.
+const offlineBar = document.createElement('div');
+offlineBar.className = 'offline-bar no-print';
+offlineBar.setAttribute('role', 'status');
+offlineBar.textContent = 'Hors connexion : lecture seule, pages déjà consultées.';
+offlineBar.hidden = navigator.onLine;
+document.body.prepend(offlineBar);
+window.addEventListener('offline', () => { offlineBar.hidden = false; });
+window.addEventListener('online', () => { offlineBar.hidden = true; refreshedAt = 0; refreshIfStale(); });
+
 $('#install-btn').onclick = () => installApp();
 $('#scan-btn').onclick = () => scanAndOpen();
 

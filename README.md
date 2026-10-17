@@ -136,6 +136,8 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   ne fait qu'un raccourci qui s'ouvre dans un onglet.
 - **Interface** : thème coloré (police Nunito, couleur par page, icônes dans le menu et
   devant les titres), clair ou sombre selon l'appareil. Un manifeste par bibliothèque (nom et page de départ).
+  **Hors connexion** : l'app s'ouvre et affiche en lecture seule les pages déjà consultées
+  (catalogue, fiches, prêts, couvertures) ; les modifications exigent le réseau.
 - **Exemplaires** : chaque exemplaire a un code unique (`BIB-00001`…), un
   emplacement et son étiquette. « Transférer » (fenêtre Modifier de l'exemplaire) le
   déplace, avec son code et ses prêts, vers une autre fiche (erreur d'étiquetage, fiche

@@ -91,6 +91,9 @@ async function request(base, path, { method = 'GET', body } = {}) {
     credentials: 'same-origin',
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
     body: body !== undefined ? JSON.stringify(body) : undefined,
+  }).catch((e) => {
+    if (e instanceof TypeError) throw new Error(method === 'GET' ? 'Hors connexion : page non consultée sur cet appareil.' : 'Hors connexion : action impossible.');
+    throw e;
   });
   let data = null;
   try { data = await res.json(); } catch (e) { /* reponse vide */ }
