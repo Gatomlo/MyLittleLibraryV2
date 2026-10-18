@@ -67,7 +67,9 @@ const statusesOn = () => isMember() && !!features().readingStatus;
 // desactivee pour ce lieu (kind : 'books' fiche livre | 'wishes' souhaits). Marqueurs {titre}, {auteurs}, {recherche} (titre + auteurs), {isbn}.
 function onlineSearch(item, kind) {
   const q = (state.settings && state.settings.search) || {};
-  if (!q[kind] || !q.url) return null;
+  // Profil : l'administrateur suit le gestionnaire.
+  const role = libRole() === 'admin' ? 'manager' : libRole();
+  if (!q.url || !role || !(q[kind] || []).includes(role)) return null;
   const enc = (v) => encodeURIComponent(String(v || '').trim()).replace(/%20/g, '+');
   const vals = { titre: item.title, auteurs: item.authors, recherche: [item.title, item.authors].filter(Boolean).join(' '), isbn: item.isbn };
   return { url: q.url.replace(/\{(titre|auteurs|recherche|isbn)\}/g, (m, k) => enc(vals[k])), label: q.label || 'Chercher en ligne' };
