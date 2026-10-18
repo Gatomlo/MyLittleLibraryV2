@@ -58,8 +58,8 @@ function icon(name, size = 18) {
 // 760 px : le bouton doit alors porter un title ou un aria-label).
 const iconText = (name, text, size = 16) => `${icon(name, size)}<span class="hide-mobile">${text}</span>`;
 // Bouton « Chercher en ligne » d'un livre ou d'un souhait (vide si la recherche est desactivee).
-const searchLinkHtml = (item, cls = 'btn') => {
-  const s = onlineSearch(item);
+const searchLinkHtml = (item, kind, cls = 'btn') => {
+  const s = onlineSearch(item, kind);
   return s ? `<a class="${cls}" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" title="${esc(s.label)}" aria-label="${esc(s.label)} : ${esc(item.title)}">${iconText('search', esc(s.label))}</a>` : '';
 };
 // Couleur de chaque page (teinte, fond pastel) : navigation et pastille du titre.

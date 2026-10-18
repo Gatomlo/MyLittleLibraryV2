@@ -42,7 +42,7 @@ async function viewBook(id) {
         ${manage && book.notes ? `<h3>Notes internes</h3><p class="summary muted">${esc(book.notes)}</p>` : ''}
         ${member ? `<div class="btn-row" style="margin-top:14px">
             ${manage ? `<a class="btn" href="#/book/${book.id}/edit">Modifier</a>` : ''}
-            ${manage ? searchLinkHtml(book) : ''}
+            ${manage ? searchLinkHtml(book, 'books') : ''}
             ${koboOn() && book.ebookFile && book.ebookFile.download ? `<button class="btn" id="push-kobo" title="Envoyer sur ${esc(kobo.device.name)}" aria-label="Envoyer sur ma liseuse">${iconText('kobo', 'Envoyer sur ma liseuse')}</button>` : ''}
             ${manage ? '<button class="btn btn-danger" id="del-book">Supprimer</button>' : ''}
           </div>` : ''}

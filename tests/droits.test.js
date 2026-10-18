@@ -132,11 +132,11 @@ test('gestionnaire : reglages de sa bibliotheque, pas l\'administration', async 
   await check('gestionnaire', 'PUT', '/settings', { loanDays: 21 }, 200);
   // Adresse de recherche en ligne : http(s) uniquement, vide = desactive.
   await check('gestionnaire', 'PUT', '/settings', { search: { url: 'javascript:alert(1)' } }, 400);
-  await check('gestionnaire', 'PUT', '/settings', { search: { enabled: true, label: 'Chercher sur Anna', url: 'https://exemple.org/s?q={recherche}' } }, 200);
-  assert.deepEqual((await check('gestionnaire', 'GET', '/settings', null, 200)).body.search, { enabled: true, url: 'https://exemple.org/s?q={recherche}', label: 'Chercher sur Anna' });
-  await check('gestionnaire', 'PUT', '/settings', { search: { enabled: false, label: '', url: '' } }, 200);
-  assert.deepEqual((await check('gestionnaire', 'GET', '/settings', null, 200)).body.search, { enabled: false, url: '', label: '' });
-  await check('bibliothecaire', 'PUT', '/settings', { search: { enabled: true } }, 403);
+  await check('gestionnaire', 'PUT', '/settings', { search: { books: true, wishes: false, label: 'Chercher sur Anna', url: 'https://exemple.org/s?q={recherche}' } }, 200);
+  assert.deepEqual((await check('gestionnaire', 'GET', '/settings', null, 200)).body.search, { books: true, wishes: false, url: 'https://exemple.org/s?q={recherche}', label: 'Chercher sur Anna' });
+  await check('gestionnaire', 'PUT', '/settings', { search: { books: false, wishes: false, label: '', url: '' } }, 200);
+  assert.deepEqual((await check('gestionnaire', 'GET', '/settings', null, 200)).body.search, { books: false, wishes: false, url: '', label: '' });
+  await check('bibliothecaire', 'PUT', '/settings', { search: { wishes: true } }, 403);
   await check('gestionnaire', 'POST', '/empty', { confirm: 'mauvais nom' }, 400);
   await check('gestionnaire', 'PUT', '/values/series', { from: 'a', name: 'b' }, 200);
   const r = await ctx.users.gestionnaire.get('/api/admin/users');

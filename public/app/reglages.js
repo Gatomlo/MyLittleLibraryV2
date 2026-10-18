@@ -34,7 +34,7 @@ async function viewSettings() {
     card: (s.catalog && s.catalog.card) || ALL_CATALOG_CARD,
     list: (s.catalog && s.catalog.list) || DEFAULT_CATALOG_LIST,
   };
-  const search = { enabled: false, url: '', label: '', ...(s.search || {}) };
+  const search = { books: false, wishes: false, url: '', label: '', ...(s.search || {}) };
   const libraryUrl = location.origin + LIB;
   view().innerHTML = `
     <h1>Réglages</h1>
@@ -64,7 +64,8 @@ async function viewSettings() {
 
     <h2>Recherche en ligne</h2>
     <form class="card" id="search-form">
-      <label class="check"><input type="checkbox" name="enabled" ${search.enabled ? 'checked' : ''}> Activer le bouton ${hint('Bouton sur la fiche d\'un livre (gestionnaires) et sur les souhaits. Ouvre la recherche dans un nouvel onglet.')}</label>
+      <label class="check"><input type="checkbox" name="books" ${search.books ? 'checked' : ''}> Sur la fiche d'un livre ${hint('Visible par les gestionnaires. Ouvre la recherche dans un nouvel onglet.')}</label>
+      <label class="check"><input type="checkbox" name="wishes" ${search.wishes ? 'checked' : ''}> Dans la liste de souhaits ${hint('Visible par tous ceux qui ont accès aux souhaits.')}</label>
       <div class="field" style="margin-top:12px"><label for="search-label">Nom du bouton ${hint('Vide : « Chercher en ligne ». Sur smartphone, seule l\'icône est affichée.')}</label>
         <input id="search-label" name="label" maxlength="40" value="${esc(search.label)}" placeholder="Chercher en ligne"></div>
       <div class="field"><label for="search-url">Adresse de recherche ${hint('Marqueurs remplacés par les données du livre : {recherche} (titre + auteurs), {titre}, {auteurs}, {isbn}.')}</label>
@@ -291,7 +292,7 @@ async function viewSettings() {
   $('#search-form').onsubmit = async (e) => {
     e.preventDefault();
     try {
-      await api('/api/settings', { method: 'PUT', body: { search: { enabled: e.target.enabled.checked, label: e.target.label.value.trim(), url: e.target.url.value.trim() } } });
+      await api('/api/settings', { method: 'PUT', body: { search: { books: e.target.books.checked, wishes: e.target.wishes.checked, label: e.target.label.value.trim(), url: e.target.url.value.trim() } } });
       await loadSettings();
       toast('Recherche en ligne enregistrée.');
     } catch (err) { toast(err.message, 'error'); }
