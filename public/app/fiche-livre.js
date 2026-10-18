@@ -7,6 +7,16 @@ import { route } from './routage.js';
 import { starsHtml, pickBookDialog } from './catalogue.js';
 import { kobo, koboOn, koboReturn, busy, pushToKobo } from './kobo.js';
 
+// Adresse de recherche en ligne (reglage de la bibliotheque) pour un livre : marqueurs
+// {titre}, {auteurs}, {recherche} (titre + auteurs), {isbn}, encodes pour une adresse.
+function onlineSearchUrl(book) {
+  const tpl = (state.settings && state.settings.searchUrl) || '';
+  if (!tpl) return '';
+  const enc = (v) => encodeURIComponent(String(v || '').trim()).replace(/%20/g, '+');
+  const vals = { titre: book.title, auteurs: book.authors, recherche: [book.title, book.authors].filter(Boolean).join(' '), isbn: book.isbn };
+  return tpl.replace(/\{(titre|auteurs|recherche|isbn)\}/g, (m, k) => enc(vals[k]));
+}
+
 async function viewBook(id) {
   const manage = canManage();
   const member = isMember();
@@ -42,6 +52,7 @@ async function viewBook(id) {
         ${manage && book.notes ? `<h3>Notes internes</h3><p class="summary muted">${esc(book.notes)}</p>` : ''}
         ${member ? `<div class="btn-row" style="margin-top:14px">
             ${manage ? `<a class="btn" href="#/book/${book.id}/edit">Modifier</a>` : ''}
+            ${manage && onlineSearchUrl(book) ? `<a class="btn" href="${esc(onlineSearchUrl(book))}" target="_blank" rel="noopener noreferrer" title="Chercher ce livre en ligne">${iconText('search', 'Chercher en ligne')}</a>` : ''}
             ${koboOn() && book.ebookFile && book.ebookFile.download ? `<button class="btn" id="push-kobo" title="Envoyer sur ${esc(kobo.device.name)}" aria-label="Envoyer sur ma liseuse">${iconText('kobo', 'Envoyer sur ma liseuse')}</button>` : ''}
             ${manage ? '<button class="btn btn-danger" id="del-book">Supprimer</button>' : ''}
           </div>` : ''}

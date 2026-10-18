@@ -61,6 +61,13 @@ async function viewSettings() {
       <button class="btn btn-primary" type="submit">Enregistrer</button>
     </form>
 
+    <h2>Recherche en ligne</h2>
+    <form class="card" id="search-form">
+      <div class="field" style="margin:0"><label for="search-url">Adresse de recherche ${hint('Bouton « Chercher en ligne » de la fiche d\'un livre (gestionnaires). Marqueurs remplacés par les données du livre : {recherche} (titre + auteurs), {titre}, {auteurs}, {isbn}. Vide : bouton masqué.')}</label>
+        <input id="search-url" name="searchUrl" type="url" maxlength="500" value="${esc(s.searchUrl || '')}" placeholder="https://exemple.org/search?q={recherche}"></div>
+      <div class="btn-row" style="margin-top:10px"><button class="btn btn-primary" type="submit">Enregistrer</button></div>
+    </form>
+
     <h2>Fonctionnalités</h2>
     <form class="card" id="features-form">
       ${feat ? '' : `<div class="error-box">Le serveur n'est pas à jour (options indisponibles). Vérifie que tous les fichiers de l'app ont été envoyés,
@@ -275,6 +282,14 @@ async function viewSettings() {
       renderHeader();
       toast('Réglages enregistrés.');
       route();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  $('#search-form').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api('/api/settings', { method: 'PUT', body: { searchUrl: e.target.searchUrl.value.trim() } });
+      await loadSettings();
+      toast('Adresse de recherche enregistrée.');
     } catch (err) { toast(err.message, 'error'); }
   };
   const prefixInput = $('#prefix');
