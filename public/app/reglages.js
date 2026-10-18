@@ -34,6 +34,7 @@ async function viewSettings() {
     card: (s.catalog && s.catalog.card) || ALL_CATALOG_CARD,
     list: (s.catalog && s.catalog.list) || DEFAULT_CATALOG_LIST,
   };
+  const search = { enabled: false, url: '', label: '', ...(s.search || {}) };
   const libraryUrl = location.origin + LIB;
   view().innerHTML = `
     <h1>Réglages</h1>
@@ -63,9 +64,12 @@ async function viewSettings() {
 
     <h2>Recherche en ligne</h2>
     <form class="card" id="search-form">
-      <div class="field" style="margin:0"><label for="search-url">Adresse de recherche ${hint('Bouton « Chercher en ligne » de la fiche d\'un livre (gestionnaires). Marqueurs remplacés par les données du livre : {recherche} (titre + auteurs), {titre}, {auteurs}, {isbn}. Vide : bouton masqué.')}</label>
-        <input id="search-url" name="searchUrl" type="url" maxlength="500" value="${esc(s.searchUrl || '')}" placeholder="https://exemple.org/search?q={recherche}"></div>
-      <div class="btn-row" style="margin-top:10px"><button class="btn btn-primary" type="submit">Enregistrer</button></div>
+      <label class="check"><input type="checkbox" name="enabled" ${search.enabled ? 'checked' : ''}> Activer le bouton ${hint('Bouton sur la fiche d\'un livre (gestionnaires) et sur les souhaits. Ouvre la recherche dans un nouvel onglet.')}</label>
+      <div class="field" style="margin-top:12px"><label for="search-label">Nom du bouton ${hint('Vide : « Chercher en ligne ». Sur smartphone, seule l\'icône est affichée.')}</label>
+        <input id="search-label" name="label" maxlength="40" value="${esc(search.label)}" placeholder="Chercher en ligne"></div>
+      <div class="field"><label for="search-url">Adresse de recherche ${hint('Marqueurs remplacés par les données du livre : {recherche} (titre + auteurs), {titre}, {auteurs}, {isbn}.')}</label>
+        <input id="search-url" name="url" type="url" maxlength="500" value="${esc(search.url)}" placeholder="https://exemple.org/search?q={recherche}"></div>
+      <button class="btn btn-primary" type="submit">Enregistrer</button>
     </form>
 
     <h2>Fonctionnalités</h2>
@@ -287,9 +291,9 @@ async function viewSettings() {
   $('#search-form').onsubmit = async (e) => {
     e.preventDefault();
     try {
-      await api('/api/settings', { method: 'PUT', body: { searchUrl: e.target.searchUrl.value.trim() } });
+      await api('/api/settings', { method: 'PUT', body: { search: { enabled: e.target.enabled.checked, label: e.target.label.value.trim(), url: e.target.url.value.trim() } } });
       await loadSettings();
-      toast('Adresse de recherche enregistrée.');
+      toast('Recherche en ligne enregistrée.');
     } catch (err) { toast(err.message, 'error'); }
   };
   const prefixInput = $('#prefix');

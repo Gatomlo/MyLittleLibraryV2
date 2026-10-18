@@ -150,7 +150,7 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   exemplaires papier (disponibles en premier).
 - **Retour express** : un exemplaire prêté scanné (ou « Retour » dans les listes) ouvre une fenêtre
   « Enregistrer le retour » / « Retour + scanner le suivant » pour enchaîner les retours.
-- **Recherche en ligne** : Réglages > Bibliothèque > Recherche en ligne, modèle d'adresse avec marqueurs `{recherche}` (titre + auteurs), `{titre}`, `{auteurs}`, `{isbn}` ; les gestionnaires ont alors un bouton « Chercher en ligne » sur la fiche d'un livre (nouvel onglet). Vide : bouton masqué.
+- **Recherche en ligne** : activable par bibliothèque (Réglages > Bibliothèque > Recherche en ligne), nom du bouton libre (ex. « Chercher sur Anna »), modèle d'adresse avec marqueurs `{recherche}` (titre + auteurs), `{titre}`, `{auteurs}`, `{isbn}` ; bouton sur la fiche d'un livre (gestionnaires) et sur les souhaits, ouvert dans un nouvel onglet.
 - **Dates de retour** : durée par défaut (Réglages > Exemplaires et prêts > Durée des prêts, 0 = aucune),
   modifiable au prêt, « Prolonger » sur la page de l'exemplaire ; onglet « En retard » de la page Prêts
   et pastille rouge sur le lien Prêts de l'en-tête.

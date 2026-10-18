@@ -1,6 +1,6 @@
 // Icones — module de l'interface (organisation : public/app/README.md).
 import './entete.js';
-import { ROOT, LIBRARY, libUrl, state, pending, isAdmin, libRole, isMember, canManage, canConfigure, roleLabel, features } from './etat.js';
+import { ROOT, LIBRARY, libUrl, state, pending, isAdmin, libRole, isMember, canManage, canConfigure, roleLabel, features, onlineSearch } from './etat.js';
 import { $, $$, view, esc, gapi, toast, go } from './utilitaires.js';
 import { scanConf, SCAN_TITLES, refreshLoanBadge } from './scanner.js';
 import { renderHeader } from './entete.js';
@@ -57,6 +57,11 @@ function icon(name, size = 18) {
 // Libelle de bouton : icone + texte, icone seule sur smartphone (texte masque sous
 // 760 px : le bouton doit alors porter un title ou un aria-label).
 const iconText = (name, text, size = 16) => `${icon(name, size)}<span class="hide-mobile">${text}</span>`;
+// Bouton « Chercher en ligne » d'un livre ou d'un souhait (vide si la recherche est desactivee).
+const searchLinkHtml = (item, cls = 'btn') => {
+  const s = onlineSearch(item);
+  return s ? `<a class="${cls}" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" title="${esc(s.label)}" aria-label="${esc(s.label)} : ${esc(item.title)}">${iconText('search', esc(s.label))}</a>` : '';
+};
 // Couleur de chaque page (teinte, fond pastel) : navigation et pastille du titre.
 const PAGE_COLORS = {
   catalog: 'accent', kobo: 'grape', add: 'coral', import: 'sky', loans: 'sun', borrowers: 'grape', labels: 'rose', stats: 'sky', settings: 'accent',
@@ -235,4 +240,4 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setNavOpen
 window.addEventListener('hashchange', () => setNavOpen(false));
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
 
-export { icon, iconText, colorVars, renderNav, renderAccount, closeMenu };
+export { icon, iconText, searchLinkHtml, colorVars, renderNav, renderAccount, closeMenu };

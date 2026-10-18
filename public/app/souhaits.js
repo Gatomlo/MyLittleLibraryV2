@@ -3,7 +3,7 @@ import './accueil.js';
 import { ROOT, LIBRARY, state, pending } from './etat.js';
 import { $, $$, view, esc, hint, gapi, toast, go, imageToDataUrl } from './utilitaires.js';
 import { openCoverSearch, scanIsbn } from './scanner.js';
-import { icon, iconText } from './icones.js';
+import { icon, iconText, searchLinkHtml } from './icones.js';
 import { combo, memberPicker } from './catalogue.js';
 import { initials } from './statistiques.js';
 
@@ -138,6 +138,7 @@ function wishItemHtml(w, { me, manager, multi }) {
   const own = w.owner.id === me;
   const meta = [w.authors, [w.publisher, w.year].filter(Boolean).join(', '), w.isbn ? `ISBN ${w.isbn}` : ''].filter(Boolean).map(esc).join(' · ');
   const acts = [];
+  acts.push(searchLinkHtml(w, 'btn btn-small'));
   if (manager && !w.inLibrary) acts.push(`<button class="btn btn-small btn-primary" type="button" data-wish-act="add" data-wish="${w.id}" title="Ajouter à la bibliothèque" aria-label="Ajouter « ${esc(w.title)} » à la bibliothèque">${iconText('add', 'Ajouter à la bibliothèque')}</button>`);
   if (own) {
     acts.push(`<button class="btn btn-small" type="button" data-wish-act="edit" data-wish="${w.id}" title="Modifier" aria-label="Modifier « ${esc(w.title)} »">${iconText('edit', 'Modifier')}</button>`);

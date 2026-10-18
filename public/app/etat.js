@@ -63,11 +63,20 @@ const ROLE_HELP = {
 const features = () => (state.settings && state.settings.features) || {};
 const statusesOn = () => isMember() && !!features().readingStatus;
 
+// Recherche en ligne (Reglages) : { url, label } pour un livre ou un souhait, ou null si
+// desactivee. Marqueurs {titre}, {auteurs}, {recherche} (titre + auteurs), {isbn}.
+function onlineSearch(item) {
+  const q = (state.settings && state.settings.search) || {};
+  if (!q.enabled || !q.url) return null;
+  const enc = (v) => encodeURIComponent(String(v || '').trim()).replace(/%20/g, '+');
+  const vals = { titre: item.title, auteurs: item.authors, recherche: [item.title, item.authors].filter(Boolean).join(' '), isbn: item.isbn };
+  return { url: q.url.replace(/\{(titre|auteurs|recherche|isbn)\}/g, (m, k) => enc(vals[k])), label: q.label || 'Chercher en ligne' };
+}
 const READING_LABELS = { to_read: 'À lire', reading: 'En cours', read: 'Lu', abandoned: 'Abandonné' };
 const OPINION_LABELS = { liked: 'Aimé', disliked: 'Pas aimé' };
 const OPINION_ICONS = { liked: '♥', disliked: '✕' };
 
 export {
   ROOT, LIBRARY, LIB, ASSETS, libUrl, state, pending, isAdmin, libRole, isMember, canManage, canConfigure, LIBRARY_ROLES, roleLabel,
-  ROLE_HELP, features, statusesOn, READING_LABELS, OPINION_LABELS, OPINION_ICONS,
+  ROLE_HELP, features, onlineSearch, statusesOn, READING_LABELS, OPINION_LABELS, OPINION_ICONS,
 };
