@@ -122,7 +122,10 @@ async function viewWishes() {
           await gapi(`/api/wishes/${w.id}`, { method: 'DELETE' });
           toast('Souhait supprimé.');
         }
-        if (act === 'add') { pending.wish = w; go('#/add'); return; }
+        if (act === 'add') {
+          if (!confirm(`Ajouter « ${w.title} » à la bibliothèque ?`)) return;
+          pending.wish = w; go('#/add'); return;
+        }
         viewWishes();
       } catch (err) { toast(err.message, 'error'); }
     };
@@ -139,7 +142,7 @@ function wishItemHtml(w, { me, manager, multi }) {
   const meta = [w.authors, [w.publisher, w.year].filter(Boolean).join(', '), w.isbn ? `ISBN ${w.isbn}` : ''].filter(Boolean).map(esc).join(' · ');
   const acts = [];
   acts.push(searchLinkHtml(w, 'wishes', 'btn btn-small'));
-  if (manager && !w.inLibrary) acts.push(`<button class="btn btn-small btn-primary" type="button" data-wish-act="add" data-wish="${w.id}" title="Ajouter à la bibliothèque" aria-label="Ajouter « ${esc(w.title)} » à la bibliothèque">${iconText('add', 'Ajouter à la bibliothèque')}</button>`);
+  if (manager && !w.inLibrary) acts.push(`<button class="btn btn-small btn-primary" type="button" data-wish-act="add" data-wish="${w.id}" title="Ajouter à la bibliothèque" aria-label="Ajouter « ${esc(w.title)} » à la bibliothèque">${iconText('add', 'Ajouter')}</button>`);
   if (own) {
     acts.push(`<button class="btn btn-small" type="button" data-wish-act="edit" data-wish="${w.id}" title="Modifier" aria-label="Modifier « ${esc(w.title)} »">${iconText('edit', 'Modifier')}</button>`);
     acts.push(`<button class="btn btn-small btn-danger" type="button" data-wish-act="delete" data-wish="${w.id}" title="Supprimer" aria-label="Supprimer « ${esc(w.title)} »">${iconText('trash', 'Supprimer')}</button>`);
