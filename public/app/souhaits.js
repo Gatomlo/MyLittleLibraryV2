@@ -21,6 +21,7 @@ async function viewWishes() {
     view().innerHTML = `<h1>Mes souhaits</h1><div class="empty">Chaque bibliothèque a sa liste de souhaits : ouvre une bibliothèque pour voir la tienne.<br><br><a class="btn" href="#/">Mes bibliothèques</a></div>`;
     return;
   }
+  if (navigator.onLine && myQueue().length) await flushWishQueue();
   const { owners, manager } = await gapi(`/api/wishes/owners?${libParam()}`);
   const me = state.user.id;
   const ids = new Set(owners.map((o) => o.id));
@@ -52,6 +53,7 @@ async function viewWishes() {
       <button type="button" class="chip-toggle wish-filter" id="wish-prio" aria-pressed="${wishState.priority}">${icon('wish', 16)}Très envie<span class="hide-mobile"> seulement</span></button>
       ${exportHtml('hide-mobile')}
     </div>
+    ${myQueue().length ? `<p class="small muted" role="status">${icon('wish', 16)} ${myQueue().length} livre(s) en attente de réseau : ajout automatique au retour de la connexion.</p>` : ''}
     <div class="card" id="wish-list" aria-live="polite"><p class="muted">Chargement…</p></div>
     ${exportHtml('only-mobile')}
     <p class="wish-share"><a href="#/account">${icon('share', 16)}Partager ma liste</a> <span class="small muted">(Mon compte › Mes partages)</span></p>`;
@@ -130,6 +132,52 @@ async function viewWishes() {
     };
   });
 }
+
+// File d'attente hors connexion : les livres ajoutes sans reseau (ISBN ou titre) sont gardes
+// sur l'appareil et enregistres au retour de la connexion.
+const QUEUE_KEY = 'mll-wish-queue';
+const readQueue = () => { try { return JSON.parse(localStorage.getItem(QUEUE_KEY)) || []; } catch (e) { return []; } };
+const writeQueue = (list) => { try { localStorage.setItem(QUEUE_KEY, JSON.stringify(list)); } catch (e) { /* stockage indisponible */ } };
+const isOffline = (err) => /^Hors connexion/.test((err && err.message) || '');
+const myQueue = () => readQueue().filter((e) => state.user && e.user === state.user.id);
+function queueWish(entry) {
+  const list = readQueue();
+  if (entry.isbn && list.some((e) => e.isbn === entry.isbn && e.library === entry.library && e.user === entry.user)) return false;
+  list.push(entry);
+  writeQueue(list);
+  return true;
+}
+const withTimeout = (promise, ms) => Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('Hors connexion : réseau trop lent.')), ms))]);
+let flushing = null;
+let onFlushed = null; // fenetre du mode librairie ouverte : mise a jour de sa liste
+// Envoie les souhaits en attente du compte ; renvoie [{ key, id, found }]. S'arrete au premier echec reseau.
+function flushWishQueue() {
+  if (flushing) return flushing;
+  flushing = (async () => {
+    const done = [];
+    let failed = 0;
+    for (const e of myQueue()) {
+      try {
+        const found = e.isbn ? (await withTimeout(gapi(`/api/wishes/lookup/${e.isbn}`), 20000).catch((err) => { if (isOffline(err)) throw err; return { found: null }; })).found : null;
+        const f = found || e;
+        const r = await gapi('/api/wishes', { method: 'POST', body: { title: f.title || `ISBN ${e.isbn}`, authors: f.authors, publisher: f.publisher, year: f.year,
+          isbn: e.isbn || f.isbn || '', coverUrl: f.coverUrl || '', library: e.library } });
+        writeQueue(readQueue().filter((x) => x.key !== e.key));
+        done.push({ key: e.key, id: r.id, found: f.title ? f : null });
+      } catch (err) {
+        if (isOffline(err)) break;
+        writeQueue(readQueue().filter((x) => x.key !== e.key));
+        failed++;
+      }
+    }
+    if (done.length) toast(`${done.length} souhait(s) en attente ajouté(s).`);
+    if (failed) toast(`${failed} souhait(s) en attente n'ont pas pu être ajoutés.`, 'error');
+    if (done.length && onFlushed) onFlushed(done);
+    return done;
+  })().finally(() => { flushing = null; });
+  return flushing;
+}
+window.addEventListener('online', () => { if (myQueue().length) flushWishQueue(); });
 
 // Vignette d'un souhait (image en ligne ou enregistree ; retiree si elle ne charge pas).
 const wishThumb = (w) => (w.coverUrl
@@ -343,13 +391,14 @@ function wishScanDialog() {
     const lastSeen = new Map();
     let queue = Promise.resolve();
     let camera = null;
-    const close = () => { if (camera) camera.stop(); backdrop.remove(); resolve(items.some((it) => it.state !== 'removed' && it.id)); };
+    const close = () => { if (camera) camera.stop(); onFlushed = null; backdrop.remove(); resolve(items.some((it) => it.state !== 'removed' && (it.id || it.state === 'queued'))); };
     const render = () => {
       const shown = items.filter((it) => it.state !== 'removed');
       $('#shop-list', backdrop).innerHTML = shown.length ? `<div class="list">${shown.map((it) => {
         const f = it.found;
         const img = f && f.coverUrl ? `<img class="thumb" src="${esc(f.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-onerror="hide">` : '<span class="thumb"></span>';
         const main = it.state === 'loading' ? '<span class="muted">Recherche…</span>'
+          : it.state === 'queued' ? `<strong>${esc((f && f.title) || it.isbn || 'Livre')}</strong><div class="small muted">Hors connexion : sera ajouté au retour du réseau</div>`
           : it.state === 'error' ? `<span class="error-text">${esc(it.error)}</span>`
             : f ? `<strong>${esc(f.title)}</strong><div class="small muted">${esc(f.authors || '')}</div>`
               : '<strong>ISBN inconnu</strong><div class="small muted">ajouté tel quel : à compléter plus tard</div>';
@@ -360,7 +409,7 @@ function wishScanDialog() {
         b.onclick = async () => {
           const it = items.find((x) => x.key === b.dataset.rm);
           if (!it) return;
-          try { if (it.id) await gapi(`/api/wishes/${it.id}`, { method: 'DELETE' }); it.state = 'removed'; status('Retiré.'); } catch (err) { toast(err.message, 'error'); }
+          try { if (it.id) await gapi(`/api/wishes/${it.id}`, { method: 'DELETE' }); else if (it.state === 'queued') writeQueue(readQueue().filter((x) => x.key !== it.key)); it.state = 'removed'; status('Retiré.'); } catch (err) { toast(err.message, 'error'); }
           render();
         };
       });
@@ -372,14 +421,21 @@ function wishScanDialog() {
       render();
       queue = queue.then(async () => {
         try {
-          const found = lookup ? (await gapi(`/api/wishes/lookup/${src.isbn}`)).found : src;
+          const found = lookup ? (await withTimeout(gapi(`/api/wishes/lookup/${src.isbn}`), 15000)).found : src;
           const r = await gapi('/api/wishes', { method: 'POST', body: {
             title: (found && found.title) || `ISBN ${src.isbn}`, authors: found && found.authors, publisher: found && found.publisher,
             year: found && found.year, isbn: src.isbn || (found && found.isbn) || '', coverUrl: (found && found.coverUrl) || '', library: LIBRARY && LIBRARY.id } });
           it.found = found; it.id = r.id; it.state = 'ok';
           beep(true);
           status(found ? `Ajouté : ${found.title}` : `${src.isbn} ajouté (inconnu).`);
-        } catch (err) { it.state = 'error'; it.error = err.message; beep(false); }
+        } catch (err) {
+          if (isOffline(err)) {
+            // Pas de reseau : gardé sur l'appareil, ajouté au retour de la connexion.
+            queueWish({ key: src.key, user: state.user.id, library: LIBRARY && LIBRARY.id, isbn: src.isbn || '',
+              title: src.title || '', authors: src.authors || '', publisher: src.publisher || '', year: src.year || '', coverUrl: src.coverUrl || '' });
+            it.state = 'queued'; beep(true); status('Hors connexion : enregistré sur ton appareil, il sera ajouté au retour du réseau.');
+          } else { it.state = 'error'; it.error = err.message; beep(false); }
+        }
         render();
       });
     };
@@ -420,7 +476,12 @@ function wishScanDialog() {
             input.value = ''; results.innerHTML = ''; input.focus();
           };
         });
-      } catch (err) { status(err.message); }
+      } catch (err) {
+        if (!isOffline(err)) { status(err.message); return; }
+        status("Hors connexion : pas de recherche, mais tu peux l'ajouter tel quel.");
+        results.innerHTML = `<div class="pick-list"><button type="button" class="pick-row" data-ed="raw"><span class="pick-line"><span class="thumb"></span><span class="grow"><strong>Ajouter « ${esc(t)} » tel quel</strong></span></span></button></div>`;
+        $('[data-ed]', results).onclick = () => { save({ title: t, key: `s${Date.now()}-${items.length}` }); input.value = ''; results.innerHTML = ''; input.focus(); };
+      }
     };
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(); });
     // Scan en continu : la camera demarre a l'ouverture (bouton pour la couper et laisser le clavier).
@@ -445,6 +506,12 @@ function wishScanDialog() {
         else { beep(false); status('Code-barres illisible : rapproche-toi, évite les reflets, ou tape le titre.'); }
       } catch (err) { status('Analyse impossible : ' + err.message); }
     };
+    onFlushed = (done) => {
+      done.forEach((d) => { const it = items.find((x) => x.key === d.key); if (it) { it.id = d.id; it.found = d.found; it.state = 'ok'; } });
+      render();
+      status('Réseau retrouvé : livres en attente ajoutés.');
+    };
+    if (navigator.onLine) flushWishQueue();
     toggleCam();
   });
 }
