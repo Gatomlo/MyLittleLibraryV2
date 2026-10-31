@@ -2,7 +2,7 @@
 import './accueil.js';
 import { ROOT, LIBRARY, state, pending } from './etat.js';
 import { $, $$, view, esc, hint, gapi, toast, go, imageToDataUrl } from './utilitaires.js';
-import { openCoverSearch, scanIsbn, startCamera, isbnFromScan, beep, cameraTools, decodePhoto } from './scanner.js';
+import { openCoverSearch, scanIsbn, startCamera, isbnFromScan, beep, cameraTools, decodePhoto, ISBN_FORMATS } from './scanner.js';
 import { icon, iconText, searchLinkHtml } from './icones.js';
 import { combo, memberPicker } from './catalogue.js';
 import { initials } from './statistiques.js';
@@ -490,7 +490,7 @@ function wishScanDialog() {
       if (camera) { camera.stop(); camera = null; box.hidden = true; $('#shop-tools', backdrop).hidden = true; return; }
       box.hidden = false;
       camera = startCamera({
-        video: $('video', backdrop), formats: ['ean_13'], accept: isbnFromScan, hint: 'Présente les codes-barres un par un.',
+        video: $('video', backdrop), formats: ISBN_FORMATS, accept: isbnFromScan, hint: 'Présente les codes-barres un par un.',
         onReady: cameraTools($('#shop-tools', backdrop)), onStatus: status, onValue: (isbn) => { add(isbn, true); return false; },
       });
     };
@@ -501,7 +501,7 @@ function wishScanDialog() {
       if (!file) return;
       status('Analyse de la photo…');
       try {
-        const values = await decodePhoto(file, ['ean_13'], isbnFromScan);
+        const values = await decodePhoto(file, ISBN_FORMATS, isbnFromScan);
         if (values.length) values.forEach((v) => add(v, false));
         else { beep(false); status('Code-barres illisible : rapproche-toi, évite les reflets, ou tape le titre.'); }
       } catch (err) { status('Analyse impossible : ' + err.message); }

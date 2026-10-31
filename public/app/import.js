@@ -2,7 +2,7 @@
 import './import-suivi.js';
 import { LIB, ASSETS, state, features } from './etat.js';
 import { $, $$, view, esc, hint, api, toast, go, loadScript, sessionStorageSet, sessionStorageTake } from './utilitaires.js';
-import { decodePhoto, startCamera, isbnFromScan, beep } from './scanner.js';
+import { decodePhoto, startCamera, isbnFromScan, beep, ISBN_FORMATS } from './scanner.js';
 import { onLeave, leavePage } from './routage.js';
 import { combo, loadMembers, memberPicker } from './catalogue.js';
 import { sendRaw } from './fiche-livre.js';
@@ -521,7 +521,7 @@ function batchScan(body, options) {
     $('#cam-toggle').textContent = 'Arrêter la caméra';
     camera = startCamera({
       video: $('#batch-video'),
-      formats: ['ean_13'],
+      formats: ISBN_FORMATS,
       accept,
       hint: 'Présente les codes-barres les uns après les autres.',
       onStatus: status,
@@ -534,7 +534,7 @@ function batchScan(body, options) {
     if (!file) return;
     status('Analyse de la photo…');
     try {
-      const values = await decodePhoto(file, ['ean_13'], accept);
+      const values = await decodePhoto(file, ISBN_FORMATS, accept);
       if (values.length) values.forEach((v) => addIsbn(v, false));
       else { beep(false); status('Aucun code-barres lisible sur la photo.'); }
     } catch (err) { status('Analyse impossible : ' + err.message); }

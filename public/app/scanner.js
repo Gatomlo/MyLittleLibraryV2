@@ -59,7 +59,7 @@ function quaggaDecode(canvas) {
       inputStream: { size: Math.min(1600, canvas.width) },
       locate: true,
       locator: { patchSize: 'medium', halfSample: false },
-      decoder: { readers: ['ean_reader'] },
+      decoder: { readers: ['ean_reader', 'code_128_reader'] },
     }, (r) => { clearTimeout(timeout); resolve(r && r.codeResult ? r.codeResult.code : null); });
   });
 }
@@ -104,17 +104,26 @@ async function decodePhoto(file, formats, accept) {
 // Boutons Lampe et curseur de zoom sous la video, selon ce que la camera accepte.
 // Renvoie la fonction `onReady` a donner a startCamera.
 function cameraTools(box) {
+  let open = false; // reglages replies par defaut (garde l'etat quand les boutons sont redessines)
   return (caps, ctl) => {
     if (!caps.torch && !caps.zoom && !caps.focus && !caps.cameras) { box.hidden = true; return; }
     const slider = (cls, label, c) => `<label class="cam-zoom small muted">${label} <input type="range" class="${cls}" min="${c.min}" max="${c.max}" step="${c.step}" value="${c.value}"></label>`;
-    box.innerHTML = `${caps.cameras ? `<button class="btn btn-small" type="button" data-cam title="Changer d'objectif (le grand-angle est flou)">${icon('scan', 16)}Objectif ${caps.cameras.index + 1}/${caps.cameras.total}</button>` : ''}
-      ${caps.torch ? `<button class="btn btn-small" type="button" data-torch aria-pressed="${!!caps.torchOn}">${icon('wish', 16)}Lampe</button>` : ''}
+    box.innerHTML = `<button class="btn btn-small" type="button" data-tools aria-expanded="${open}" title="Réglages de la caméra">${icon('settings', 16)}<span class="hide-mobile">Réglages</span></button>
+      <div class="cam-panel" ${open ? '' : 'hidden'}>
+      ${caps.cameras ? `<button class="btn btn-small" type="button" data-cam title="Changer d'objectif (le grand-angle est flou)">${icon('scan', 16)}Objectif ${caps.cameras.index + 1}/${caps.cameras.total}</button>` : ''}
+      ${caps.torch ? `<button class="btn btn-small" type="button" data-torch aria-pressed="${!!caps.torchOn}">${icon('torch', 16)}Lampe</button>` : ''}
       ${caps.zoom ? slider('zoom', 'Zoom', caps.zoom) : ''}
       ${caps.focus ? `${slider('focus', 'Netteté', caps.focus)}<button class="btn btn-small" type="button" data-autofocus aria-pressed="${!caps.focus.manual}">Auto</button>` : ''}
       <button class="btn btn-small" type="button" data-remember title="Garder ces réglages par défaut sur cet appareil">${caps.saved ? 'Mettre à jour' : 'Retenir'}</button>
-      ${caps.saved ? '<button class="btn btn-small" type="button" data-forget title="Revenir aux réglages d\'origine">Oublier</button>' : ''}`;
+      ${caps.saved ? '<button class="btn btn-small" type="button" data-forget title="Revenir aux réglages d\'origine">Oublier</button>' : ''}
+      </div>`;
     box.hidden = false;
     const on = (sel, fn) => { const el = $(sel, box); if (el) el.onclick = fn; };
+    on('[data-tools]', (e) => {
+      open = !open;
+      e.currentTarget.setAttribute('aria-expanded', String(open));
+      $('.cam-panel', box).hidden = !open;
+    });
     on('[data-cam]', () => ctl.switchCamera().catch(() => {}));
     on('[data-torch]', async (e) => { const t = e.currentTarget; const v = t.getAttribute('aria-pressed') !== 'true'; try { await ctl.setTorch(v); t.setAttribute('aria-pressed', String(v)); } catch (err) { /* lampe indisponible */ } });
     const z = $('input.zoom', box);
@@ -442,14 +451,25 @@ function openScanner({ title, hint, formats, accept, manualLabel }) {
   });
 }
 
-// ISBN-13 (978/979 + cle de controle EAN valide) ou ISBN-10 saisi a la main.
+// Codes-barres d'un livre : EAN-13 d'origine, ou Code 128 des etiquettes de magasin.
+const ISBN_FORMATS = ['ean_13', 'code_128'];
+
+// Cle de controle EAN-13 valide ?
+const ean13Ok = (d) => d.split('').reduce((acc, c, i) => acc + Number(c) * (i % 2 ? 3 : 1), 0) % 10 === 0;
+
+// ISBN-13 (978/979 + cle de controle EAN valide) ou ISBN-10 saisi a la main. Les
+// etiquettes de magasin (Code 128) donnent souvent l'ISBN precede d'un 0 (14 chiffres,
+// « 09782265159075 ») ou accompagne d'autres chiffres : l'ISBN valide y est cherche.
 function isbnFromScan(raw) {
   const digits = raw.replace(/[^0-9Xx]/g, '').toUpperCase();
-  if (/^97[89]\d{10}$/.test(digits)) {
-    const sum = digits.split('').reduce((acc, d, i) => acc + Number(d) * (i % 2 ? 3 : 1), 0);
-    return sum % 10 === 0 ? digits : null;
-  }
+  if (/^97[89]\d{10}$/.test(digits)) return ean13Ok(digits) ? digits : null;
   if (/^\d{9}[\dX]$/.test(digits)) return digits;
+  if (/^\d{14,24}$/.test(digits)) {
+    for (let i = 0; i + 13 <= digits.length; i++) {
+      const c = digits.slice(i, i + 13);
+      if (/^97[89]/.test(c) && ean13Ok(c)) return c;
+    }
+  }
   return null;
 }
 
@@ -474,7 +494,7 @@ function scanIsbn() {
   return openScanner({
     title: 'Scanner le code-barres',
     hint: 'Vise le code-barres ISBN au dos du livre (978… ou 979…).',
-    formats: ['ean_13'],
+    formats: ISBN_FORMATS,
     accept: isbnFromScan,
     manualLabel: "ou tape l'ISBN",
   });
@@ -493,7 +513,7 @@ async function scanCopyOrIsbn() {
   const v = await openScanner({
     title: 'Scanner un livre',
     hint: "Vise le QR code de l'étiquette ou le code-barres ISBN.",
-    formats: ['qr_code', 'ean_13'],
+    formats: ['qr_code', ...ISBN_FORMATS],
     accept: (raw) => {
       const copy = copyCodeFromScan(raw);
       // Adresse du QR ou code avec des lettres : etiquette ; sinon ISBN d'abord.
@@ -673,6 +693,6 @@ function beep(ok = true) {
 }
 
 export {
-  beep, cameraTools, decodePhoto, startCamera, openCoverSearch, isbnFromScan, copyCodeFromScan, scanCopy, scanIsbn, scanConf, SCAN_TITLES, scanAndOpen,
+  ISBN_FORMATS, beep, cameraTools, decodePhoto, startCamera, openCoverSearch, isbnFromScan, copyCodeFromScan, scanCopy, scanIsbn, scanConf, SCAN_TITLES, scanAndOpen,
   returnLoan, refreshLoanBadge,
 };

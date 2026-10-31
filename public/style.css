@@ -1144,3 +1144,5 @@ tr.row-selected td { background: var(--accent-soft); }
 .cam-zoom { display: flex; align-items: center; gap: 8px; flex: 1; }
 .cam-zoom input { flex: 1; min-width: 0; }
 .cam-tools [aria-pressed="true"] { background: var(--accent, #2563eb); color: #fff; }
+.cam-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; width: 100%; }
+.cam-panel[hidden] { display: none; }
