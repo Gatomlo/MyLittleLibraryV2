@@ -323,13 +323,15 @@ function wishScanDialog() {
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
     backdrop.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="shop-title">
-      <h2 id="shop-title">Mode librairie ${hint('Scanne les livres un par un : chacun est ajouté à tes souhaits tout de suite. Tu pourras compléter les fiches plus tard.')}</h2>
-      <div class="scanner-video barcode"><video playsinline muted></video><div class="frame"></div></div>
-      <p class="small muted" id="shop-status" role="status" aria-live="polite">Démarrage de la caméra…</p>
+      <h2 id="shop-title">Mode librairie ${hint('Cherche un livre par son titre ou son auteur, ou tape son ISBN : touche l\'édition pour l\'ajouter. Le scan du code-barres reste possible. Chaque livre est ajouté tout de suite à tes souhaits.')}</h2>
       <form class="field isbn-row" id="shop-manual">
-        <input name="isbn" placeholder="ou tape l'ISBN" inputmode="numeric" autocomplete="off">
-        <button class="btn" type="submit">Ajouter</button>
+        <input name="q" placeholder="Titre, auteur ou ISBN" autocomplete="off" enterkeyhint="search">
+        <button class="btn btn-primary" type="submit" title="Rechercher" aria-label="Rechercher">${iconText('search', 'Chercher')}</button>
+        <button class="btn" type="button" id="shop-cam" title="Scanner un code-barres" aria-label="Scanner un code-barres">${icon('scan', 16)}</button>
       </form>
+      <div class="scanner-video barcode" id="shop-video-box" hidden><video playsinline muted></video><div class="frame"></div></div>
+      <p class="small muted" id="shop-status" role="status" aria-live="polite">Tape le titre (et l'auteur) : touche l'édition pour l'ajouter.</p>
+      <div id="shop-results"></div>
       <div id="shop-list"></div>
       <div class="btn-row"><button class="btn btn-primary" type="button" data-close>Terminer</button></div>
     </div>`;
@@ -361,6 +363,24 @@ function wishScanDialog() {
         };
       });
     };
+    // Enregistre un souhait : par ISBN (recherche des infos) ou depuis une edition choisie.
+    const save = (src, lookup) => {
+      const it = { isbn: src.isbn || '', key: src.key, state: 'loading', found: lookup ? null : src };
+      items.unshift(it);
+      render();
+      queue = queue.then(async () => {
+        try {
+          const found = lookup ? (await gapi(`/api/wishes/lookup/${src.isbn}`)).found : src;
+          const r = await gapi('/api/wishes', { method: 'POST', body: {
+            title: (found && found.title) || `ISBN ${src.isbn}`, authors: found && found.authors, publisher: found && found.publisher,
+            year: found && found.year, isbn: src.isbn || (found && found.isbn) || '', coverUrl: (found && found.coverUrl) || '', library: LIBRARY && LIBRARY.id } });
+          it.found = found; it.id = r.id; it.state = 'ok';
+          beep(true);
+          status(found ? `Ajouté : ${found.title}` : `${src.isbn} ajouté (inconnu).`);
+        } catch (err) { it.state = 'error'; it.error = err.message; beep(false); }
+        render();
+      });
+    };
     const add = (isbn, fromCamera) => {
       const now = Date.now();
       const seen = lastSeen.get(isbn) || 0;
@@ -370,32 +390,47 @@ function wishScanDialog() {
       if (items.some((it) => it.isbn === isbn && it.state !== 'removed')) { beep(false); status(`${isbn} : déjà ajouté.`); return; }
       beep(true);
       if (navigator.vibrate) navigator.vibrate(60);
-      const it = { isbn, key: `${now}-${items.length}`, state: 'loading' };
-      items.unshift(it);
+      save({ isbn, key: `${now}-${items.length}` }, true);
       status(`✓ ${isbn} scanné.`);
-      render();
-      queue = queue.then(async () => {
-        try {
-          const { found } = await gapi(`/api/wishes/lookup/${isbn}`);
-          const r = await gapi('/api/wishes', { method: 'POST', body: {
-            title: (found && found.title) || `ISBN ${isbn}`, authors: found && found.authors, publisher: found && found.publisher,
-            year: found && found.year, isbn, coverUrl: (found && found.coverUrl) || '', library: LIBRARY && LIBRARY.id } });
-          it.found = found; it.id = r.id; it.state = 'ok';
-          status(found ? `Ajouté : ${found.title}` : `${isbn} ajouté (inconnu).`);
-        } catch (err) { it.state = 'error'; it.error = err.message; beep(false); }
-        render();
-      });
     };
-    $('#shop-manual', backdrop).onsubmit = (e) => {
+    // Recherche par titre / auteur : touche une edition pour l'ajouter ; ISBN : ajout direct.
+    const results = $('#shop-results', backdrop);
+    $('#shop-manual', backdrop).onsubmit = async (e) => {
       e.preventDefault();
-      const isbn = isbnFromScan(e.target.isbn.value);
-      if (isbn) { add(isbn, false); e.target.reset(); } else { beep(false); status('ISBN non reconnu, vérifie la saisie.'); }
+      const input = e.target.q;
+      const t = input.value.trim();
+      if (!t) return;
+      const isbn = isbnFromScan(t);
+      if (isbn) { add(isbn, false); input.value = ''; results.innerHTML = ''; return; }
+      status('Recherche…');
+      results.innerHTML = '';
+      try {
+        const { editions } = await gapi(`/api/wishes/search?q=${encodeURIComponent(t)}`);
+        status(editions.length ? 'Touche l\'édition à ajouter.' : 'Aucune édition trouvée : ajoute-le tel quel.');
+        results.innerHTML = `<div class="pick-list" role="list">${editions.map((ed, i) => `<button type="button" class="pick-row" data-ed="${i}">
+          <span class="pick-line">${ed.coverUrl ? `<img class="thumb" src="${esc(ed.coverUrl)}" alt="" referrerpolicy="no-referrer">` : '<span class="thumb"></span>'}
+          <span class="grow"><strong>${esc(ed.title || '')}</strong><span class="small muted">${esc([ed.authors, ed.publisher, ed.year].filter(Boolean).join(' · '))}</span></span></span></button>`).join('')}
+          <button type="button" class="pick-row" data-ed="raw"><span class="pick-line"><span class="thumb"></span><span class="grow"><strong>Ajouter « ${esc(t)} » tel quel</strong></span></span></button></div>`;
+        $$('[data-ed]', results).forEach((btn) => {
+          btn.onclick = () => {
+            const ed = btn.dataset.ed === 'raw' ? { title: t } : editions[Number(btn.dataset.ed)];
+            save({ ...ed, key: `s${Date.now()}-${items.length}` });
+            input.value = ''; results.innerHTML = ''; input.focus();
+          };
+        });
+      } catch (err) { status(err.message); }
     };
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(); });
-    camera = startCamera({
-      video: $('video', backdrop), formats: ['ean_13'], accept: isbnFromScan, hint: 'Présente les codes-barres un par un.',
-      onStatus: status, onValue: (isbn) => { add(isbn, true); return false; },
-    });
+    // Camera a la demande (economise la batterie, laisse la place au clavier).
+    $('#shop-cam', backdrop).onclick = () => {
+      const box = $('#shop-video-box', backdrop);
+      if (camera) { camera.stop(); camera = null; box.hidden = true; return; }
+      box.hidden = false;
+      camera = startCamera({
+        video: $('video', backdrop), formats: ['ean_13'], accept: isbnFromScan, hint: 'Présente le code-barres.',
+        onStatus: status, onValue: (isbn) => { add(isbn, true); return false; },
+      });
+    };
   });
 }
 
