@@ -1140,3 +1140,7 @@ tr.row-selected td { background: var(--accent-soft); }
 /* Bandeau hors connexion */
 .offline-bar { background: #8a5a00; color: #fff; text-align: center; font-size: 13px; padding: 6px 12px; }
 .offline-bar[hidden] { display: none; }
+.cam-tools { align-items: center; gap: 12px; margin-bottom: 10px; }
+.cam-zoom { display: flex; align-items: center; gap: 8px; flex: 1; }
+.cam-zoom input { flex: 1; min-width: 0; }
+.cam-tools [aria-pressed="true"] { background: var(--accent, #2563eb); color: #fff; }

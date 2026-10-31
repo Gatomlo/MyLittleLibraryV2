@@ -2,7 +2,7 @@
 import './accueil.js';
 import { ROOT, LIBRARY, state, pending } from './etat.js';
 import { $, $$, view, esc, hint, gapi, toast, go, imageToDataUrl } from './utilitaires.js';
-import { openCoverSearch, scanIsbn, startCamera, isbnFromScan, beep } from './scanner.js';
+import { openCoverSearch, scanIsbn, startCamera, isbnFromScan, beep, cameraTools, decodePhoto } from './scanner.js';
 import { icon, iconText, searchLinkHtml } from './icones.js';
 import { combo, memberPicker } from './catalogue.js';
 import { initials } from './statistiques.js';
@@ -328,8 +328,10 @@ function wishScanDialog() {
         <input name="q" placeholder="Titre, auteur ou ISBN" autocomplete="off" enterkeyhint="search">
         <button class="btn btn-primary" type="submit" title="Rechercher" aria-label="Rechercher">${iconText('search', 'Chercher')}</button>
         <button class="btn" type="button" id="shop-cam" title="Scanner un code-barres" aria-label="Scanner un code-barres">${icon('scan', 16)}</button>
+        <label class="btn" style="margin:0" title="Photographier le code-barres" aria-label="Photographier le code-barres">${icon('image', 16)}<input type="file" id="shop-photo" accept="image/*" capture="environment" hidden></label>
       </form>
       <div class="scanner-video barcode" id="shop-video-box" hidden><video playsinline muted></video><div class="frame"></div></div>
+      <div class="btn-row cam-tools" id="shop-tools" hidden></div>
       <p class="small muted" id="shop-status" role="status" aria-live="polite">Tape le titre (et l'auteur) : touche l'édition pour l'ajouter.</p>
       <div id="shop-results"></div>
       <div id="shop-list"></div>
@@ -424,12 +426,23 @@ function wishScanDialog() {
     // Camera a la demande (economise la batterie, laisse la place au clavier).
     $('#shop-cam', backdrop).onclick = () => {
       const box = $('#shop-video-box', backdrop);
-      if (camera) { camera.stop(); camera = null; box.hidden = true; return; }
+      if (camera) { camera.stop(); camera = null; box.hidden = true; $('#shop-tools', backdrop).hidden = true; return; }
       box.hidden = false;
       camera = startCamera({
         video: $('video', backdrop), formats: ['ean_13'], accept: isbnFromScan, hint: 'Présente le code-barres.',
-        onStatus: status, onValue: (isbn) => { add(isbn, true); return false; },
+        onReady: cameraTools($('#shop-tools', backdrop)), onStatus: status, onValue: (isbn) => { add(isbn, true); return false; },
       });
+    };
+    $('#shop-photo', backdrop).onchange = async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      status('Analyse de la photo…');
+      try {
+        const values = await decodePhoto(file, ['ean_13'], isbnFromScan);
+        if (values.length) values.forEach((v) => add(v, false));
+        else { beep(false); status('Code-barres illisible : rapproche-toi, évite les reflets, ou tape le titre.'); }
+      } catch (err) { status('Analyse impossible : ' + err.message); }
     };
   });
 }

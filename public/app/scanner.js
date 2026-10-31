@@ -64,27 +64,63 @@ function quaggaDecode(canvas) {
   });
 }
 
+// Copie d'une image reduite (cote max) et tournee (0 ou 90 degres) sur un canvas.
+function scaledCanvas(bitmap, max, rotate) {
+  const k = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * k);
+  const h = Math.round(bitmap.height * k);
+  const canvas = document.createElement('canvas');
+  canvas.width = rotate ? h : w;
+  canvas.height = rotate ? w : h;
+  const ctx = canvas.getContext('2d');
+  if (rotate) { ctx.translate(h, 0); ctx.rotate(Math.PI / 2); }
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  return canvas;
+}
+
 // Codes lus sur une photo (valeurs acceptees par `accept`), sans ouvrir la camera.
+// Une photo prise avec l'appareil du telephone (mise au point et eclairage corrects)
+// est plus fiable que l'image video : plusieurs tailles et le sens tourne sont essayes.
 async function decodePhoto(file, formats, accept) {
   const detector = await getDetector(formats);
   const bitmap = await createImageBitmap(file);
-  const values = (await detector.detect(bitmap)).map((c) => accept(String(c.rawValue || '').trim())).filter(Boolean);
+  const read = async (src) => (await detector.detect(src)).map((c) => accept(String(c.rawValue || '').trim())).filter(Boolean);
+  let values = await read(bitmap);
   if (values.length || formats.includes('qr_code')) return values;
-  const canvas = document.createElement('canvas');
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
-  canvas.getContext('2d').drawImage(bitmap, 0, 0);
+  const tries = [[1600, false], [900, false], [1600, true], [900, true]];
+  for (const [max, rotate] of tries) {
+    values = await read(scaledCanvas(bitmap, max, rotate)).catch(() => []);
+    if (values.length) return values;
+  }
   await loadQuagga();
-  const q = await quaggaDecode(canvas);
-  const v = q && accept(q);
-  return v ? [v] : [];
+  for (const rotate of [false, true]) {
+    const q = await quaggaDecode(scaledCanvas(bitmap, 1600, rotate));
+    const v = q && accept(q);
+    if (v) return [v];
+  }
+  return [];
+}
+
+// Boutons Lampe et curseur de zoom sous la video, selon ce que la camera accepte.
+// Renvoie la fonction `onReady` a donner a startCamera.
+function cameraTools(box) {
+  return (caps, ctl) => {
+    if (!caps.torch && !caps.zoom) return;
+    box.innerHTML = `${caps.torch ? `<button class="btn btn-small" type="button" data-torch aria-pressed="false">${icon('wish', 16)}Lampe</button>` : ''}
+      ${caps.zoom ? `<label class="cam-zoom small muted">Zoom <input type="range" min="${caps.zoom.min}" max="${caps.zoom.max}" step="${caps.zoom.step}" value="${caps.zoom.value}"></label>` : ''}`;
+    box.hidden = false;
+    const t = $('[data-torch]', box);
+    if (t) t.onclick = async () => { const on = t.getAttribute('aria-pressed') !== 'true'; try { await ctl.setTorch(on); t.setAttribute('aria-pressed', String(on)); } catch (e) { /* lampe indisponible */ } };
+    const z = $('input[type=range]', box);
+    if (z) z.oninput = () => ctl.setZoom(Number(z.value)).catch(() => {});
+  };
 }
 
 // Moteur de lecture : camera + detection sur un element <video>. onValue(valeur)
 // est appele pour chaque code accepte par `accept` ; s'il renvoie true, la lecture
 // s'arrete (scan unique), sinon elle continue (scan en serie). Renvoie
 // { stop(), readPhoto(file) }.
-function startCamera({ video, formats, accept, onValue, onStatus, hint }) {
+function startCamera({ video, formats, accept, onValue, onStatus, hint, onReady }) {
   const isBarcode = !formats.includes('qr_code');
   let stream = null;
   let stopped = false;
@@ -137,7 +173,16 @@ function startCamera({ video, formats, accept, onValue, onStatus, hint }) {
       return;
     }
     if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
-    await tuneCamera(stream.getVideoTracks()[0], isBarcode);
+    const track = stream.getVideoTracks()[0];
+    await tuneCamera(track, isBarcode);
+    if (onReady && track && track.getCapabilities) {
+      const caps = track.getCapabilities();
+      const zoom = caps.zoom ? { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 0.1, value: (track.getSettings().zoom) || caps.zoom.min } : null;
+      onReady({ torch: !!caps.torch, zoom }, {
+        setTorch: (on) => track.applyConstraints({ advanced: [{ torch: on }] }),
+        setZoom: (z) => track.applyConstraints({ advanced: [{ zoom: z }] }),
+      });
+    }
     video.srcObject = stream;
     await video.play().catch(() => {});
     if (isBarcode) onStatus(`${hint} Tiens le livre à 15-25 cm, bien éclairé, le code-barres net et à plat dans le cadre.`);
@@ -162,7 +207,9 @@ function startCamera({ video, formats, accept, onValue, onStatus, hint }) {
             band.getContext('2d').drawImage(video, vw * 0.05, vh * 0.2, band.width, band.height, 0, 0, band.width, band.height);
             source = band;
           }
-          const codes = await detector.detect(source);
+          let codes = await detector.detect(source);
+          // Code hors du cadre : de temps en temps, toute l'image.
+          if (isBarcode && !codes.length && frame % 3 === 2) codes = await detector.detect(video);
           for (const c of codes) if (tryValue(c.rawValue)) return;
           if (isBarcode && window.Quagga && ++frame % 2 === 0) {
             const q = accept(String((await quaggaDecode(band)) || ''));
@@ -263,6 +310,7 @@ function openScanner({ title, hint, formats, accept, manualLabel }) {
       <div class="modal" role="dialog" aria-modal="true">
         <h2>${esc(title)}</h2>
         <div class="scanner-video ${isBarcode ? 'barcode' : ''}"><video playsinline muted></video><div class="frame"></div></div>
+        <div class="btn-row cam-tools" hidden></div>
         <p class="scanner-status">${esc(hint)}</p>
         <form class="field isbn-row manual">
           <input name="manual" placeholder="${esc(manualLabel)}" autocomplete="off" ${isBarcode ? 'inputmode="numeric"' : ''}>
@@ -288,6 +336,7 @@ function openScanner({ title, hint, formats, accept, manualLabel }) {
       formats,
       accept,
       hint,
+      onReady: cameraTools($('.cam-tools', backdrop)),
       onStatus: (msg) => { status.textContent = msg; },
       onValue: (value) => {
         if (navigator.vibrate) navigator.vibrate(80);
@@ -538,6 +587,6 @@ function beep(ok = true) {
 }
 
 export {
-  beep, decodePhoto, startCamera, openCoverSearch, isbnFromScan, copyCodeFromScan, scanCopy, scanIsbn, scanConf, SCAN_TITLES, scanAndOpen,
+  beep, cameraTools, decodePhoto, startCamera, openCoverSearch, isbnFromScan, copyCodeFromScan, scanCopy, scanIsbn, scanConf, SCAN_TITLES, scanAndOpen,
   returnLoan, refreshLoanBadge,
 };
