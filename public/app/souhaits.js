@@ -87,6 +87,25 @@ async function viewWishes() {
     : wishState.priority ? '<div class="empty">Aucun souhait « Très envie ».</div>'
       : `<div class="empty">Aucun souhait pour le moment.${selected.includes(me) ? '<br><br>Ajoute un livre par son ISBN, en le scannant ou par son titre.' : ''}</div>`;
   const byId = new Map(wishes.map((w) => [w.id, w]));
+  // Souhaits enregistres avec le seul ISBN (titre « ISBN 978… », recherche impossible sur le moment) :
+  // completes ici des que la recherche aboutit.
+  const bare = wishes.filter((w) => w.owner && w.owner.id === me && /^ISBN [0-9X]{10,13}$/.test(w.title) && w.isbn).slice(0, 6);
+  if (bare.length && navigator.onLine) {
+    (async () => {
+      let changed = 0;
+      for (const w of bare) {
+        try {
+          const { found: f } = await gapi(`/api/wishes/lookup/${encodeURIComponent(w.isbn)}`);
+          if (!f || !f.title) continue;
+          const body = { title: f.title, authors: f.authors || '', publisher: f.publisher || '', year: f.year || '' };
+          if (!w.coverUrl && f.coverUrl) body.coverUrl = f.coverUrl;
+          await gapi(`/api/wishes/${w.id}`, { method: 'PUT', body });
+          changed++;
+        } catch (err) { if (isOffline(err)) break; }
+      }
+      if (changed && document.body.contains($('#wish-list'))) { toast(`${changed} souhait(s) complété(s).`); viewWishes(); }
+    })();
+  }
   // Souhaits sans couverture : le serveur la cherche en arriere-plan ; les images
   // trouvees sont posees quelques secondes plus tard, sans recharger la liste.
   if (wishes.some((w) => !w.coverUrl)) {
@@ -158,7 +177,8 @@ function flushWishQueue() {
     let failed = 0;
     for (const e of myQueue()) {
       try {
-        const found = e.isbn ? (await withTimeout(gapi(`/api/wishes/lookup/${e.isbn}`), 20000).catch((err) => { if (isOffline(err)) throw err; return { found: null }; })).found : null;
+        const looked = e.isbn ? (await withTimeout(gapi(`/api/wishes/lookup/${e.isbn}`), 20000).catch((err) => { if (isOffline(err)) throw err; return { found: null }; })).found : null;
+        const found = looked && looked.title ? looked : null;
         const f = found || e;
         const r = await gapi('/api/wishes', { method: 'POST', body: { title: f.title || `ISBN ${e.isbn}`, authors: f.authors, publisher: f.publisher, year: f.year,
           isbn: e.isbn || f.isbn || '', coverUrl: f.coverUrl || '', library: e.library } });
@@ -330,7 +350,7 @@ function wishDialog(w, preset) {
         if (/^(97[89])?\d{9}[\dXx]$/.test(digits)) {
           const r = await gapi(`/api/wishes/lookup/${encodeURIComponent(digits)}`);
           f.isbn.value = r.isbn;
-          if (r.found) { fill({ ...r.found, isbn: r.isbn }); found.textContent = `Trouvé : ${r.found.title}`; } else found.textContent = 'ISBN inconnu : complète la fiche à la main.';
+          if (r.found && r.found.title) { fill({ ...r.found, isbn: r.isbn }); found.textContent = `Trouvé : ${r.found.title}`; } else found.textContent = r.found ? 'ISBN trouvé sans titre : réessaie plus tard ou complète la fiche à la main.' : 'ISBN inconnu : complète la fiche à la main.';
           return;
         }
         const { editions } = await gapi(`/api/wishes/search?q=${encodeURIComponent(t)}`);
@@ -421,7 +441,8 @@ function wishScanDialog() {
       render();
       queue = queue.then(async () => {
         try {
-          const found = lookup ? (await withTimeout(gapi(`/api/wishes/lookup/${src.isbn}`), 15000)).found : src;
+          const looked = lookup ? (await withTimeout(gapi(`/api/wishes/lookup/${src.isbn}`), 15000)).found : src;
+          const found = looked && looked.title ? looked : null;
           const r = await gapi('/api/wishes', { method: 'POST', body: {
             title: (found && found.title) || `ISBN ${src.isbn}`, authors: found && found.authors, publisher: found && found.publisher,
             year: found && found.year, isbn: src.isbn || (found && found.isbn) || '', coverUrl: (found && found.coverUrl) || '', library: LIBRARY && LIBRARY.id } });
