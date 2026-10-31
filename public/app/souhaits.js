@@ -2,7 +2,7 @@
 import './accueil.js';
 import { ROOT, LIBRARY, state, pending } from './etat.js';
 import { $, $$, view, esc, hint, gapi, toast, go, imageToDataUrl } from './utilitaires.js';
-import { openCoverSearch, scanIsbn } from './scanner.js';
+import { openCoverSearch, scanIsbn, startCamera, isbnFromScan, beep } from './scanner.js';
 import { icon, iconText, searchLinkHtml } from './icones.js';
 import { combo, memberPicker } from './catalogue.js';
 import { initials } from './statistiques.js';
@@ -36,7 +36,8 @@ async function viewWishes() {
     <a class="btn btn-small" data-wish-export="csv" download title="Exporter en CSV" aria-label="Exporter en CSV">${icon('install', 16)}CSV</a></div>`;
   view().innerHTML = `
     <div class="page-head"><div><h1>Souhaits ${hint("Livres que tu aimerais lire ou voir acheter. Ta liste t'appartient (elle n'est dans aucune bibliothèque) ; tu peux la partager avec d'autres comptes. Les bibliothécaires et gestionnaires voient celles des membres de leur bibliothèque.")}</h1></div>
-      <div class="btn-row"><button class="btn btn-primary" type="button" id="wish-add" title="Ajouter un souhait" aria-label="Ajouter un souhait">${icon('add', 16)}Ajouter<span class="hide-mobile"> un souhait</span></button></div></div>
+      <div class="btn-row"><button class="btn" type="button" id="wish-shop" title="Mode librairie : scanner les livres en série" aria-label="Mode librairie : scanner les livres en série">${icon('scan', 16)}<span class="hide-mobile">Mode </span>librairie</button>
+        <button class="btn btn-primary" type="button" id="wish-add" title="Ajouter un souhait" aria-label="Ajouter un souhait">${icon('add', 16)}Ajouter<span class="hide-mobile"> un souhait</span></button></div></div>
     ${owners.length > 1 && manager ? `<div class="wish-owners wish-owner-pick">
       <label for="wish-owner" class="sr-only">Liste affichée</label>
       <input type="search" id="wish-owner" autocomplete="off" placeholder="${all ? `Toutes les listes (${owners.length})` : selected.length > 1 ? `${selected.length} listes` : 'Choisir un compte…'}">
@@ -76,6 +77,7 @@ async function viewWishes() {
   const q = `owners=${selected.join(',')}${wishState.priority ? '&priority=1' : ''}&${libParam()}`;
   $$('[data-wish-export]').forEach((a) => { a.href = `${ROOT}/api/wishes/export.${a.dataset.wishExport}?${q}`; });
   $('#wish-add').onclick = async () => { if (await wishDialog()) viewWishes(); };
+  $('#wish-shop').onclick = async () => { if (await wishScanDialog()) viewWishes(); };
 
   const wishes = await gapi(`/api/wishes?${q}`);
   const multi = selected.length > 1 || selected[0] !== me;
@@ -314,4 +316,87 @@ function wishDialog(w, preset) {
   });
 }
 
-export { wishState, wishSrc, viewWishes, wishDialog, wishShareSection };
+// Mode librairie : la camera reste ouverte, chaque code-barres lu est cherche puis
+// enregistre tout de suite dans les souhaits (retrait possible dans la liste).
+function wishScanDialog() {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="shop-title">
+      <h2 id="shop-title">Mode librairie ${hint('Scanne les livres un par un : chacun est ajouté à tes souhaits tout de suite. Tu pourras compléter les fiches plus tard.')}</h2>
+      <div class="scanner-video barcode"><video playsinline muted></video><div class="frame"></div></div>
+      <p class="small muted" id="shop-status" role="status" aria-live="polite">Démarrage de la caméra…</p>
+      <form class="field isbn-row" id="shop-manual">
+        <input name="isbn" placeholder="ou tape l'ISBN" inputmode="numeric" autocomplete="off">
+        <button class="btn" type="submit">Ajouter</button>
+      </form>
+      <div id="shop-list"></div>
+      <div class="btn-row"><button class="btn btn-primary" type="button" data-close>Terminer</button></div>
+    </div>`;
+    document.body.appendChild(backdrop);
+    const status = (msg) => { $('#shop-status', backdrop).textContent = msg; };
+    const items = [];
+    const lastSeen = new Map();
+    let queue = Promise.resolve();
+    let camera = null;
+    const close = () => { if (camera) camera.stop(); backdrop.remove(); resolve(items.some((it) => it.state !== 'removed' && it.id)); };
+    const render = () => {
+      const shown = items.filter((it) => it.state !== 'removed');
+      $('#shop-list', backdrop).innerHTML = shown.length ? `<div class="list">${shown.map((it) => {
+        const f = it.found;
+        const img = f && f.coverUrl ? `<img class="thumb" src="${esc(f.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-onerror="hide">` : '<span class="thumb"></span>';
+        const main = it.state === 'loading' ? '<span class="muted">Recherche…</span>'
+          : it.state === 'error' ? `<span class="error-text">${esc(it.error)}</span>`
+            : f ? `<strong>${esc(f.title)}</strong><div class="small muted">${esc(f.authors || '')}</div>`
+              : '<strong>ISBN inconnu</strong><div class="small muted">ajouté tel quel : à compléter plus tard</div>';
+        return `<div class="list-item batch-item">${img}<div class="grow">${main}<div class="small code muted">${esc(it.isbn)}</div></div>
+          ${it.state === 'loading' ? '' : `<button type="button" class="rm" data-rm="${esc(it.key)}" aria-label="Retirer">×</button>`}</div>`;
+      }).join('')}</div>` : '';
+      $$('[data-rm]', backdrop).forEach((b) => {
+        b.onclick = async () => {
+          const it = items.find((x) => x.key === b.dataset.rm);
+          if (!it) return;
+          try { if (it.id) await gapi(`/api/wishes/${it.id}`, { method: 'DELETE' }); it.state = 'removed'; status('Retiré.'); } catch (err) { toast(err.message, 'error'); }
+          render();
+        };
+      });
+    };
+    const add = (isbn, fromCamera) => {
+      const now = Date.now();
+      const seen = lastSeen.get(isbn) || 0;
+      lastSeen.set(isbn, now);
+      // La camera voit encore le livre qui vient d'etre lu.
+      if (fromCamera && now - seen < 4000) return;
+      if (items.some((it) => it.isbn === isbn && it.state !== 'removed')) { beep(false); status(`${isbn} : déjà ajouté.`); return; }
+      beep(true);
+      if (navigator.vibrate) navigator.vibrate(60);
+      const it = { isbn, key: `${now}-${items.length}`, state: 'loading' };
+      items.unshift(it);
+      status(`✓ ${isbn} scanné.`);
+      render();
+      queue = queue.then(async () => {
+        try {
+          const { found } = await gapi(`/api/wishes/lookup/${isbn}`);
+          const r = await gapi('/api/wishes', { method: 'POST', body: {
+            title: (found && found.title) || `ISBN ${isbn}`, authors: found && found.authors, publisher: found && found.publisher,
+            year: found && found.year, isbn, coverUrl: (found && found.coverUrl) || '', library: LIBRARY && LIBRARY.id } });
+          it.found = found; it.id = r.id; it.state = 'ok';
+          status(found ? `Ajouté : ${found.title}` : `${isbn} ajouté (inconnu).`);
+        } catch (err) { it.state = 'error'; it.error = err.message; beep(false); }
+        render();
+      });
+    };
+    $('#shop-manual', backdrop).onsubmit = (e) => {
+      e.preventDefault();
+      const isbn = isbnFromScan(e.target.isbn.value);
+      if (isbn) { add(isbn, false); e.target.reset(); } else { beep(false); status('ISBN non reconnu, vérifie la saisie.'); }
+    };
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(); });
+    camera = startCamera({
+      video: $('video', backdrop), formats: ['ean_13'], accept: isbnFromScan, hint: 'Présente les codes-barres un par un.',
+      onStatus: status, onValue: (isbn) => { add(isbn, true); return false; },
+    });
+  });
+}
+
+export { wishState, wishSrc, viewWishes, wishDialog, wishScanDialog, wishShareSection };

@@ -2,7 +2,7 @@
 import './import-suivi.js';
 import { LIB, ASSETS, state, features } from './etat.js';
 import { $, $$, view, esc, hint, api, toast, go, loadScript, sessionStorageSet, sessionStorageTake } from './utilitaires.js';
-import { decodePhoto, startCamera, isbnFromScan } from './scanner.js';
+import { decodePhoto, startCamera, isbnFromScan, beep } from './scanner.js';
 import { onLeave, leavePage } from './routage.js';
 import { combo, loadMembers, memberPicker } from './catalogue.js';
 import { sendRaw } from './fiche-livre.js';
@@ -405,21 +405,6 @@ async function viewImport() {
     };
   }
   if (s.items.length) renderPreview();
-}
-
-// Petit bip de confirmation (scan en serie), sans fichier son.
-let audioCtx = null;
-function beep(ok = true) {
-  try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.frequency.value = ok ? 1175 : 330;
-    g.gain.value = 0.08;
-    o.connect(g).connect(audioCtx.destination);
-    o.start();
-    o.stop(audioCtx.currentTime + (ok ? 0.09 : 0.25));
-  } catch (e) { /* audio indisponible */ }
 }
 
 // Scan en serie : la camera reste ouverte, chaque code-barres lu s'ajoute a une

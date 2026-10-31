@@ -522,7 +522,22 @@ function refreshLoanBadge() {
   }).catch(() => {});
 }
 
+// Petit bip de confirmation (scan en serie), sans fichier son.
+let audioCtx = null;
+function beep(ok = true) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.frequency.value = ok ? 1175 : 330;
+    g.gain.value = 0.08;
+    o.connect(g).connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime + (ok ? 0.09 : 0.25));
+  } catch (e) { /* audio indisponible */ }
+}
+
 export {
-  decodePhoto, startCamera, openCoverSearch, isbnFromScan, copyCodeFromScan, scanCopy, scanIsbn, scanConf, SCAN_TITLES, scanAndOpen,
+  beep, decodePhoto, startCamera, openCoverSearch, isbnFromScan, copyCodeFromScan, scanCopy, scanIsbn, scanConf, SCAN_TITLES, scanAndOpen,
   returnLoan, refreshLoanBadge,
 };
