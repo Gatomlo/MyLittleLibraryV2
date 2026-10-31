@@ -108,9 +108,11 @@ function cameraTools(box) {
     if (!caps.torch && !caps.zoom && !caps.focus && !caps.cameras) { box.hidden = true; return; }
     const slider = (cls, label, c) => `<label class="cam-zoom small muted">${label} <input type="range" class="${cls}" min="${c.min}" max="${c.max}" step="${c.step}" value="${c.value}"></label>`;
     box.innerHTML = `${caps.cameras ? `<button class="btn btn-small" type="button" data-cam title="Changer d'objectif (le grand-angle est flou)">${icon('scan', 16)}Objectif ${caps.cameras.index + 1}/${caps.cameras.total}</button>` : ''}
-      ${caps.torch ? `<button class="btn btn-small" type="button" data-torch aria-pressed="false">${icon('wish', 16)}Lampe</button>` : ''}
+      ${caps.torch ? `<button class="btn btn-small" type="button" data-torch aria-pressed="${!!caps.torchOn}">${icon('wish', 16)}Lampe</button>` : ''}
       ${caps.zoom ? slider('zoom', 'Zoom', caps.zoom) : ''}
-      ${caps.focus ? `${slider('focus', 'Netteté', caps.focus)}<button class="btn btn-small" type="button" data-autofocus>Auto</button>` : ''}`;
+      ${caps.focus ? `${slider('focus', 'Netteté', caps.focus)}<button class="btn btn-small" type="button" data-autofocus aria-pressed="${!caps.focus.manual}">Auto</button>` : ''}
+      <button class="btn btn-small" type="button" data-remember title="Garder ces réglages par défaut sur cet appareil">${caps.saved ? 'Mettre à jour' : 'Retenir'}</button>
+      ${caps.saved ? '<button class="btn btn-small" type="button" data-forget title="Revenir aux réglages d\'origine">Oublier</button>' : ''}`;
     box.hidden = false;
     const on = (sel, fn) => { const el = $(sel, box); if (el) el.onclick = fn; };
     on('[data-cam]', () => ctl.switchCamera().catch(() => {}));
@@ -120,8 +122,16 @@ function cameraTools(box) {
     const f = $('input.focus', box);
     if (f) f.oninput = () => ctl.setFocus(Number(f.value)).catch(() => {});
     on('[data-autofocus]', () => ctl.autoFocus().catch(() => {}));
+    on('[data-remember]', () => { ctl.remember(); toast('Réglages du scan retenus sur cet appareil.'); });
+    on('[data-forget]', () => { ctl.forget(); toast('Réglages du scan oubliés.'); });
   };
 }
+
+// Reglages du scan retenus sur cet appareil (objectif, zoom, lampe, mise au point).
+const SCAN_PREFS = 'mll-scan-prefs';
+function scanPrefs() { try { return JSON.parse(localStorage.getItem(SCAN_PREFS)) || null; } catch (e) { return null; } }
+function saveScanPrefs(v) { try { if (v) localStorage.setItem(SCAN_PREFS, JSON.stringify(v)); else localStorage.removeItem(SCAN_PREFS); } catch (e) { /* stockage indisponible */ } }
+let sessionCam = ''; // objectif choisi pendant cette visite
 
 // Moteur de lecture : camera + detection sur un element <video>. onValue(valeur)
 // est appele pour chaque code accepte par `accept` ; s'il renvoie true, la lecture
@@ -171,10 +181,9 @@ function startCamera({ video, formats, accept, onValue, onStatus, hint, onReady 
     }
     // Objectif : un telephone en a souvent plusieurs, et l'ultra grand-angle n'a pas
     // de mise au point (image floue). Le dernier choisi est retenu.
-    const KEY = 'mll-camera';
     let devices = [];
     let current = '';
-    const saved = () => { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } };
+    let torchOn = false;
     async function openStream(deviceId) {
       const base = { width: { ideal: 1920 }, height: { ideal: 1080 } };
       const next = await navigator.mediaDevices.getUserMedia({
@@ -186,33 +195,55 @@ function startCamera({ video, formats, accept, onValue, onStatus, hint, onReady 
       if (stopped) { stream.getTracks().forEach((t) => t.stop()); return null; }
       const track = stream.getVideoTracks()[0];
       await tuneCamera(track, isBarcode);
+      current = (track.getSettings && track.getSettings().deviceId) || deviceId || '';
+      // Reglages retenus : appliques seulement a l'objectif pour lequel ils ont ete retenus.
+      const pr = scanPrefs();
+      torchOn = false;
+      if (pr && pr.deviceId === current && track.getCapabilities) {
+        const caps = track.getCapabilities();
+        const adv = [];
+        if (caps.zoom && pr.zoom) adv.push({ zoom: Math.min(caps.zoom.max, Math.max(caps.zoom.min, pr.zoom)) });
+        if (caps.torch && pr.torch) { adv.push({ torch: true }); torchOn = true; }
+        if (pr.focus != null && caps.focusDistance && (caps.focusMode || []).includes('manual')) adv.push({ focusMode: 'manual', focusDistance: pr.focus });
+        for (const c of adv) await track.applyConstraints({ advanced: [c] }).catch(() => {});
+      }
       video.srcObject = stream;
       await video.play().catch(() => {});
-      current = (track.getSettings && track.getSettings().deviceId) || deviceId || '';
       return track;
     }
     function announce(track) {
       if (!onReady || !track || !track.getCapabilities) return;
       const caps = track.getCapabilities();
       const modes = caps.focusMode || [];
+      const st = track.getSettings();
       const num = (c, v) => ({ min: c.min, max: c.max, step: c.step || (c.max - c.min) / 20, value: v });
       const set = (adv) => track.applyConstraints({ advanced: [adv] });
       const idx = devices.findIndex((d) => d.deviceId === current);
+      const manual = st.focusMode === 'manual';
       onReady({
         torch: !!caps.torch,
-        zoom: caps.zoom ? num(caps.zoom, track.getSettings().zoom || caps.zoom.min) : null,
-        focus: caps.focusDistance && modes.includes('manual') ? num(caps.focusDistance, track.getSettings().focusDistance || caps.focusDistance.min) : null,
+        torchOn,
+        zoom: caps.zoom ? num(caps.zoom, st.zoom || caps.zoom.min) : null,
+        focus: caps.focusDistance && modes.includes('manual') ? { ...num(caps.focusDistance, st.focusDistance || caps.focusDistance.min), manual } : null,
         cameras: devices.length > 1 ? { index: Math.max(idx, 0), total: devices.length } : null,
+        saved: !!scanPrefs(),
       }, {
-        setTorch: (on) => set({ torch: on }),
+        setTorch: async (on) => { await set({ torch: on }); torchOn = on; },
         setZoom: (z) => set({ zoom: z }),
         setFocus: (d) => set({ focusMode: 'manual', focusDistance: d }),
         autoFocus: () => set({ focusMode: 'continuous' }),
         switchCamera: async () => {
           const next = devices[(Math.max(idx, 0) + 1) % devices.length];
-          try { localStorage.setItem(KEY, next.deviceId); } catch (e) { /* stockage indisponible */ }
+          sessionCam = next.deviceId;
           announce(await openStream(next.deviceId));
         },
+        // Retient les reglages actuels comme reglages par defaut de cet appareil.
+        remember: () => {
+          const cur = track.getSettings();
+          saveScanPrefs({ deviceId: current, zoom: cur.zoom || null, torch: torchOn, focus: cur.focusMode === 'manual' ? cur.focusDistance : null });
+          announce(track);
+        },
+        forget: () => { saveScanPrefs(null); announce(track); },
       });
     }
     // Appui sur l'image : nouvelle mise au point a cet endroit (quand la camera sait le faire).
@@ -230,7 +261,8 @@ function startCamera({ video, formats, accept, onValue, onStatus, hint, onReady 
     try {
       // Resolution maximale : un code-barres ISBN est petit, chaque pixel compte.
       let track = null;
-      try { track = await openStream(saved()); } catch (err) { if (!saved()) throw err; track = await openStream(''); }
+      const want = sessionCam || (scanPrefs() || {}).deviceId || '';
+      try { track = await openStream(want); } catch (err) { if (!want) throw err; track = await openStream(''); }
       if (!track) return;
       devices = (await navigator.mediaDevices.enumerateDevices().catch(() => []))
         .filter((d) => d.kind === 'videoinput' && !/front|avant|user|selfie/i.test(d.label));

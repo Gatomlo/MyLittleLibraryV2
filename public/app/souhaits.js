@@ -323,7 +323,7 @@ function wishScanDialog() {
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
     backdrop.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="shop-title">
-      <h2 id="shop-title">Mode librairie ${hint('Cherche un livre par son titre ou son auteur, ou tape son ISBN : touche l\'édition pour l\'ajouter. Le scan du code-barres reste possible. Chaque livre est ajouté tout de suite à tes souhaits.')}</h2>
+      <h2 id="shop-title">Mode librairie ${hint('Scanne les codes-barres en continu, ou cherche un livre par son titre, son auteur ou son ISBN : touche l\'édition pour l\'ajouter. Chaque livre est ajouté tout de suite à tes souhaits.')}</h2>
       <form class="field isbn-row" id="shop-manual">
         <input name="q" placeholder="Titre, auteur ou ISBN" autocomplete="off" enterkeyhint="search">
         <button class="btn btn-primary" type="submit" title="Rechercher" aria-label="Rechercher">${iconText('search', 'Chercher')}</button>
@@ -332,7 +332,7 @@ function wishScanDialog() {
       </form>
       <div class="scanner-video barcode" id="shop-video-box" hidden><video playsinline muted></video><div class="frame"></div></div>
       <div class="btn-row cam-tools" id="shop-tools" hidden></div>
-      <p class="small muted" id="shop-status" role="status" aria-live="polite">Tape le titre (et l'auteur) : touche l'édition pour l'ajouter.</p>
+      <p class="small muted" id="shop-status" role="status" aria-live="polite">Présente les codes-barres, ou tape un titre.</p>
       <div id="shop-results"></div>
       <div id="shop-list"></div>
       <div class="btn-row"><button class="btn btn-primary" type="button" data-close>Terminer</button></div>
@@ -423,16 +423,17 @@ function wishScanDialog() {
       } catch (err) { status(err.message); }
     };
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.hasAttribute('data-close')) close(); });
-    // Camera a la demande (economise la batterie, laisse la place au clavier).
-    $('#shop-cam', backdrop).onclick = () => {
+    // Scan en continu : la camera demarre a l'ouverture (bouton pour la couper et laisser le clavier).
+    const toggleCam = () => {
       const box = $('#shop-video-box', backdrop);
       if (camera) { camera.stop(); camera = null; box.hidden = true; $('#shop-tools', backdrop).hidden = true; return; }
       box.hidden = false;
       camera = startCamera({
-        video: $('video', backdrop), formats: ['ean_13'], accept: isbnFromScan, hint: 'Présente le code-barres.',
+        video: $('video', backdrop), formats: ['ean_13'], accept: isbnFromScan, hint: 'Présente les codes-barres un par un.',
         onReady: cameraTools($('#shop-tools', backdrop)), onStatus: status, onValue: (isbn) => { add(isbn, true); return false; },
       });
     };
+    $('#shop-cam', backdrop).onclick = toggleCam;
     $('#shop-photo', backdrop).onchange = async (e) => {
       const file = e.target.files[0];
       e.target.value = '';
@@ -444,6 +445,7 @@ function wishScanDialog() {
         else { beep(false); status('Code-barres illisible : rapproche-toi, évite les reflets, ou tape le titre.'); }
       } catch (err) { status('Analyse impossible : ' + err.message); }
     };
+    toggleCam();
   });
 }
 
