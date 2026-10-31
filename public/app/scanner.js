@@ -105,14 +105,21 @@ async function decodePhoto(file, formats, accept) {
 // Renvoie la fonction `onReady` a donner a startCamera.
 function cameraTools(box) {
   return (caps, ctl) => {
-    if (!caps.torch && !caps.zoom) return;
-    box.innerHTML = `${caps.torch ? `<button class="btn btn-small" type="button" data-torch aria-pressed="false">${icon('wish', 16)}Lampe</button>` : ''}
-      ${caps.zoom ? `<label class="cam-zoom small muted">Zoom <input type="range" min="${caps.zoom.min}" max="${caps.zoom.max}" step="${caps.zoom.step}" value="${caps.zoom.value}"></label>` : ''}`;
+    if (!caps.torch && !caps.zoom && !caps.focus && !caps.cameras) { box.hidden = true; return; }
+    const slider = (cls, label, c) => `<label class="cam-zoom small muted">${label} <input type="range" class="${cls}" min="${c.min}" max="${c.max}" step="${c.step}" value="${c.value}"></label>`;
+    box.innerHTML = `${caps.cameras ? `<button class="btn btn-small" type="button" data-cam title="Changer d'objectif (le grand-angle est flou)">${icon('scan', 16)}Objectif ${caps.cameras.index + 1}/${caps.cameras.total}</button>` : ''}
+      ${caps.torch ? `<button class="btn btn-small" type="button" data-torch aria-pressed="false">${icon('wish', 16)}Lampe</button>` : ''}
+      ${caps.zoom ? slider('zoom', 'Zoom', caps.zoom) : ''}
+      ${caps.focus ? `${slider('focus', 'Netteté', caps.focus)}<button class="btn btn-small" type="button" data-autofocus>Auto</button>` : ''}`;
     box.hidden = false;
-    const t = $('[data-torch]', box);
-    if (t) t.onclick = async () => { const on = t.getAttribute('aria-pressed') !== 'true'; try { await ctl.setTorch(on); t.setAttribute('aria-pressed', String(on)); } catch (e) { /* lampe indisponible */ } };
-    const z = $('input[type=range]', box);
+    const on = (sel, fn) => { const el = $(sel, box); if (el) el.onclick = fn; };
+    on('[data-cam]', () => ctl.switchCamera().catch(() => {}));
+    on('[data-torch]', async (e) => { const t = e.currentTarget; const v = t.getAttribute('aria-pressed') !== 'true'; try { await ctl.setTorch(v); t.setAttribute('aria-pressed', String(v)); } catch (err) { /* lampe indisponible */ } });
+    const z = $('input.zoom', box);
     if (z) z.oninput = () => ctl.setZoom(Number(z.value)).catch(() => {});
+    const f = $('input.focus', box);
+    if (f) f.oninput = () => ctl.setFocus(Number(f.value)).catch(() => {});
+    on('[data-autofocus]', () => ctl.autoFocus().catch(() => {}));
   };
 }
 
@@ -162,29 +169,76 @@ function startCamera({ video, formats, accept, onValue, onStatus, hint, onReady 
       onStatus('Caméra inaccessible ici (il faut une connexion https). Utilise la saisie ou une photo.');
       return;
     }
-    try {
-      // Resolution maximale : un code-barres ISBN est petit, chaque pixel compte.
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+    // Objectif : un telephone en a souvent plusieurs, et l'ultra grand-angle n'a pas
+    // de mise au point (image floue). Le dernier choisi est retenu.
+    const KEY = 'mll-camera';
+    let devices = [];
+    let current = '';
+    const saved = () => { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } };
+    async function openStream(deviceId) {
+      const base = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+      const next = await navigator.mediaDevices.getUserMedia({
+        video: deviceId ? { ...base, deviceId: { exact: deviceId } } : { ...base, facingMode: { ideal: 'environment' } },
         audio: false,
       });
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      stream = next;
+      if (stopped) { stream.getTracks().forEach((t) => t.stop()); return null; }
+      const track = stream.getVideoTracks()[0];
+      await tuneCamera(track, isBarcode);
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+      current = (track.getSettings && track.getSettings().deviceId) || deviceId || '';
+      return track;
+    }
+    function announce(track) {
+      if (!onReady || !track || !track.getCapabilities) return;
+      const caps = track.getCapabilities();
+      const modes = caps.focusMode || [];
+      const num = (c, v) => ({ min: c.min, max: c.max, step: c.step || (c.max - c.min) / 20, value: v });
+      const set = (adv) => track.applyConstraints({ advanced: [adv] });
+      const idx = devices.findIndex((d) => d.deviceId === current);
+      onReady({
+        torch: !!caps.torch,
+        zoom: caps.zoom ? num(caps.zoom, track.getSettings().zoom || caps.zoom.min) : null,
+        focus: caps.focusDistance && modes.includes('manual') ? num(caps.focusDistance, track.getSettings().focusDistance || caps.focusDistance.min) : null,
+        cameras: devices.length > 1 ? { index: Math.max(idx, 0), total: devices.length } : null,
+      }, {
+        setTorch: (on) => set({ torch: on }),
+        setZoom: (z) => set({ zoom: z }),
+        setFocus: (d) => set({ focusMode: 'manual', focusDistance: d }),
+        autoFocus: () => set({ focusMode: 'continuous' }),
+        switchCamera: async () => {
+          const next = devices[(Math.max(idx, 0) + 1) % devices.length];
+          try { localStorage.setItem(KEY, next.deviceId); } catch (e) { /* stockage indisponible */ }
+          announce(await openStream(next.deviceId));
+        },
+      });
+    }
+    // Appui sur l'image : nouvelle mise au point a cet endroit (quand la camera sait le faire).
+    video.onclick = async (e) => {
+      const track = stream && stream.getVideoTracks()[0];
+      if (!track || !track.getCapabilities) return;
+      const modes = track.getCapabilities().focusMode || [];
+      if (!modes.includes('single-shot')) return;
+      const r = video.getBoundingClientRect();
+      try {
+        await track.applyConstraints({ advanced: [{ focusMode: 'single-shot', pointsOfInterest: [{ x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }] }] });
+        if (modes.includes('continuous')) setTimeout(() => { if (!stopped) track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {}); }, 2000);
+      } catch (err) { /* mise au point au toucher non supportee */ }
+    };
+    try {
+      // Resolution maximale : un code-barres ISBN est petit, chaque pixel compte.
+      let track = null;
+      try { track = await openStream(saved()); } catch (err) { if (!saved()) throw err; track = await openStream(''); }
+      if (!track) return;
+      devices = (await navigator.mediaDevices.enumerateDevices().catch(() => []))
+        .filter((d) => d.kind === 'videoinput' && !/front|avant|user|selfie/i.test(d.label));
+      announce(track);
     } catch (err) {
       onStatus('Caméra refusée ou absente. Utilise la saisie manuelle ou une photo.');
       return;
     }
-    if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
-    const track = stream.getVideoTracks()[0];
-    await tuneCamera(track, isBarcode);
-    if (onReady && track && track.getCapabilities) {
-      const caps = track.getCapabilities();
-      const zoom = caps.zoom ? { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 0.1, value: (track.getSettings().zoom) || caps.zoom.min } : null;
-      onReady({ torch: !!caps.torch, zoom }, {
-        setTorch: (on) => track.applyConstraints({ advanced: [{ torch: on }] }),
-        setZoom: (z) => track.applyConstraints({ advanced: [{ zoom: z }] }),
-      });
-    }
-    video.srcObject = stream;
-    await video.play().catch(() => {});
     if (isBarcode) onStatus(`${hint} Tiens le livre à 15-25 cm, bien éclairé, le code-barres net et à plat dans le cadre.`);
 
     // Code-barres : on n'analyse que la bande centrale (zone du cadre) en pleine
