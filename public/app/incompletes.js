@@ -33,7 +33,7 @@ async function refillMissing(key) {
   if (!ids.length) { toast(`Aucun livre concerné${withWhat ? ' n\'a d\'ISBN' : ''}.`); return; }
   // ISBN, mode « choisir en cas de doute » : livres a plusieurs editions possibles mis
   // de cote, puis proposes un par un a la fin.
-  const ask = key === 'isbn' && refillAsk();
+  const ask = refillAsk();
   // Case « Autres champs vides aussi » : memes informations en ligne pour tous les champs vides.
   const all = refillAll();
   const doubts = [];
@@ -71,7 +71,9 @@ async function refillMissing(key) {
   if (location.hash.startsWith('#/incomplete')) viewIncomplete(key);
 }
 
-// Mode intermediaire de « Compléter tout » (ISBN), garde dans le navigateur.
+const FIELD_NAMES = { summary: 'résumé', cover: 'couverture', authors: 'auteurs', publisher: 'éditeur', year: 'année', pages: 'nombre de pages', category: 'catégorie' };
+
+// Mode intermediaire de « Compléter tout » (« Choisir en cas de doute »), garde dans le navigateur.
 const ASK_KEY = 'mll-refill-ask';
 const refillAsk = () => { try { return localStorage.getItem(ASK_KEY) === '1'; } catch (e) { return false; } };
 // « Compléter aussi les autres champs vides » (tous les onglets), garde dans le navigateur.
@@ -93,16 +95,24 @@ async function chooseEditions(doubts, all = false) {
   const render = (n) => {
     const d = doubts[n];
     const b = d.book;
-    box.innerHTML = `<h2>Choisir l'édition (${n + 1} / ${doubts.length})</h2>
+    // Autre information que l'ISBN : valeurs differentes selon les editions, a choisir.
+    const field = d.field && d.field !== 'isbn' ? d.field : null;
+    box.innerHTML = `<h2>${field ? `Choisir : ${esc(FIELD_NAMES[field] || field)}` : 'Choisir l\'édition'} (${n + 1} / ${doubts.length})</h2>
       <p><strong>${esc(b.title)}</strong>${b.authors ? ` — ${esc(b.authors)}` : ''}
         <span class="small muted">${esc([b.publisher, b.year, b.pages ? `${b.pages} p.` : ''].filter(Boolean).join(' · '))}</span></p>
+      ${field ? `<p class="small muted">Les éditions trouvées ne donnent pas la même information : choisis celle qui correspond à ton livre.</p>
+      <ul class="edition-list">${d.options.map((o, i) => `<li>
+        ${field === 'cover' ? `<div class="ed-cover"><img src="${esc(o.value)}" alt="" loading="lazy"></div>` : ''}
+        <div>${field === 'summary' ? `<div class="choice-summary">${esc(o.value)}</div>` : field === 'cover' ? '' : `<strong>${esc(String(o.value))}</strong>`}
+          <div class="small muted">${o.editions.map((e) => [e.publisher, e.year, e.isbn].filter(Boolean).map(esc).join(' · ')).join(' ; ')}</div></div>
+        <button class="btn btn-small btn-primary" type="button" data-pick="${i}">Choisir</button></li>`).join('')}</ul>` : `
       ${d.fromFile ? `<div class="info-box small">ISBN du fichier epub (sans doute numérique) : <strong>${esc(d.fromFile)}</strong>
         <button class="btn btn-small" type="button" data-pick="${esc(d.fromFile)}">Garder celui-ci</button></div>` : ''}
       <ul class="edition-list">${d.candidates.map((e) => `<li>
         <div class="ed-cover">${e.coverUrl ? `<img src="${esc(e.coverUrl)}" alt="" loading="lazy">` : ''}</div>
         <div><strong>${esc(e.title || 'Sans titre')}</strong>${e.authors ? ` — ${esc(e.authors)}` : ''}
           <div class="small muted">${[e.publisher, e.year, e.pages ? `${e.pages} p.` : '', e.isbn, (e.sources || []).join(', ')].filter(Boolean).map(esc).join(' · ')}</div></div>
-        <button class="btn btn-small btn-primary" type="button" data-pick="${esc(e.isbn)}">Choisir</button></li>`).join('')}</ul>
+        <button class="btn btn-small btn-primary" type="button" data-pick="${esc(e.isbn)}">Choisir</button></li>`).join('')}</ul>`}
       <div class="btn-row" style="margin-top:14px">
         <button class="btn" type="button" data-skip>Passer</button>
         <button class="btn" type="button" data-close>Arrêter</button>
@@ -112,9 +122,12 @@ async function chooseEditions(doubts, all = false) {
     if (first) first.focus();
   };
   const showSaving = () => { const p = $('[data-saving]', box); if (p) p.outerHTML = status(); };
-  const save = (d, isbn) => {
+  // pick : ISBN choisi, ou numero de la valeur choisie (autre information).
+  const save = (d, pick) => {
+    const o = d.field && d.field !== 'isbn' ? d.options[Number(pick)] : null;
+    const body = o ? { field: d.field, value: o.value, from: o.editions[0].isbn } : { field: 'isbn', value: pick };
     saving++;
-    saves.push(api(`/api/books/${d.id}/refill`, { method: 'POST', body: { field: 'isbn', value: isbn, ...(all ? { all: true } : {}) } })
+    saves.push(api(`/api/books/${d.id}/refill`, { method: 'POST', body: { ...body, ...(all ? { all: true } : {}) } })
       .then(() => { chosen++; }, (e) => toast(`${d.book.title} : ${e.message}`, 'error'))
       .finally(() => { saving--; showSaving(); }));
   };
@@ -136,7 +149,7 @@ async function chooseEditions(doubts, all = false) {
   });
   if (saving) toast(`Enregistrement des ${saving} dernier${saving > 1 ? 's' : ''} choix…`);
   await Promise.all(saves);
-  if (chosen) toast(`${chosen} ISBN choisi${chosen > 1 ? 's' : ''}${all ? ', autres champs vides complétés' : ''}.`);
+  if (chosen) toast(`${chosen} choix enregistré${chosen > 1 ? 's' : ''}${all ? ', autres champs vides complétés' : ''}.`);
 }
 
 function missingPills(m, current) {
@@ -165,7 +178,9 @@ async function viewIncomplete(key) {
           <button class="btn btn-small" type="button" id="missing-catalog" title="Ouvrir dans le catalogue (sélection en masse)">Catalogue</button>
           ${MISSING_REFILL.includes(key) ? `<button class="btn btn-small btn-primary" type="button" id="missing-refill" hidden><span class="hide-mobile">Compléter tout</span><span class="show-mobile">Tout</span></button>${hint(REFILL_HINT[key] || `Relance la recherche en ligne pour chaque livre concerné ; le champ n'est rempli que s'il est toujours vide.${key !== 'isbn' ? OTHER_EDITION_HINT : ''}`)}` : ''}
           ${MISSING_REFILL.includes(key) ? `<label class="small" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="refill-all"${refillAll() ? ' checked' : ''}> Autres champs vides aussi</label>${hint('Coché : pour chaque fiche, les autres champs vides (auteurs, éditeur, année, pages, résumé, couverture, catégorie) sont aussi remplis avec les informations trouvées en ligne. Un champ déjà rempli n\'est jamais modifié.')}` : ''}
-          ${key === 'isbn' ? `<label class="small" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="refill-ask"${refillAsk() ? ' checked' : ''}> Choisir en cas de doute</label>${hint('Coché : quand plusieurs éditions correspondent, le livre est mis de côté puis proposé à la fin pour que tu choisisses l\'ISBN. Décoché : tout est automatique (seuls les ISBN sûrs sont enregistrés).')}` : ''}
+          ${MISSING_REFILL.includes(key) ? `<label class="small" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="refill-ask"${refillAsk() ? ' checked' : ''}> Choisir en cas de doute</label>${hint(key === 'isbn'
+    ? 'Coché : quand plusieurs éditions correspondent, le livre est mis de côté puis proposé à la fin pour que tu choisisses l\'ISBN. Décoché : tout est automatique (seuls les ISBN sûrs sont enregistrés).'
+    : 'Coché : quand l\'ISBN de la fiche est inconnu en ligne et que les éditions trouvées donnent des informations différentes, le livre est mis de côté puis proposé à la fin pour que tu choisisses. Décoché : tout est automatique (édition la plus proche de la fiche).')}` : ''}
         </div>
       </div>
       <div id="refill-progress" class="small muted" hidden></div>

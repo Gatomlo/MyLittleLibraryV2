@@ -1,7 +1,7 @@
 // Icones — module de l'interface (organisation : public/app/README.md).
 import './entete.js';
 import { ROOT, LIBRARY, libUrl, state, pending, isAdmin, libRole, isMember, canManage, canConfigure, roleLabel, features, onlineSearch } from './etat.js';
-import { $, $$, view, esc, gapi, toast, go } from './utilitaires.js';
+import { $, $$, view, esc, api, gapi, toast, go } from './utilitaires.js';
 import { scanConf, SCAN_TITLES, refreshLoanBadge } from './scanner.js';
 import { renderHeader } from './entete.js';
 import { TOUCH_ONLY, kobo, koboOn, koboSavedInfo, reconnectKobo, scanKobo, ejectKobo, koboSettingsTarget, openKoboSettings } from './kobo.js';
@@ -163,6 +163,7 @@ function openMenu() {
     ${libs || '<p class="small muted" style="padding:4px 10px">Aucune bibliothèque liée à ce compte.</p>'}
     ${LIBRARY && canManage() ? `<div class="menu-sep"></div>
     <div class="menu-title">${esc(state.settings.libraryName)}</div>
+    <a class="menu-item" href="#/incomplete">${icon('incomplete')}Fiches incomplètes<span class="grow"></span><span class="badge badge-wish" id="menu-incomplete-n" hidden></span></a>
     <a class="menu-item" href="#/labels">${icon('labels')}Étiquettes</a>
     ${canConfigure() ? `<a class="menu-item" href="#/settings">${icon('settings')}Réglages</a>` : ''}` : ''}
     ${isMember() && features().kobo && (!TOUCH_ONLY || koboDev) ? `<div class="menu-sep"></div>
@@ -182,6 +183,9 @@ function openMenu() {
   $('#account').appendChild(menu);
   $('#account-btn').setAttribute('aria-expanded', 'true');
   menu.addEventListener('click', (e) => e.stopPropagation());
+  // Compteur des fiches incompletes : lu a l'ouverture, donc toujours a jour.
+  const incN = $('#menu-incomplete-n', menu);
+  if (incN) api('/api/books/missing').then((m) => { if (m.incomplete > 0) { incN.textContent = m.incomplete; incN.hidden = false; } }).catch(() => {});
   $$('a', menu).forEach((a) => a.addEventListener('click', closeMenu));
   const koboMenuAction = (btn, fn) => { if (btn) btn.onclick = async () => {
     closeMenu();

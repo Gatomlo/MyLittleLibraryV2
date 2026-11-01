@@ -512,7 +512,10 @@ function bindSelection(reload) {
   });
   // Le clic qui suit l'appui long arrive juste apres le relachement : au-dela, il n'est plus ignore.
   ['pointerup', 'pointercancel'].forEach((t) => books.addEventListener(t, () => { cancelPress(); if (pressed) setTimeout(() => { pressed = false; }, 400); }));
-  books.addEventListener('contextmenu', (e) => { if (e.target.closest('.book-card')) e.preventDefault(); });
+  // Clic droit a la souris : menu du navigateur conserve (ouvrir dans un nouvel onglet) ; bloque seulement apres un appui long tactile.
+  let lastPointer = 'mouse';
+  books.addEventListener('pointerdown', (e) => { lastPointer = e.pointerType; }, true);
+  books.addEventListener('contextmenu', (e) => { if (lastPointer !== 'mouse' && e.target.closest('.book-card')) e.preventDefault(); });
   // En mode selection, un clic sur une couverture la (de)selectionne au lieu d'ouvrir la fiche.
   $('#books').addEventListener('click', (e) => {
     if (pressed) { pressed = false; e.preventDefault(); return; }
