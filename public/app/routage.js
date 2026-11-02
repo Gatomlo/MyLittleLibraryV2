@@ -75,10 +75,12 @@ function announcePage() {
 }
 
 // Nettoyage de la page quittee (ex. couper la camera du scan en serie).
-let pageCleanup = null;
-function onLeave(fn) { pageCleanup = fn; }
+let pageCleanups = [];
+function onLeave(fn) { pageCleanups.push(fn); }
 function leavePage() {
-  if (pageCleanup) { try { pageCleanup(); } catch (e) { /* rien */ } pageCleanup = null; }
+  const list = pageCleanups;
+  pageCleanups = [];
+  list.forEach((fn) => { try { fn(); } catch (e) { /* rien */ } });
 }
 
 async function route() {
