@@ -12,14 +12,15 @@ async function viewBook(id) {
   const member = isMember();
   const book = await api(member ? `/api/books/${id}` : `/api/public/books/${id}`);
   const facts = [
-    ['Auteur(s)', esc(book.authors)],
+    ['Auteur(s)', String(book.authors || '').split(',').map((a) => a.trim()).filter(Boolean)
+      .map((a) => `<a href="#/" data-author="${esc(a)}">${esc(a)}</a>`).join(', ')],
     ['Éditeur', esc(book.publisher)],
     ['Collection', book.collection ? `<a href="#/" data-collection="${esc(book.collection)}">${esc(book.collection)}</a>` : ''],
     ['Série', book.series ? `<a href="#/" data-series="${esc(book.series)}">${esc(book.series)}</a>${book.seriesNumber ? ` · tome ${esc(book.seriesNumber)}` : ''}` : ''],
     ['Année', book.year || ''],
     ['Pages', book.pages || ''],
     ['ISBN', esc(book.isbn)],
-    ['Catégories', book.categories.map((c) => `<span class="chip">${esc(c.name)}</span>`).join('')],
+    ['Catégories', book.categories.map((c) => `<a href="#/" class="chip" data-category="${c.id}">${esc(c.name)}</a>`).join('')],
     ['Tags', (book.tags || []).map((t) => `<a href="#/" class="chip chip-tag" data-tag="${t.id}">#${esc(t.name)}</a>`).join('')],
   ].filter(([, v]) => v);
   // Ouverte depuis une liste qui donne un retour (resultats d'un import epub).
@@ -64,6 +65,14 @@ async function viewBook(id) {
     a.onclick = (e) => {
       e.preventDefault();
       Object.assign(state.catalog, { q: '', category: '', collection: '', series: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '', tag: a.dataset.tag, page: 1 });
+      go('#/');
+    };
+  });
+  // Categorie : catalogue filtre ; auteur : recherche sur son nom.
+  $$('[data-category], [data-author]').forEach((a) => {
+    a.onclick = (e) => {
+      e.preventDefault();
+      Object.assign(state.catalog, { q: a.dataset.author || '', category: a.dataset.category || '', collection: '', series: '', tag: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '', page: 1 });
       go('#/');
     };
   });
