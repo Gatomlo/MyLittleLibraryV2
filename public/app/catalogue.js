@@ -369,7 +369,19 @@ async function viewCatalog() {
     const el = $(selector);
     if (el) el.addEventListener('change', (e) => { c[key] = e.target.value; reload(); });
   });
-  await loadBooks(false);
+  // Retour depuis une fiche : recharge toutes les pages deja affichees puis retrouve la position.
+  const back = state.catalogBack;
+  state.catalogBack = null;
+  if (back && back.page > 1 && c.page === back.page) {
+    c.page = 1;
+    await loadBooks(false);
+    while (c.page < back.page) { c.page++; await loadBooks(true); }
+  } else await loadBooks(false);
+  if (back) window.scrollTo(0, back.y);
+  // En quittant pour une fiche : memorise la position.
+  onLeave(() => {
+    state.catalogBack = location.hash.startsWith('#/book/') ? { y: window.scrollY, page: c.page } : null;
+  });
 }
 
 // Vue liste (ecrans d'au moins 600 px, ou le catalogue est en cartes) : choix garde
