@@ -61,13 +61,15 @@ async function viewBook(id) {
     <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
     ${manage ? `<div id="reservations">${reservationsHtml(book)}</div>` : ''}
     ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}
-    ${member && features().kobo ? '<div id="kobo-notes"></div>' : ''}`;
+    ${member && features().kobo ? '<div id="kobo-notes"></div>' : ''}
+    <div id="related"></div>`;
   if (manage) { bindAdminBook(book); bindReservations(book); }
   const push = $('#push-kobo');
   if (push) push.onclick = busy(() => pushToKobo(book.id));
   if (member) bindReaders(book);
   if (member && book.myStatus) bindStatusEditor(book);
   if ($('#kobo-notes')) loadKoboNotes(book.id);
+  loadRelated(book, member);
   // Tag : catalogue filtre sur ce tag.
   $$('[data-tag]').forEach((a) => {
     a.onclick = (e) => {
@@ -93,6 +95,31 @@ async function viewBook(id) {
       go('#/');
     };
   });
+}
+
+// Bandeaux "autres livres" de la serie et des (deux premiers) auteurs, cliquables.
+async function loadRelated(book, member) {
+  const authors = String(book.authors || '').split(',').map((a) => a.trim()).filter(Boolean).slice(0, 2);
+  const groups = [];
+  if (book.series) groups.push({ title: `Dans la série « ${book.series} »`, qs: `series=${encodeURIComponent(book.series)}` });
+  authors.forEach((a) => groups.push({ title: `Autres livres de ${a}`, qs: `author=${encodeURIComponent(a)}` }));
+  const base = member ? '/api/books' : '/api/public/books';
+  const seen = new Set([book.id]);
+  const parts = await Promise.all(groups.map(async (g) => {
+    const data = await api(`${base}?${g.qs}&limit=13`).catch(() => null);
+    const items = data ? data.items.filter((b) => b.id !== book.id).slice(0, 12) : [];
+    return { ...g, items };
+  }));
+  const box = $('#related');
+  if (!box || !$('.book-detail') || !view().contains(box)) return;
+  box.innerHTML = parts.filter((g) => g.items.length).map((g) => {
+    // Un livre deja montre dans un bandeau precedent n'est pas repete.
+    const items = g.items.filter((b) => !seen.has(b.id));
+    items.forEach((b) => seen.add(b.id));
+    return items.length ? `<h2>${esc(g.title)}</h2><div class="book-strip">${items.map((b) => `
+      <a class="book-card" href="#/book/${b.id}" title="${esc(b.title)}">${coverHtml(b)}
+        <div class="meta"><span class="t">${esc(b.title)}</span>${b.seriesNumber ? `<span class="coll">tome ${esc(b.seriesNumber)}</span>` : ''}</div></a>`).join('')}</div>` : '';
+  }).join('');
 }
 
 // Surlignages et notes faits sur ses liseuses Kobo (releves a chaque scan).

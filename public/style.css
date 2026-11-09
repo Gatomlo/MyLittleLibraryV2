@@ -1151,3 +1151,7 @@ tr.row-selected td { background: var(--accent-soft); }
 /* Fiche livre : boutons precedent / suivant */
 .book-nav-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .book-nav { display: inline-flex; gap: 8px; }
+
+/* Fiche livre : bandeaux "autres livres" */
+.book-strip { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 12px; scroll-snap-type: x proximity; }
+.book-strip .book-card { flex: 0 0 120px; scroll-snap-align: start; }
