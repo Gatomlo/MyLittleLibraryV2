@@ -1187,3 +1187,10 @@ tr.row-selected td { background: var(--accent-soft); }
 .shelf-new input[name=name] { flex: 1 1 160px; min-width: 0; }
 .chip-shelf { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
 .shelves-grid .card { margin: 0; }
+
+/* Filtre a cases a cocher (statut de lecture) */
+.multi-filter { position: relative; }
+.multi-filter > summary { list-style: none; cursor: pointer; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 9px 12px; font: inherit; }
+.multi-filter > summary::-webkit-details-marker { display: none; }
+.multi-filter > summary::after { content: ' ▾'; color: var(--muted); }
+.multi-panel { position: absolute; z-index: 20; left: 0; min-width: 100%; margin-top: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 8px 12px; display: grid; gap: 6px; }

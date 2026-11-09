@@ -116,6 +116,19 @@ const catalogConf = () => {
   };
 };
 
+// Statut de lecture : cases a cocher (plusieurs statuts, ou tous sauf certains).
+const READING_OPTIONS = [...Object.entries(READING_LABELS), ['none', 'Sans statut']];
+const readingSel = (c) => {
+  const list = String(c.reading || '').split(',').filter((v) => READING_OPTIONS.some(([k]) => k === v));
+  return list.length ? list : READING_OPTIONS.map(([v]) => v);
+};
+function readingSummary(picked) {
+  if (picked.length === READING_OPTIONS.length) return 'Lecture : tous';
+  const off = READING_OPTIONS.filter(([v]) => !picked.includes(v)).map(([, l]) => l.toLowerCase());
+  if (picked.length > off.length) return 'Lecture : sauf ' + off.join(', ');
+  return 'Lecture : ' + READING_OPTIONS.filter(([v]) => picked.includes(v)).map(([, l]) => l.toLowerCase()).join(', ');
+}
+
 // Filtres du catalogue dans l'adresse (#/?author=...) : lien partageable, bouton precedent.
 const URL_KEYS = ['q', 'category', 'collection', 'series', 'author', 'shelf', 'tag', 'status', 'format', 'reading', 'opinion', 'rating', 'reader', 'statusUser', 'missing', 'since'];
 function stateToParams(c) {
@@ -275,13 +288,9 @@ async function viewCatalog() {
       ${members.map((m) => `<option value="${m.id}" ${String(m.id) === c.statusUser ? 'selected' : ''}>${m.id === state.user.id ? 'Mes statuts' : 'Statuts de ' + esc(m.username)}</option>`).join('')}</select>`]);
   }
   if (statusesOn() && show('reading')) {
-    controls.push(['reading', withStatus ? '' : 'Lecture', `<select id="reading">
-      <option value="">Lecture : tous</option>
-      <option value="to_read" ${sel(c.reading, 'to_read')}>À lire</option>
-      <option value="reading" ${sel(c.reading, 'reading')}>En cours</option>
-      <option value="read" ${sel(c.reading, 'read')}>Lu</option>
-      <option value="abandoned" ${sel(c.reading, 'abandoned')}>Abandonné</option>
-      <option value="none" ${sel(c.reading, 'none')}>Sans statut</option></select>`]);
+    const picked = readingSel(c);
+    controls.push(['reading', withStatus ? '' : 'Lecture', `<details class="multi-filter" id="reading-multi"><summary>${readingSummary(picked)}</summary>
+      <div class="multi-panel">${READING_OPTIONS.map(([v, l]) => `<label class="check"><input type="checkbox" value="${v}" ${picked.includes(v) ? 'checked' : ''}> ${l}</label>`).join('')}</div></details>`]);
   }
   if (statusesOn() && show('opinion')) {
     controls.push(['opinion', withStatus || show('reading') ? '' : 'Avis', `<select id="opinion">
@@ -418,6 +427,20 @@ async function viewCatalog() {
   if (canManage() || koboOn() || shelvesOn()) bindSelection(reload);
   bindViewToggle();
   bindFabs();
+  const readingMulti = $('#reading-multi');
+  if (readingMulti) {
+    readingMulti.addEventListener('change', () => {
+      let picked = $$('input:checked', readingMulti).map((cb) => cb.value);
+      // Rien de coche : comme tout cocher (aucun filtre).
+      if (!picked.length) { $$('input', readingMulti).forEach((cb) => { cb.checked = true; }); picked = READING_OPTIONS.map(([v]) => v); }
+      c.reading = picked.length === READING_OPTIONS.length ? '' : picked.join(',');
+      $('summary', readingMulti).textContent = readingSummary(picked);
+      reload();
+    });
+    const away = (e) => { if (!readingMulti.contains(e.target)) readingMulti.open = false; };
+    document.addEventListener('click', away);
+    onLeave(() => document.removeEventListener('click', away));
+  }
   if ($('#mine')) $('#mine').onchange = (e) => { c.mine = e.target.checked; reload(); };
   const sortDir = $('#sort-dir');
   const drawSortDir = () => { sortDir.textContent = sortDirLabel(c); sortDir.setAttribute('aria-pressed', String(!!c.reverse)); };
@@ -425,7 +448,7 @@ async function viewCatalog() {
     sortDir.onclick = () => { c.reverse = !c.reverse; drawSortDir(); reload(); };
     $('#sort').addEventListener('change', () => { c.sort = $('#sort').value; drawSortDir(); });
   }
-  [['#kobo-filter', 'kobo'], ['#shelf', 'shelf'], ['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#reader', 'reader'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion'], ['#rating', 'rating']].forEach(([selector, key]) => {
+  [['#kobo-filter', 'kobo'], ['#shelf', 'shelf'], ['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#reader', 'reader'], ['#status-user', 'statusUser'], ['#opinion', 'opinion'], ['#rating', 'rating']].forEach(([selector, key]) => {
     const el = $(selector);
     if (el) el.addEventListener('change', (e) => { c[key] = e.target.value; reload(); });
   });

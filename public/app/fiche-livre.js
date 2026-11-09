@@ -68,11 +68,11 @@ async function viewBook(id) {
         ${book.summary ? `<h3>Résumé</h3><p class="summary">${esc(book.summary)}</p>` : ''}
         ${manage && book.notes ? `<h3>Notes internes</h3><p class="summary muted">${esc(book.notes)}</p>` : ''}
         ${member ? `<div class="btn-row" style="margin-top:14px">
-            ${manage ? `<a class="btn" href="#/book/${book.id}/edit">Modifier</a>` : ''}
+            ${manage ? `<a class="btn" href="#/book/${book.id}/edit" title="Modifier" aria-label="Modifier">${iconText('edit', 'Modifier')}</a>` : ''}
             ${shelvesOn() ? `<button class="btn" id="book-shelf-btn" type="button" title="Ranger dans une étagère" aria-label="Ranger dans une étagère">${iconText('shelf', 'Étagère')}</button>` : ''}
             ${searchLinkHtml(book, 'books')}
             ${koboOn() && book.ebookFile && book.ebookFile.download ? `<button class="btn" id="push-kobo" title="Envoyer sur ${esc(kobo.device.name)}" aria-label="Envoyer sur ma liseuse">${iconText('kobo', 'Envoyer sur ma liseuse')}</button>` : ''}
-            ${manage ? '<button class="btn btn-danger" id="del-book">Supprimer</button>' : ''}
+            ${manage ? `<button class="btn btn-danger" id="del-book" type="button" title="Supprimer" aria-label="Supprimer">${iconText('trash', 'Supprimer')}</button>` : ''}
           </div>` : ''}
       </div>
     </div>

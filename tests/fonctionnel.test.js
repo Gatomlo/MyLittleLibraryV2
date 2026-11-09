@@ -410,6 +410,13 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   assert.deepEqual([mine.reading, mine.rating, mine.koboSeconds, mine.finishedAt], ['read', 4, 7200, '2026-01-02 10:00:00']);
   ok(await a.put(`${api}/books/${imp.bookId}/status`, { reading: 'read', rating: 5 }));
   ok(await kscan({}, finishedDb({ rating: 3, timeSpent: 3600 })));
+  // Filtre de statut : un seul, une liste, ou tous sauf « lu » (liste des statuts voulus + sans statut).
+  const nRead = ok(await a.get(`${api}/books?reading=read`)).total;
+  const nAll = ok(await a.get(`${api}/books`)).total;
+  assert.ok(nRead >= 1 && nRead < nAll);
+  assert.equal(ok(await a.get(`${api}/books?reading=to_read,reading,abandoned,none`)).total, nAll - nRead, 'tous sauf lu');
+  assert.equal(ok(await a.get(`${api}/books?reading=read,reading`)).total >= nRead, true);
+  assert.equal(ok(await a.get(`${api}/books?reading=inconnu`)).total, nAll, 'valeur inconnue ignoree');
   mine = ok(await a.get(`${api}/books/${imp.bookId}`)).myStatus;
   assert.deepEqual([mine.rating, mine.koboSeconds], [5, 7200]);
   const me = ok(await a.get(`${api}/stats/overview`)).me;
