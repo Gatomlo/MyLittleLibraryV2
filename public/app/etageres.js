@@ -5,6 +5,7 @@ import { LIBRARY, state, canManage, shelvesOn, features } from './etat.js';
 import { $, $$, view, esc, api, toast, go, mediaSrc } from './utilitaires.js';
 import { icon, iconText } from './icones.js';
 import { route } from './routage.js';
+import { koboOn, pushManyToKobo, busy } from './kobo.js';
 
 // Preference du compte pour les etageres (interface masquee ou non), chargee au demarrage.
 async function loadShelvesPref() {
@@ -118,10 +119,11 @@ async function viewShelves() {
         <strong>${esc(s.name)}</strong>
         <div class="small muted">${countLabel(s.count)} · ${s.shared ? `partagée${s.mine ? '' : ` par ${esc(s.owner || 'un gestionnaire')}`}` : 'privée'}</div>
       </a>
-      ${s.mine || (s.shared && canManage()) ? `<div class="btn-row shelf-actions">
+      ${s.mine || (s.shared && canManage()) || koboOn() ? `<div class="btn-row shelf-actions">
+        ${koboOn() && s.count ? `<button class="btn btn-small" type="button" data-kobo="${s.id}" title="Envoyer les livres numériques de l'étagère sur la liseuse" aria-label="Envoyer l'étagère ${esc(s.name)} sur la liseuse">${iconText('kobo', 'Liseuse')}</button>` : ''}
         ${s.mine ? `<button class="btn btn-small" type="button" data-rename="${s.id}" title="Renommer" aria-label="Renommer">${iconText('edit', 'Renommer')}</button>` : ''}
         ${s.mine && canManage() ? `<button class="btn btn-small" type="button" data-share="${s.id}" data-on="${s.shared ? 1 : 0}">${s.shared ? 'Ne plus partager' : 'Partager'}</button>` : ''}
-        <button class="btn btn-small btn-danger" type="button" data-del="${s.id}" title="Supprimer" aria-label="Supprimer">${iconText('trash', 'Supprimer')}</button>
+        ${s.mine || (s.shared && canManage()) ? `<button class="btn btn-small btn-danger" type="button" data-del="${s.id}" title="Supprimer" aria-label="Supprimer">${iconText('trash', 'Supprimer')}</button>` : ''}
       </div>` : ''}</div>`;
   view().innerHTML = `
     <div class="page-head"><h1>Mes étagères</h1><div class="btn-row"><button class="btn btn-primary" id="shelf-add" type="button">${iconText('add', 'Nouvelle étagère')}</button></div></div>
@@ -143,6 +145,19 @@ async function viewShelves() {
       } catch (err) { toast(err.message, 'error'); }
     };
   };
+  // Envoi des livres numeriques de l'etagere sur la liseuse branchee.
+  $$('[data-kobo]').forEach((b) => {
+    b.onclick = busy(async (btn) => {
+      const label = btn.innerHTML;
+      try {
+        const { ids } = await api(`/api/books?shelf=${b.dataset.kobo}&ids=1`);
+        if (!ids.length) { toast('Cette étagère est vide.'); return; }
+        const r = await pushManyToKobo(ids, (n, total) => { btn.textContent = `Envoi ${n} / ${total}…`; });
+        if (!r) return; // choix des livres a convertir annule
+        toast(`${r.sent} livre(s) envoyé(s)${r.updated ? `, ${r.updated} mis à jour` : ''}${r.already ? `, ${r.already} déjà sur la liseuse` : ''}${r.skipped ? `, ${r.skipped} sans fichier numérique ou sans droit` : ''}. Éjecte la liseuse pour qu'elle les importe.`);
+      } finally { btn.innerHTML = label; }
+    });
+  });
   $$('[data-rename]').forEach((b) => {
     b.onclick = async () => {
       const cur = list.find((s) => String(s.id) === b.dataset.rename);

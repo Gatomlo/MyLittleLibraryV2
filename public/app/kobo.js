@@ -593,9 +593,10 @@ function editKoboDialog(d, members) {
       </select></div>
       <label class="check"><input type="checkbox" name="kepub" ${d.kepub ? 'checked' : ''}> Envoyer au format kepub
         ${hint('Format natif des Kobo (comme Calibre) : mise en page plus fiable, statistiques de lecture et temps restant par chapitre. Décoche si un livre s\'affiche mal. Les livres déjà sur la liseuse ne sont convertis qu\'à ta demande, lors d\'une mise à jour (choix livre par livre) : la liseuse les voit alors comme de nouveaux livres (progression perdue).')}</label>
-      <div class="field"><label>Collections de la liseuse ${hint('Avec l\'écriture dans la liseuse : collections Kobo créées d\'après les fiches. Les collections faites sur la liseuse ne sont jamais modifiées.')}</label>
-        <select name="collections">${[['both', 'Catégories et tags'], ['categories', 'Catégories'], ['tags', 'Tags'], ['none', 'Aucune']]
-          .map(([v, l]) => `<option value="${v}" ${(d.collections || 'both') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label>Collections de la liseuse ${hint('Avec l\'écriture dans la liseuse : collections Kobo créées d\'après les catégories, les tags et / ou les étagères (celles du propriétaire de la liseuse et les étagères partagées). Une étagère et un tag de même nom donnent une seule collection : choisis une source pour éviter les doublons. Les collections faites sur la liseuse ne sont jamais modifiées.')}</label>
+        <div class="btn-row">${[['categories', 'Catégories', true], ['tags', 'Tags', !!features().tags], ['shelves', 'Étagères', !!features().shelves]]
+    .filter(([, , on]) => on).map(([v, l]) => `<label class="check"><input type="checkbox" name="collectionSource" value="${v}" ${(d.collectionSources || ['categories', 'tags']).includes(v) ? 'checked' : ''}> ${l}</label>`).join('')}</div>
+        ${features().shelves ? `<input name="shelfPrefix" maxlength="10" value="${esc(d.shelfPrefix || '')}" placeholder="Préfixe des étagères (facultatif, ex. ★ )" aria-label="Préfixe des collections issues des étagères" style="margin-top:8px">` : ''}</div>
       <label class="check"><input type="checkbox" name="writeDb" ${d.writeDb ? 'checked' : ''}> Écrire les informations des fiches dans la liseuse
         ${hint('Avec Chrome : titre, auteurs, résumé, série et tome des fiches écrits dans la base de la liseuse à chaque scan (onglet Séries de la Kobo), livres mis à jour sans perdre la progression, statut « Lu » ou « Non lu » changé dans l\'appli reporté sur la liseuse. La base saine est gardée par l\'appli à chaque scan (10 dernières) et copiée sur la liseuse avant chaque écriture ; une écriture laissée en suspens par la liseuse est terminée, comme avec Calibre.')}</label>
       <label class="check"><input type="checkbox" name="removeFinished" ${d.removeFinished ? 'checked' : ''}> Retirer de la liseuse les livres terminés
@@ -623,7 +624,9 @@ function editKoboDialog(d, members) {
     try {
       const r = await api(`/api/kobo/devices/${d.id}`, { method: 'PUT', body: {
         name: e.target.name.value, userId: e.target.userId.value || null, writeDb: e.target.writeDb.checked,
-        kepub: e.target.kepub.checked, collections: e.target.collections.value, removeFinished: e.target.removeFinished.checked,
+        kepub: e.target.kepub.checked, removeFinished: e.target.removeFinished.checked,
+        collections: $$('input[name=collectionSource]:checked', e.target).map((cb) => cb.value),
+        ...(e.target.shelfPrefix ? { shelfPrefix: e.target.shelfPrefix.value } : {}),
       } });
       if (kobo && kobo.device && kobo.device.id === r.id) { kobo.device = r; renderNav(); }
       close();
