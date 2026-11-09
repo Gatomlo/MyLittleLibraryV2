@@ -34,13 +34,28 @@ async function viewBook(id) {
   const navHtml = prevId || nextId ? `<span class="book-nav">
     ${prevId ? `<a class="btn" href="#/book/${prevId}" title="Livre précédent" aria-label="Livre précédent">‹ <span class="hide-mobile">Précédent</span></a>` : ''}
     ${nextId ? `<a class="btn" href="#/book/${nextId}" title="Livre suivant" aria-label="Livre suivant"><span class="hide-mobile">Suivant</span> ›</a>` : ''}</span>` : '';
+  // Mise en page (Reglages) : exemplaires et "autres livres" sous la fiche, en colonne
+  // de droite ou de gauche (sous la couverture), ou masques.
+  const conf = (state.settings && state.settings.bookPage) || {};
+  const placeOf = (k) => (['bottom', 'right', 'left', 'off'].includes(conf[k]) ? conf[k] : 'bottom');
+  const sections = {
+    copies: `<div class="book-sec"><h2>Exemplaires</h2>
+      <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
+      ${manage ? `<div id="reservations">${reservationsHtml(book)}</div>` : ''}
+      ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}</div>`,
+    related: '<div class="book-sec" id="related"></div>',
+  };
+  const at = (place) => Object.keys(sections).filter((k) => placeOf(k) === place).map((k) => sections[k]).join('');
+  const leftHtml = at('left');
+  const rightHtml = at('right');
   view().innerHTML = `
     ${koboReturn && koboReturn.bookId === book.id
       ? `<div class="btn-row" style="margin-bottom:12px"><a class="btn btn-primary" href="#/kobo/${koboReturn.deviceId}">← Retour à la liseuse ${esc(koboReturn.name)}</a></div>`
       : `<p class="book-nav-row"><a href="${esc(back ? back.hash : '#/')}">← ${esc(back ? back.label : 'Catalogue')}</a>${navHtml}</p>`}
-    <div class="book-detail">
-      <div>${coverHtml(book)}</div>
-      <div>
+    <div class="book-layout${rightHtml ? ' has-right' : ''}">
+    <div class="book-detail${leftHtml ? ' has-left' : ''}">
+      <div class="book-left">${coverHtml(book)}${leftHtml ? `<div class="book-side">${leftHtml}</div>` : ''}</div>
+      <div class="book-info">
         <h1>${esc(book.title)}</h1>
         ${book.subtitle ? `<div class="subtitle">${esc(book.subtitle)}</div>` : ''}
         ${availabilityBadge(book)}
@@ -57,19 +72,17 @@ async function viewBook(id) {
           </div>` : ''}
       </div>
     </div>
-    <h2>Exemplaires</h2>
-    <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
-    ${manage ? `<div id="reservations">${reservationsHtml(book)}</div>` : ''}
-    ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}
-    ${member && features().kobo ? '<div id="kobo-notes"></div>' : ''}
-    <div id="related"></div>`;
+    ${rightHtml ? `<aside class="book-side">${rightHtml}</aside>` : ''}
+    </div>
+    ${at('bottom')}
+    ${member && features().kobo ? '<div id="kobo-notes"></div>' : ''}`;
   if (manage) { bindAdminBook(book); bindReservations(book); }
   const push = $('#push-kobo');
   if (push) push.onclick = busy(() => pushToKobo(book.id));
   if (member) bindReaders(book);
   if (member && book.myStatus) bindStatusEditor(book);
   if ($('#kobo-notes')) loadKoboNotes(book.id);
-  loadRelated(book, member);
+  if ($('#related')) loadRelated(book, member);
   // Tag : catalogue filtre sur ce tag.
   $$('[data-tag]').forEach((a) => {
     a.onclick = (e) => {

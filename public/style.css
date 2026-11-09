@@ -1155,3 +1155,22 @@ tr.row-selected td { background: var(--accent-soft); }
 /* Fiche livre : bandeaux "autres livres" */
 .book-strip { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 12px; scroll-snap-type: x proximity; }
 .book-strip .book-card { flex: 0 0 120px; scroll-snap-align: start; }
+
+/* Fiche livre : colonnes de droite / de gauche (exemplaires, autres livres) */
+.book-layout.has-right { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 24px; align-items: start; }
+.book-detail.has-left { grid-template-columns: 340px minmax(0, 1fr); }
+.book-side { min-width: 0; }
+.book-side h2 { font-size: 1.05rem; margin: 16px 0 8px; }
+.book-side .book-sec:first-child h2:first-child { margin-top: 0; }
+.book-side .card { overflow-x: auto; }
+.book-left { min-width: 0; }
+.book-left .book-side { margin-top: 14px; }
+.book-left .cover { max-width: 220px; }
+@media (max-width: 1000px) { .book-layout.has-right { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .book-detail.has-left { grid-template-columns: minmax(0, 1fr); }
+  .book-left { display: contents; }
+  .book-left .cover { order: 1; }
+  .book-info { order: 2; }
+  .book-left .book-side { order: 3; margin-top: 0; }
+}

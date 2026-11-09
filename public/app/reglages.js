@@ -203,7 +203,7 @@ async function viewSettings() {
       ${[['related', 'Autres livres de la série et des auteurs'], ['copies', 'Exemplaires, prêts et réservations']].map(([k, l]) => `
         <label${k === 'copies' ? ' style="margin-top:14px"' : ''}>${l}</label>
         <div class="btn-row">
-          ${[['bottom', 'Sous la fiche'], ['side', 'Colonne de droite (PC)'], ['off', 'Masqué']].map(([v, t]) => `
+          ${[['bottom', 'Sous la fiche'], ['right', 'Colonne de droite'], ['left', 'Colonne de gauche (sous la couverture)'], ['off', 'Masqué']].map(([v, t]) => `
             <label class="check"><input type="radio" name="${k}" value="${v}" ${bookPage[k] === v ? 'checked' : ''}> ${t}</label>`).join('')}
         </div>`).join('')}
     </form>
