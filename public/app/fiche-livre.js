@@ -43,7 +43,8 @@ async function viewBook(id) {
       <div class="card" id="copies">${manage ? adminCopiesHtml(book) : publicCopiesHtml(book)}</div>
       ${manage ? `<div id="reservations">${reservationsHtml(book)}</div>` : ''}
       ${manage && book.history.length ? `<h2>Historique des prêts</h2><div class="card table-wrap">${historyHtml(book.history)}</div>` : ''}</div>`,
-    related: '<div class="book-sec" id="related"></div>',
+    series: '<div class="book-sec" id="related-series"></div>',
+    authors: '<div class="book-sec" id="related-authors"></div>',
   };
   const at = (place) => Object.keys(sections).filter((k) => placeOf(k) === place).map((k) => sections[k]).join('');
   const leftHtml = at('left');
@@ -82,7 +83,7 @@ async function viewBook(id) {
   if (member) bindReaders(book);
   if (member && book.myStatus) bindStatusEditor(book);
   if ($('#kobo-notes')) loadKoboNotes(book.id);
-  if ($('#related')) loadRelated(book, member);
+  if ($('#related-series') || $('#related-authors')) loadRelated(book, member);
   // Tag : catalogue filtre sur ce tag.
   $$('[data-tag]').forEach((a) => {
     a.onclick = (e) => {
@@ -114,8 +115,8 @@ async function viewBook(id) {
 async function loadRelated(book, member) {
   const authors = String(book.authors || '').split(',').map((a) => a.trim()).filter(Boolean).slice(0, 2);
   const groups = [];
-  if (book.series) groups.push({ title: `Dans la série « ${book.series} »`, qs: `series=${encodeURIComponent(book.series)}` });
-  authors.forEach((a) => groups.push({ title: `Autres livres de ${a}`, qs: `author=${encodeURIComponent(a)}` }));
+  if (book.series && $('#related-series')) groups.push({ kind: 'series', title: `Dans la série « ${book.series} »`, qs: `series=${encodeURIComponent(book.series)}` });
+  if ($('#related-authors')) authors.forEach((a) => groups.push({ kind: 'authors', title: `Autres livres de ${a}`, qs: `author=${encodeURIComponent(a)}` }));
   const base = member ? '/api/books' : '/api/public/books';
   const seen = new Set([book.id]);
   const parts = await Promise.all(groups.map(async (g) => {
@@ -123,16 +124,17 @@ async function loadRelated(book, member) {
     const items = data ? data.items.filter((b) => b.id !== book.id).slice(0, 12) : [];
     return { ...g, items };
   }));
-  const box = $('#related');
-  if (!box || !$('.book-detail') || !view().contains(box)) return;
-  box.innerHTML = parts.filter((g) => g.items.length).map((g) => {
+  if (!$('.book-detail')) return;
+  const html = { series: '', authors: '' };
+  parts.forEach((g) => {
     // Un livre deja montre dans un bandeau precedent n'est pas repete.
     const items = g.items.filter((b) => !seen.has(b.id));
     items.forEach((b) => seen.add(b.id));
-    return items.length ? `<h2>${esc(g.title)}</h2><div class="book-strip">${items.map((b) => `
+    if (items.length) html[g.kind] += `<h2>${esc(g.title)}</h2><div class="book-strip">${items.map((b) => `
       <a class="book-card" href="#/book/${b.id}" title="${esc(b.title)}">${coverHtml(b)}
-        <div class="meta"><span class="t">${esc(b.title)}</span>${b.seriesNumber ? `<span class="coll">tome ${esc(b.seriesNumber)}</span>` : ''}</div></a>`).join('')}</div>` : '';
-  }).join('');
+        <div class="meta"><span class="t">${esc(b.title)}</span>${b.seriesNumber ? `<span class="coll">tome ${esc(b.seriesNumber)}</span>` : ''}</div></a>`).join('')}</div>`;
+  });
+  ['series', 'authors'].forEach((k) => { const box = $(`#related-${k}`); if (box && view().contains(box)) box.innerHTML = html[k]; });
 }
 
 // Surlignages et notes faits sur ses liseuses Kobo (releves a chaque scan).

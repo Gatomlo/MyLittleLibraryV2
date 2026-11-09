@@ -34,7 +34,7 @@ async function viewSettings() {
     card: (s.catalog && s.catalog.card) || ALL_CATALOG_CARD,
     list: (s.catalog && s.catalog.list) || DEFAULT_CATALOG_LIST,
   };
-  const bookPage = { related: 'bottom', copies: 'bottom', ...(s.bookPage || {}) };
+  const bookPage = { series: 'bottom', authors: 'bottom', copies: 'bottom', ...(s.bookPage || {}) };
   const search = { books: [], wishes: [], url: '', label: '', ...(s.search || {}) };
   const libraryUrl = location.origin + LIB;
   view().innerHTML = `
@@ -200,8 +200,8 @@ async function viewSettings() {
 
     <h2>Fiche d'un livre</h2>
     <form class="card" id="book-page-form">
-      ${[['related', 'Autres livres de la série et des auteurs'], ['copies', 'Exemplaires, prêts et réservations']].map(([k, l]) => `
-        <label${k === 'copies' ? ' style="margin-top:14px"' : ''}>${l}</label>
+      ${[['series', 'Autres livres de la même série'], ['authors', 'Autres livres du même auteur'], ['copies', 'Exemplaires, prêts et réservations']].map(([k, l], i) => `
+        <label${i ? ' style="margin-top:14px"' : ''}>${l}</label>
         <div class="btn-row">
           ${[['bottom', 'Sous la fiche'], ['right', 'Colonne de droite'], ['left', 'Colonne de gauche (sous la couverture)'], ['off', 'Masqué']].map(([v, t]) => `
             <label class="check"><input type="radio" name="${k}" value="${v}" ${bookPage[k] === v ? 'checked' : ''}> ${t}</label>`).join('')}
@@ -474,7 +474,7 @@ async function viewSettings() {
   $('#book-page-form').addEventListener('change', async () => {
     const pick = (k) => ($(`#book-page-form [name=${k}]:checked`) || {}).value || 'bottom';
     try {
-      await api('/api/settings', { method: 'PUT', body: { bookPage: { related: pick('related'), copies: pick('copies') } } });
+      await api('/api/settings', { method: 'PUT', body: { bookPage: { series: pick('series'), authors: pick('authors'), copies: pick('copies') } } });
       await loadSettings();
       toast('Fiche du livre mise à jour.');
     } catch (err) { toast(err.message, 'error'); }
