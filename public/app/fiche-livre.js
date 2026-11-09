@@ -1,6 +1,7 @@
 // Fiche livre — module de l'interface (organisation : public/app/README.md).
 import './catalogue.js';
-import { LIB, state, isMember, canManage, features, statusesOn, READING_LABELS, OPINION_LABELS } from './etat.js';
+import { LIB, state, isMember, canManage, features, statusesOn, shelvesOn, READING_LABELS, OPINION_LABELS } from './etat.js';
+import { shelfDialog, shelfChipsHtml, openShelf } from './etageres.js';
 import { $, $$, view, esc, hint, fmtDate, fmtDuration, api, toast, go, coverHtml, availabilityBadge } from './utilitaires.js';
 import { iconText, searchLinkHtml } from './icones.js';
 import { route } from './routage.js';
@@ -21,6 +22,7 @@ async function viewBook(id) {
     ['Pages', book.pages || ''],
     ['ISBN', esc(book.isbn)],
     ['Catégories', book.categories.map((c) => `<a href="#/" class="chip" data-category="${c.id}">${esc(c.name)}</a>`).join('')],
+    ['Étagères', shelvesOn() ? '<span id="book-shelves"></span>' : ''],
     ['Tags', (book.tags || []).map((t) => `<a href="#/" class="chip chip-tag" data-tag="${t.id}">#${esc(t.name)}</a>`).join('')],
   ].filter(([, v]) => v);
   // Ouverte depuis une liste qui donne un retour (resultats d'un import epub).
@@ -67,6 +69,7 @@ async function viewBook(id) {
         ${manage && book.notes ? `<h3>Notes internes</h3><p class="summary muted">${esc(book.notes)}</p>` : ''}
         ${member ? `<div class="btn-row" style="margin-top:14px">
             ${manage ? `<a class="btn" href="#/book/${book.id}/edit">Modifier</a>` : ''}
+            ${shelvesOn() ? `<button class="btn" id="book-shelf-btn" type="button" title="Ranger dans une étagère" aria-label="Ranger dans une étagère">${iconText('shelf', 'Étagère')}</button>` : ''}
             ${searchLinkHtml(book, 'books')}
             ${koboOn() && book.ebookFile && book.ebookFile.download ? `<button class="btn" id="push-kobo" title="Envoyer sur ${esc(kobo.device.name)}" aria-label="Envoyer sur ma liseuse">${iconText('kobo', 'Envoyer sur ma liseuse')}</button>` : ''}
             ${manage ? '<button class="btn btn-danger" id="del-book">Supprimer</button>' : ''}
@@ -84,11 +87,12 @@ async function viewBook(id) {
   if (member && book.myStatus) bindStatusEditor(book);
   if ($('#kobo-notes')) loadKoboNotes(book.id);
   if ($('#related-series') || $('#related-authors')) loadRelated(book, member);
+  if ($('#book-shelves')) loadBookShelves(book);
   // Tag : catalogue filtre sur ce tag.
   $$('[data-tag]').forEach((a) => {
     a.onclick = (e) => {
       e.preventDefault();
-      Object.assign(state.catalog, { q: '', author: '', since: '', category: '', collection: '', series: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '', tag: a.dataset.tag, page: 1 });
+      Object.assign(state.catalog, { q: '', author: '', since: '', shelf: '', category: '', collection: '', series: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '', tag: a.dataset.tag, page: 1 });
       go('#/');
     };
   });
@@ -96,7 +100,7 @@ async function viewBook(id) {
   $$('[data-category], [data-author]').forEach((a) => {
     a.onclick = (e) => {
       e.preventDefault();
-      Object.assign(state.catalog, { q: '', author: a.dataset.author || '', since: '', category: a.dataset.category || '', collection: '', series: '', tag: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '', page: 1 });
+      Object.assign(state.catalog, { q: '', author: a.dataset.author || '', since: '', shelf: '', category: a.dataset.category || '', collection: '', series: '', tag: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '', page: 1 });
       go('#/');
     };
   });
@@ -104,11 +108,29 @@ async function viewBook(id) {
   $$('[data-collection], [data-series]').forEach((a) => {
     a.onclick = (e) => {
       e.preventDefault();
-      Object.assign(state.catalog, { q: '', author: '', since: '', category: '', tag: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '',
+      Object.assign(state.catalog, { q: '', author: '', since: '', shelf: '', category: '', tag: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '',
         collection: a.dataset.collection || '', series: a.dataset.series || '', page: 1 });
       go('#/');
     };
   });
+}
+
+// Etageres du livre : pastilles cliquables (catalogue filtre) et bouton de choix.
+async function loadBookShelves(book) {
+  const draw = async () => {
+    const list = await api(`/api/books/${book.id}/shelves`).catch(() => []);
+    const cell = $('#book-shelves');
+    if (!cell) return;
+    const chips = shelfChipsHtml(list);
+    cell.innerHTML = chips;
+    // Ligne masquee quand le livre n'est dans aucune etagere.
+    const dd = cell.parentElement;
+    if (dd) { dd.hidden = !chips; if (dd.previousElementSibling) dd.previousElementSibling.hidden = !chips; }
+    $$('[data-shelf-open]', cell).forEach((a) => { a.onclick = (e) => { e.preventDefault(); openShelf(a.dataset.shelfOpen); }; });
+  };
+  await draw();
+  const btn = $('#book-shelf-btn');
+  if (btn) btn.onclick = () => shelfDialog({ ids: [book.id], onDone: draw });
 }
 
 // Bandeaux "autres livres" de la serie et des (deux premiers) auteurs, cliquables.

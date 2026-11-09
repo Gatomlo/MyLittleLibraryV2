@@ -1,6 +1,7 @@
 // Reglages de la bibliotheque — module de l'interface (organisation : public/app/README.md).
 import './statistiques.js';
 import { LIBRARY, LIB, state } from './etat.js';
+import { loadShelvesPref } from './etageres.js';
 import { $, $$, view, esc, hint, mediaSrc, fmtDate, api, toast, REMINDER_DEFAULT, go, debounce, imageToDataUrl } from './utilitaires.js';
 import { scanConf, refreshLoanBadge } from './scanner.js';
 import { renderBrand, renderHeader } from './entete.js';
@@ -87,6 +88,8 @@ async function viewSettings() {
         <span><strong>Statuts de lecture</strong> ${hint('Chaque compte peut marquer un livre « À lire » ou « Lu », et « Aimé » ou « Pas aimé ». Visibles dans le catalogue (gestion), avec des filtres par compte. Jamais affichés sur le catalogue public.')}</span></label>
       <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="tags" ${feat && feat.tags ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
         <span><strong>Tags</strong> ${hint('Mots-clés libres en plus des catégories (ex. #incontournable, #formation-2025). Ajoutés sur la fiche d\'un livre, visibles et filtrables dans le catalogue.')}</span></label>
+      <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="shelves" ${feat && feat.shelves ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
+        <span><strong>Étagères</strong> ${hint('Chaque compte range des livres dans ses propres listes (ex. « À lire cet été », « Idées cadeaux »), depuis la fiche d\'un livre ou le catalogue. Un gestionnaire peut partager une étagère avec toute la bibliothèque. Chaque compte peut aussi masquer les étagères dans Mon compte.')}</span></label>
       <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="stats" ${feat && feat.stats ? 'checked' : ''} ${feat ? '' : 'disabled'} style="margin-top:4px">
         <span><strong>Statistiques</strong> ${hint('Statistiques de lecture de chaque compte (privées, partageables avec les autres membres) et de la bibliothèque (lecture en totaux anonymes, prêts, fonds). Les statistiques de lecture demandent les statuts de lecture.')}</span></label>
       <label class="check" style="align-items:flex-start;margin-top:12px"><input type="checkbox" name="kobo" ${feat && feat.kobo ? 'checked' : ''} ${feat && feat.ebooks ? '' : 'disabled'} style="margin-top:4px">
@@ -367,6 +370,7 @@ async function viewSettings() {
         forgetMembers();
         toast(cb.checked ? 'Option activée.' : 'Option désactivée.');
         if (cb.name === 'tags') route(); // affiche / masque la gestion des tags
+        if (cb.name === 'shelves') { await loadShelvesPref(); renderNav(); } // entree "Etageres" du menu
         if (cb.name === 'stats') renderNav(); // entree "Statistiques" du menu
         if (cb.name === 'ebooks' || cb.name === 'kobo') { renderNav(); route(); } // Liseuses, droits epub
       } catch (err) { cb.checked = !cb.checked; toast(err.message, 'error'); }

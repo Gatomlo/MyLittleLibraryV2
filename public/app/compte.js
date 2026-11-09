@@ -5,6 +5,8 @@ import { $, $$, view, esc, hint, api, gapi, toast } from './utilitaires.js';
 import { prefsHtml, bindPrefs, statsShareHtml, bindStatsShare } from './statistiques.js';
 import { accordionize } from './catalogue.js';
 import { wishShareSection } from './souhaits.js';
+import { loadShelvesPref } from './etageres.js';
+import { renderNav } from './icones.js';
 
 async function viewAccount() {
   const u = state.user;
@@ -24,6 +26,8 @@ async function viewAccount() {
         </label>`).join('')}</div>`
       : '<p class="muted">Aucune bibliothèque n\'est liée à ton compte. Demande à un administrateur.</p>'}
     </div>
+    ${isMember() && features().shelves ? `<h2>Étagères</h2><div class="card"><label class="check"><input type="checkbox" id="acc-shelves" ${state.shelvesPref === false ? '' : 'checked'}>
+      Utiliser les étagères ${hint('Décoché : l\'entrée « Étagères » du menu, le bouton « Étagère » des fiches et le filtre du catalogue sont masqués pour ton compte. Tes étagères sont conservées.')}</label></div>` : ''}
     ${isMember() && features().stats ? '<h2>Mes lectures</h2><div id="acc-prefs"><p class="muted">Chargement…</p></div>' : ''}
     <h2>Mes partages</h2>
     <div class="card" id="acc-shares">
@@ -46,6 +50,15 @@ async function viewAccount() {
       <button class="btn" type="submit"><span class="hide-mobile">Changer le mot de passe</span><span class="show-mobile">Changer</span></button>
     </form>`;
   accordionize(view(), 'mll-account');
+  // Etageres : interface affichee ou masquee pour ce compte.
+  if ($('#acc-shelves')) $('#acc-shelves').onchange = async (e) => {
+    try {
+      await api('/api/shelves/pref', { method: 'PUT', body: { enabled: e.target.checked } });
+      await loadShelvesPref();
+      renderNav();
+      toast(e.target.checked ? 'Étagères activées.' : 'Étagères masquées.');
+    } catch (err) { e.target.checked = !e.target.checked; toast(err.message, 'error'); }
+  };
   // Reglages de lecture et partage des statistiques dans la bibliotheque ouverte (si
   // elle a les statistiques) ; partage de la liste de souhaits (tous comptes).
   if (isMember() && features().stats) {

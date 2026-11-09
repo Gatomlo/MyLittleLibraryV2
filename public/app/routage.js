@@ -19,6 +19,7 @@ import { viewLoans } from './prets.js';
 import { viewBorrowers, viewBorrower } from './emprunteurs.js';
 import { viewDashboard } from './accueil.js';
 import { viewWishes } from './souhaits.js';
+import { viewShelves } from './etageres.js';
 import { viewLabels } from './etiquettes.js';
 import { viewStats } from './statistiques.js';
 import { viewSettings } from './reglages.js';
@@ -48,6 +49,7 @@ const LIBRARY_ROUTES = [
   [/^\/settings$/, viewSettings, 'config'],
   [/^\/account$/, viewAccount, 'user'],
   [/^\/wishes$/, viewWishes, 'user'],
+  [/^\/shelves$/, viewShelves, 'member'],
   [/^\/admin$/, viewAdmin, 'admin'],
 ];
 const HOME_ROUTES = [

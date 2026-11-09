@@ -1,6 +1,6 @@
 // Icones — module de l'interface (organisation : public/app/README.md).
 import './entete.js';
-import { ROOT, LIBRARY, libUrl, state, pending, isAdmin, libRole, isMember, canManage, canConfigure, roleLabel, features, onlineSearch } from './etat.js';
+import { ROOT, LIBRARY, libUrl, state, pending, isAdmin, libRole, isMember, canManage, canConfigure, roleLabel, features, onlineSearch, shelvesOn } from './etat.js';
 import { $, $$, view, esc, api, gapi, toast, go } from './utilitaires.js';
 import { scanConf, SCAN_TITLES, refreshLoanBadge } from './scanner.js';
 import { renderHeader } from './entete.js';
@@ -30,6 +30,7 @@ const ICON_PATHS = {
   torch: '<path d="M6 2h12l-2 6H8L6 2Z"/><path d="M8 8l1 3v11h6V11l1-3"/><path d="M12 14v3"/>',
   wish: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
   mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+  shelf: '<path d="M2 21h20M4 21V5h4v16M10 21V9h4v12M16.5 21 19 4l3.5.7L20 21"/>',
   home: '<path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2z"/>',
   todo: '<path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
   goal: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
@@ -66,7 +67,7 @@ const searchLinkHtml = (item, kind, cls = 'btn') => {
 // Couleur de chaque page (teinte, fond pastel) : navigation et pastille du titre.
 const PAGE_COLORS = {
   catalog: 'accent', kobo: 'grape', add: 'coral', import: 'sky', loans: 'sun', borrowers: 'grape', labels: 'rose', stats: 'sky', settings: 'accent',
-  user: 'grape', admin: 'coral', login: 'accent', library: 'accent', edit: 'coral', incomplete: 'sun', wish: 'rose', home: 'accent',
+  user: 'grape', admin: 'coral', login: 'accent', library: 'accent', edit: 'coral', incomplete: 'sun', wish: 'rose', shelf: 'sun', home: 'accent',
 };
 const colorVars = (name) => { const c = PAGE_COLORS[name] || 'accent'; return `--c:var(--${c});--cs:var(--${c}-soft)`; };
 
@@ -98,6 +99,7 @@ function renderNav() {
       : [['#/', 'Catalogue', 'catalog'], ...own];
     if (state.user) {
       links.splice(canManage() ? 4 : 1, 0, ['#/wishes', 'Souhaits', 'wish']);
+      if (shelvesOn()) links.splice(1, 0, ['#/shelves', 'Étagères', 'shelf']);
       links.unshift(['#/home', 'Accueil', 'home']);
     }
   }

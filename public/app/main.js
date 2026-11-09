@@ -7,6 +7,7 @@ import { renderHeader } from './entete.js';
 import { route } from './routage.js';
 import { koboRestore } from './kobo.js';
 import { showBackupReminder } from './administration.js';
+import { loadShelvesPref } from './etageres.js';
 import { installApp } from './installation.js';
 
 async function loadSettings() {
@@ -47,9 +48,10 @@ let refreshedAt = Date.now();
 async function refreshIfStale() {
   if (Date.now() - refreshedAt < 30000) return;
   refreshedAt = Date.now();
-  const before = JSON.stringify([state.settings, state.user, state.libraries]);
+  const before = JSON.stringify([state.settings, state.user, state.libraries, state.shelvesPref]);
   await Promise.all([loadSettings(), loadStatus()]);
-  if (JSON.stringify([state.settings, state.user, state.libraries]) === before) return;
+  await loadShelvesPref();
+  if (JSON.stringify([state.settings, state.user, state.libraries, state.shelvesPref]) === before) return;
   renderHeader();
   const typing = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
   if (!typing && !$('.modal-backdrop')) route();
@@ -57,6 +59,7 @@ async function refreshIfStale() {
 
 (async function init() {
   await Promise.all([loadSettings(), loadStatus()]);
+  await loadShelvesPref();
   renderHeader();
   if (LIBRARY && state.user && /^#?\/?$/.test(location.hash)) history.replaceState(null, '', '#/home');
   window.addEventListener('hashchange', () => { route(); refreshIfStale(); });

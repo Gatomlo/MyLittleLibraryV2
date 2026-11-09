@@ -62,6 +62,8 @@ const ROLE_HELP = {
 // Options de la bibliotheque (Reglages) : livres numeriques, statuts de lecture.
 const features = () => (state.settings && state.settings.features) || {};
 const statusesOn = () => isMember() && !!features().readingStatus;
+// Etageres : option de la bibliotheque ET preference du compte (state.shelvesPref, charge au demarrage).
+const shelvesOn = () => isMember() && !!features().shelves && state.shelvesPref !== false;
 
 // Recherche en ligne (Reglages) : { url, label } pour un livre ou un souhait, ou null si
 // desactivee pour ce lieu (kind : 'books' fiche livre | 'wishes' souhaits). Marqueurs {titre}, {auteurs}, {recherche} (titre + auteurs), {isbn}.
@@ -80,5 +82,5 @@ const OPINION_ICONS = { liked: '♥', disliked: '✕' };
 
 export {
   ROOT, LIBRARY, LIB, ASSETS, libUrl, state, pending, isAdmin, libRole, isMember, canManage, canConfigure, LIBRARY_ROLES, roleLabel,
-  ROLE_HELP, features, onlineSearch, statusesOn, READING_LABELS, OPINION_LABELS, OPINION_ICONS,
+  ROLE_HELP, features, onlineSearch, statusesOn, shelvesOn, READING_LABELS, OPINION_LABELS, OPINION_ICONS,
 };

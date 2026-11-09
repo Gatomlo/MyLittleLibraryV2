@@ -1,6 +1,7 @@
 // Catalogue — module de l'interface (organisation : public/app/README.md).
 import './accueil-site.js';
-import { state, isMember, canManage, features, statusesOn, READING_LABELS, OPINION_LABELS, OPINION_ICONS } from './etat.js';
+import { state, isMember, canManage, features, statusesOn, shelvesOn, READING_LABELS, OPINION_LABELS, OPINION_ICONS } from './etat.js';
+import { shelfDialog } from './etageres.js';
 import { $, $$, view, esc, hint, api, toast, debounce, fmtDate, coverHtml, availabilityBadge } from './utilitaires.js';
 import { scanIsbn } from './scanner.js';
 import { onLeave, hashParams, replaceHash } from './routage.js';
@@ -103,7 +104,7 @@ const CATALOG_LIST_LABELS = [
   ['status', 'Statut de lecture et avis', 'readingStatus'], ['rating', 'Note (étoiles)', 'readingStatus'], ['availability', 'Disponibilité'],
   ['added', 'Date d\'ajout (gestion)'],
 ];
-const ALL_CATALOG_FILTERS = ['search', 'scan', 'category', 'collection', 'series', 'tag', 'mine', 'reader', 'availability', 'format',
+const ALL_CATALOG_FILTERS = ['search', 'scan', 'category', 'collection', 'series', 'tag', 'shelf', 'mine', 'reader', 'availability', 'format',
   'statusUser', 'reading', 'opinion', 'rating', 'sort', 'count'];
 const catalogConf = () => {
   const conf = (state.settings && state.settings.catalog) || {};
@@ -116,7 +117,7 @@ const catalogConf = () => {
 };
 
 // Filtres du catalogue dans l'adresse (#/?author=...) : lien partageable, bouton precedent.
-const URL_KEYS = ['q', 'category', 'collection', 'series', 'author', 'tag', 'status', 'format', 'reading', 'opinion', 'rating', 'reader', 'statusUser', 'missing', 'since'];
+const URL_KEYS = ['q', 'category', 'collection', 'series', 'author', 'shelf', 'tag', 'status', 'format', 'reading', 'opinion', 'rating', 'reader', 'statusUser', 'missing', 'since'];
 function stateToParams(c) {
   const p = new URLSearchParams();
   // statusUser : le compte connecte est le choix par defaut, inutile dans l'adresse.
@@ -162,7 +163,7 @@ function armMore() {
 
 // [cle, libelle, option de la bibliotheque necessaire]
 const CATALOG_FILTER_LABELS = [
-  ['search', 'Recherche'], ['scan', 'Scanner un ISBN (recherche)'], ['category', 'Catégories'], ['collection', 'Collections'], ['series', 'Séries'], ['tag', 'Tags', 'tags'], ['mine', 'Mes livres (gestion)'], ['reader', 'Lecteurs (gestion)'],
+  ['search', 'Recherche'], ['scan', 'Scanner un ISBN (recherche)'], ['category', 'Catégories'], ['collection', 'Collections'], ['series', 'Séries'], ['tag', 'Tags', 'tags'], ['shelf', 'Étagères', 'shelves'], ['mine', 'Mes livres (gestion)'], ['reader', 'Lecteurs (gestion)'],
   ['availability', 'Disponibilité'], ['format', 'Papier / numérique', 'ebooks'],
   ['statusUser', 'Statuts de… (choix du compte)', 'readingStatus'], ['reading', 'Statut de lecture', 'readingStatus'], ['opinion', 'Avis', 'readingStatus'], ['rating', 'Note', 'readingStatus'],
   ['sort', 'Tri'], ['count', 'Nombre de livres'],
@@ -219,12 +220,13 @@ async function viewCatalog() {
   const withReader = isMember() && show('reader');
   state.selecting = false;
   state.selected = new Set();
-  const [cats, collections, seriesList, tags, members] = await Promise.all([
+  const [cats, collections, seriesList, tags, members, shelves] = await Promise.all([
     show('category') ? loadCategories() : [],
     show('collection') ? api('/api/public/collections').catch(() => []) : [],
     show('series') ? api('/api/public/series').catch(() => []) : [],
     show('tag') && features().tags ? api('/api/public/tags').catch(() => []) : [],
     withStatus || withReader ? loadMembers() : [],
+    shelvesOn() && (show('shelf') || c.shelf) ? api('/api/shelves').catch(() => []) : [],
   ]);
   if (withStatus && !c.statusUser) c.statusUser = String(state.user.id);
   const left = conf.position === 'left';
@@ -243,6 +245,11 @@ async function viewCatalog() {
   if (show('collection') && collections.length) controls.push(['collection', 'Collection', '<input type="search" id="coll" placeholder="Toutes les collections">']);
   if (show('series') && seriesList.length) controls.push(['series', 'Série', '<input type="search" id="seriesf" placeholder="Toutes les séries">']);
   if (show('tag') && tags.some((t) => t.count)) controls.push(['tag', 'Tag', '<input type="search" id="tagf" placeholder="Tous les tags">']);
+  if (show('shelf') && shelves.length) {
+    controls.push(['shelf', 'Étagère', `<select id="shelf">
+      <option value="">Toutes les étagères</option>
+      ${shelves.map((s) => `<option value="${s.id}" ${sel(String(c.shelf || ''), String(s.id))}>${esc(s.name)}${s.shared && !s.mine ? ' (partagée)' : ''}</option>`).join('')}</select>`]);
+  }
   if (isMember() && show('mine')) {
     controls.push(['mine', '', `<label class="check filter-check"><input type="checkbox" id="mine" ${c.mine ? 'checked' : ''}> Mes livres</label>`]);
   }
@@ -332,7 +339,7 @@ async function viewCatalog() {
   function renderToggle() {
     const btn = $('#filters-toggle');
     if (!btn) return;
-    const n = ['category', 'collection', 'series', 'author', 'since', 'tag', 'mine', 'reader', 'status', 'format', 'reading', 'opinion', 'rating', 'kobo'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0) + (c.reverse ? 1 : 0);
+    const n = ['category', 'collection', 'series', 'author', 'since', 'shelf', 'tag', 'mine', 'reader', 'status', 'format', 'reading', 'opinion', 'rating', 'kobo'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0) + (c.reverse ? 1 : 0);
     btn.textContent = n ? `Filtres · ${n}` : 'Filtres';
     btn.classList.toggle('btn-primary', n > 0);
   }
@@ -351,6 +358,10 @@ async function viewCatalog() {
     if (c.collection && !$('#coll')) chips.push(['collection', 'Collection : ' + c.collection]);
     if (c.series && !$('#seriesf')) chips.push(['series', 'Série : ' + c.series]);
     if (c.author) chips.push(['author', 'Auteur : ' + c.author]);
+    if (c.shelf && !$('#shelf')) {
+      const s = shelves.find((x) => String(x.id) === String(c.shelf));
+      chips.push(['shelf', 'Étagère : ' + (s ? s.name : '…')]);
+    }
     if (c.since) chips.push(['since', `Ajoutés depuis ${c.since} jours`]);
     if (c.tag && !$('#tagf')) chips.push(['tag', 'Filtré par tag']);
     if (c.category && !$('#cat')) chips.push(['category', 'Filtré par catégorie']);
@@ -404,7 +415,7 @@ async function viewCatalog() {
       onPick: (name) => { if (name !== (c.series || '')) { c.series = name; reload(); } },
     });
   }
-  if (canManage() || koboOn()) bindSelection(reload);
+  if (canManage() || koboOn() || shelvesOn()) bindSelection(reload);
   bindViewToggle();
   bindFabs();
   if ($('#mine')) $('#mine').onchange = (e) => { c.mine = e.target.checked; reload(); };
@@ -414,7 +425,7 @@ async function viewCatalog() {
     sortDir.onclick = () => { c.reverse = !c.reverse; drawSortDir(); reload(); };
     $('#sort').addEventListener('change', () => { c.sort = $('#sort').value; drawSortDir(); });
   }
-  [['#kobo-filter', 'kobo'], ['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#reader', 'reader'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion'], ['#rating', 'rating']].forEach(([selector, key]) => {
+  [['#kobo-filter', 'kobo'], ['#shelf', 'shelf'], ['#status', 'status'], ['#sort', 'sort'], ['#format', 'format'], ['#reader', 'reader'], ['#status-user', 'statusUser'], ['#reading', 'reading'], ['#opinion', 'opinion'], ['#rating', 'rating']].forEach(([selector, key]) => {
     const el = $(selector);
     if (el) el.addEventListener('change', (e) => { c[key] = e.target.value; reload(); });
   });
@@ -497,6 +508,8 @@ function bindSelection(reload) {
     <button class="btn btn-small" type="button" id="select-none">Aucun</button>
     ${manage ? '<button class="btn btn-small btn-primary" type="button" id="select-edit">Modifier</button>' : ''}
     ${koboOn() ? `<button class="btn btn-small ${manage ? '' : 'btn-primary'}" type="button" id="select-kobo"><span class="hide-mobile">Envoyer sur la liseuse</span><span class="show-mobile">Liseuse</span></button>` : ''}
+    ${shelvesOn() ? '<button class="btn btn-small" type="button" id="select-shelf"><span class="hide-mobile">Ajouter à une étagère</span><span class="show-mobile">Étagère</span></button>' : ''}
+    ${shelvesOn() && state.catalog.shelf ? '<button class="btn btn-small" type="button" id="select-unshelf"><span class="hide-mobile">Retirer de l\'étagère</span><span class="show-mobile">Retirer</span></button>' : ''}
     ${manage ? '<button class="btn btn-small btn-danger" type="button" id="select-delete">Supprimer</button>' : ''}
     <button class="btn btn-small" type="button" id="select-done" style="margin-left:auto">Terminer</button>
   </div>`);
@@ -507,6 +520,8 @@ function bindSelection(reload) {
     $('#select-count').textContent = `${n} livre${n > 1 ? 's' : ''} sélectionné${n > 1 ? 's' : ''}`;
     if (manage) { $('#select-delete').disabled = !n; $('#select-edit').disabled = !n; }
     if ($('#select-kobo')) $('#select-kobo').disabled = !n;
+    if ($('#select-shelf')) $('#select-shelf').disabled = !n;
+    if ($('#select-unshelf')) $('#select-unshelf').disabled = !n;
   };
   const setMode = (on, firstId) => {
     state.selecting = on;
@@ -541,6 +556,20 @@ function bindSelection(reload) {
     } catch (err) { toast(err.message, 'error'); }
   };
   if (manage) $('#select-edit').onclick = () => bulkEditDialog(Array.from(state.selected), () => { refreshBar(); reload(); });
+  const selShelf = $('#select-shelf');
+  if (selShelf) selShelf.onclick = () => shelfDialog({ ids: Array.from(state.selected), onDone: reload });
+  const selUnshelf = $('#select-unshelf');
+  if (selUnshelf) selUnshelf.onclick = async () => {
+    const n = state.selected.size;
+    if (!n || !confirm(`Retirer ${n} livre(s) de cette étagère ? Les livres ne sont pas supprimés.`)) return;
+    try {
+      const r = await api(`/api/shelves/${state.catalog.shelf}/books/remove`, { method: 'POST', body: { ids: Array.from(state.selected) } });
+      toast(`${r.removed} livre(s) retiré(s) de l'étagère.`);
+      state.selected.clear();
+      refreshBar();
+      reload();
+    } catch (err) { toast(err.message, 'error'); }
+  };
   const selKobo = $('#select-kobo');
   if (selKobo) selKobo.onclick = busy(async (btn) => {
     const ids = Array.from(state.selected);
@@ -700,6 +729,7 @@ function catalogParams(extra = {}) {
   if (c.series) params.set('series', c.series);
   if (c.author) params.set('author', c.author);
   if (c.since) params.set('since', c.since);
+  if (c.shelf && shelvesOn()) params.set('shelf', c.shelf);
   if (c.missing && canManage()) params.set('missing', c.missing);
   if (features().tags && c.tag) params.set('tag', c.tag);
   if (isMember() && c.reader && show('reader')) params.set('reader', c.reader);
@@ -831,7 +861,7 @@ async function loadBooks(append) {
       ${meta || ebookBadge ? `<div class="meta">${meta}${ebookBadge}</div>` : ''}
     </a>`;
   }).join('');
-  const filtered = c.missing || c.q || c.category || c.tag || c.mine || c.reader || c.collection || c.series || c.author || c.since || c.status || c.format || c.reading || c.opinion || c.rating;
+  const filtered = c.missing || c.q || c.category || c.tag || c.mine || c.reader || c.collection || c.series || c.author || c.since || c.shelf || c.status || c.format || c.reading || c.opinion || c.rating;
   if (table) { list.style.setProperty('--cols', table.cols); list.style.setProperty('--cols-narrow', table.colsNarrow); }
   if (append) list.insertAdjacentHTML('beforeend', html);
   else if (table && html) { list.innerHTML = table.head + html; bindListHead(list); }
