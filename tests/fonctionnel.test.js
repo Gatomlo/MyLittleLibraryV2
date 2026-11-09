@@ -297,6 +297,21 @@ test('epub : import, droits de lecture, envoi vers une liseuse', async () => {
   sdb.close();
   ok(await a.post(`${api}/kobo/devices/${dev.id}/db/applied`, { token: coll.token }));
   assert.deepEqual(ok(await a.get(`${api}/kobo/devices`))[0].collections, 'both');
+  // Collections d'apres les etageres (partagees : liseuse sans proprietaire), avec prefixe.
+  ok(await a.put(`${api}/settings`, { features: { shelves: true } }));
+  ok(await a.post(`${api}/shelves`, { name: 'À lire cet été', shared: true, ids: [imp.bookId] }));
+  const viaShelves = ok(await a.put(`${api}/kobo/devices/${dev.id}`, { collections: ['shelves'], shelfPrefix: '★ ' }));
+  assert.deepEqual([viaShelves.collections, viaShelves.collectionSources, viaShelves.shelfPrefix], ['shelves', ['shelves'], '★ ']);
+  const shelfScan = ok(await kscan({ 'X-Kobo-Write': '1' }, fs.readFileSync(tmp))).dbUpdate;
+  assert.ok(shelfScan.collections > 0);
+  fs.writeFileSync(tmp, (await a.get(`${api}/kobo/devices/${dev.id}/db/${shelfScan.token}`, { buffer: true })).body);
+  sdb = new DatabaseSync(tmp, { readOnly: true });
+  assert.deepEqual(sdb.prepare('SELECT ShelfName FROM ShelfContent ORDER BY 1').all().map((r) => r.ShelfName), ['★ À lire cet été'], 'categories et tags retires, etagere ajoutee');
+  sdb.close();
+  ok(await a.post(`${api}/kobo/devices/${dev.id}/db/applied`, { token: shelfScan.token }));
+  assert.equal(ok(await a.put(`${api}/kobo/devices/${dev.id}`, { collections: 'both' })).collections, 'both');
+  assert.deepEqual(ok(await a.put(`${api}/kobo/devices/${dev.id}`, { collections: ['tags', 'shelves', 'x'] })).collectionSources, ['tags', 'shelves']);
+  ok(await a.put(`${api}/kobo/devices/${dev.id}`, { collections: 'both', shelfPrefix: '' }));
   const richItem = ok(await a.get(`${api}/kobo/devices/${dev.id}`)).items[0];
   ok(await a.post(`${api}/kobo/items/${richItem.id}/removed`, {}));
   assert.equal(ok(await a.get(`${api}/kobo/devices/${dev.id}`)).items.length, 0);
