@@ -1147,3 +1147,7 @@ tr.row-selected td { background: var(--accent-soft); }
 .cam-tools [aria-pressed="true"] { background: var(--accent, #2563eb); color: #fff; }
 .cam-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; width: 100%; }
 .cam-panel[hidden] { display: none; }
+
+/* Fiche livre : boutons precedent / suivant */
+.book-nav-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.book-nav { display: inline-flex; gap: 8px; }

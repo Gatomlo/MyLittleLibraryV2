@@ -26,10 +26,18 @@ async function viewBook(id) {
   // Ouverte depuis une liste qui donne un retour (resultats d'un import epub).
   let back = null;
   try { const r = JSON.parse(sessionStorage.getItem('mll-after-edit') || 'null'); if (r && r.id === book.id && r.label) back = r; } catch (e) { /* rien */ }
+  // Livres voisins dans le catalogue (ordre et filtres en cours).
+  const ids = state.catalogIds || [];
+  const pos = ids.indexOf(book.id);
+  const prevId = pos > 0 ? ids[pos - 1] : null;
+  const nextId = pos >= 0 && pos < ids.length - 1 ? ids[pos + 1] : null;
+  const navHtml = prevId || nextId ? `<span class="book-nav">
+    ${prevId ? `<a class="btn" href="#/book/${prevId}" title="Livre précédent" aria-label="Livre précédent">‹ <span class="hide-mobile">Précédent</span></a>` : ''}
+    ${nextId ? `<a class="btn" href="#/book/${nextId}" title="Livre suivant" aria-label="Livre suivant"><span class="hide-mobile">Suivant</span> ›</a>` : ''}</span>` : '';
   view().innerHTML = `
     ${koboReturn && koboReturn.bookId === book.id
       ? `<div class="btn-row" style="margin-bottom:12px"><a class="btn btn-primary" href="#/kobo/${koboReturn.deviceId}">← Retour à la liseuse ${esc(koboReturn.name)}</a></div>`
-      : `<p><a href="${esc(back ? back.hash : '#/')}">← ${esc(back ? back.label : 'Catalogue')}</a></p>`}
+      : `<p class="book-nav-row"><a href="${esc(back ? back.hash : '#/')}">← ${esc(back ? back.label : 'Catalogue')}</a>${navHtml}</p>`}
     <div class="book-detail">
       <div>${coverHtml(book)}</div>
       <div>

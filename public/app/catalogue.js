@@ -748,6 +748,8 @@ async function loadBooks(append) {
   const data = await api(`/api/${isMember() ? 'books' : 'public/books'}?${catalogParams()}`);
   const list = $('#books');
   if (!list) return;
+  // Ordre des livres affiches : sert aux boutons precedent / suivant des fiches.
+  state.catalogIds = (append ? state.catalogIds || [] : []).concat(data.items.map((b) => b.id));
   // Elements de la miniature choisis dans les Reglages.
   const card = new Set(catalogConf().card);
   const has = (k) => card.has(k);
