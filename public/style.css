@@ -1186,3 +1186,4 @@ tr.row-selected td { background: var(--accent-soft); }
 .shelf-new { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
 .shelf-new input[name=name] { flex: 1 1 160px; min-width: 0; }
 .chip-shelf { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
+.shelves-grid .card { margin: 0; }
