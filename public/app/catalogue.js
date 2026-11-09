@@ -285,7 +285,7 @@ async function viewCatalog() {
   function renderToggle() {
     const btn = $('#filters-toggle');
     if (!btn) return;
-    const n = ['category', 'collection', 'series', 'tag', 'mine', 'reader', 'status', 'format', 'reading', 'opinion', 'rating', 'kobo'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0) + (c.reverse ? 1 : 0);
+    const n = ['category', 'collection', 'series', 'author', 'tag', 'mine', 'reader', 'status', 'format', 'reading', 'opinion', 'rating', 'kobo'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0) + (c.reverse ? 1 : 0);
     btn.textContent = n ? `Filtres · ${n}` : 'Filtres';
     btn.classList.toggle('btn-primary', n > 0);
   }
@@ -303,6 +303,7 @@ async function viewCatalog() {
     const chips = [];
     if (c.collection && !$('#coll')) chips.push(['collection', 'Collection : ' + c.collection]);
     if (c.series && !$('#seriesf')) chips.push(['series', 'Série : ' + c.series]);
+    if (c.author) chips.push(['author', 'Auteur : ' + c.author]);
     if (c.tag && !$('#tagf')) chips.push(['tag', 'Filtré par tag']);
     if (c.category && !$('#cat')) chips.push(['category', 'Filtré par catégorie']);
     if (c.missing && canManage()) chips.push(['missing', missingLabel(c.missing)]);
@@ -645,6 +646,7 @@ function catalogParams(extra = {}) {
   if ((show('sort') || tableView()) && c.reverse) params.set('reverse', '1');
   if (c.collection) params.set('collection', c.collection);
   if (c.series) params.set('series', c.series);
+  if (c.author) params.set('author', c.author);
   if (c.missing && canManage()) params.set('missing', c.missing);
   if (features().tags && c.tag) params.set('tag', c.tag);
   if (isMember() && c.reader && show('reader')) params.set('reader', c.reader);
@@ -773,7 +775,7 @@ async function loadBooks(append) {
       ${meta || ebookBadge ? `<div class="meta">${meta}${ebookBadge}</div>` : ''}
     </a>`;
   }).join('');
-  const filtered = c.missing || c.q || c.category || c.tag || c.mine || c.reader || c.collection || c.series || c.status || c.format || c.reading || c.opinion || c.rating;
+  const filtered = c.missing || c.q || c.category || c.tag || c.mine || c.reader || c.collection || c.series || c.author || c.status || c.format || c.reading || c.opinion || c.rating;
   if (table) { list.style.setProperty('--cols', table.cols); list.style.setProperty('--cols-narrow', table.colsNarrow); }
   if (append) list.insertAdjacentHTML('beforeend', html);
   else if (table && html) { list.innerHTML = table.head + html; bindListHead(list); }
