@@ -538,6 +538,9 @@ test('sauvegarde et archive : export, restauration dans une nouvelle bibliothequ
   assert.notEqual(slug, ctx.lib.slug);
   const list = ok(await a.get(`/${slug}/api/books?q=miserables`));
   assert.equal(list.total, 1);
+  // Filtre auteur exact (et non une recherche texte).
+  assert.equal(ok(await a.get(`/${slug}/api/books?author=${encodeURIComponent('Victor Hugo')}`)).total, 1);
+  assert.equal(ok(await a.get(`/${slug}/api/books?author=Victor`)).total, 0);
   assert.equal((await ctx.anonyme.get(`/${slug}/${list.items[0].coverUrl}`, { buffer: true })).status, 200);
   const eb = ok(await a.get(`/${slug}/api/books?format=ebook`));
   assert.equal((await a.get(`/${slug}/api/public/books/${eb.items[0].id}/epub`, { buffer: true })).status, 200);
