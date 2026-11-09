@@ -34,6 +34,7 @@ async function viewSettings() {
     card: (s.catalog && s.catalog.card) || ALL_CATALOG_CARD,
     list: (s.catalog && s.catalog.list) || DEFAULT_CATALOG_LIST,
   };
+  const bookPage = { related: 'bottom', copies: 'bottom', ...(s.bookPage || {}) };
   const search = { books: [], wishes: [], url: '', label: '', ...(s.search || {}) };
   const libraryUrl = location.origin + LIB;
   view().innerHTML = `
@@ -195,6 +196,16 @@ async function viewSettings() {
           return `<label class="check" ${off ? 'title="Active d\'abord l\'option correspondante"' : ''}><input type="checkbox" name="list" value="${k}" ${catalog.list.includes(k) ? 'checked' : ''}> ${l}${off ? ' <span class="small muted">(option désactivée)</span>' : ''}</label>`;
         }).join('')}
       </div>
+    </form>
+
+    <h2>Fiche d'un livre</h2>
+    <form class="card" id="book-page-form">
+      ${[['related', 'Autres livres de la série et des auteurs'], ['copies', 'Exemplaires, prêts et réservations']].map(([k, l]) => `
+        <label${k === 'copies' ? ' style="margin-top:14px"' : ''}>${l}</label>
+        <div class="btn-row">
+          ${[['bottom', 'Sous la fiche'], ['side', 'Colonne de droite (PC)'], ['off', 'Masqué']].map(([v, t]) => `
+            <label class="check"><input type="radio" name="${k}" value="${v}" ${bookPage[k] === v ? 'checked' : ''}> ${t}</label>`).join('')}
+        </div>`).join('')}
     </form>
 
     <h2>Classement ${hint('Rechercher, renommer, fusionner ou supprimer les catégories, tags, auteurs, séries, éditeurs et collections.')}</h2>
@@ -456,6 +467,16 @@ async function viewSettings() {
       await api('/api/settings', { method: 'PUT', body: { catalog: { filters, position, card, list } } });
       await loadSettings();
       toast('Catalogue mis à jour.');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  // Fiche d'un livre : enregistre des qu'on change.
+  $('#book-page-form').addEventListener('change', async () => {
+    const pick = (k) => ($(`#book-page-form [name=${k}]:checked`) || {}).value || 'bottom';
+    try {
+      await api('/api/settings', { method: 'PUT', body: { bookPage: { related: pick('related'), copies: pick('copies') } } });
+      await loadSettings();
+      toast('Fiche du livre mise à jour.');
     } catch (err) { toast(err.message, 'error'); }
   });
 
