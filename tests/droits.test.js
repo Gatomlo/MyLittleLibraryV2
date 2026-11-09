@@ -218,7 +218,9 @@ test('etageres : option, listes privees ou partagees, droits', async () => {
   await check('lecteur', 'GET', '/shelves', null, 409);
   await check('lecteur', 'POST', '/shelves', { name: 'x' }, 409);
   await check('bibliothecaire', 'PUT', '/settings', { features: { shelves: true } }, 403);
+  await check('gestionnaire', 'PUT', '/settings', { catalog: { filters: ['search', 'sort'] } }, 200);
   await check('gestionnaire', 'PUT', '/settings', { features: { shelves: true } }, 200);
+  assert.deepEqual((await check('lecteur', 'GET', '/settings', null, 200)).body.catalog.filters, ['search', 'shelf', 'sort'], 'filtre ajouté à la première activation');
   assert.equal((await check('lecteur', 'GET', '/settings', null, 200)).body.features.shelves, true);
 
   const mine = (await check('lecteur', 'POST', '/shelves', { name: 'À lire cet été', shared: true, ids: [bookId] }, 200)).body;
