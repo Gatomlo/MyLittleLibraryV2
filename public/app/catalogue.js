@@ -3,7 +3,7 @@ import './accueil-site.js';
 import { state, isMember, canManage, features, statusesOn, READING_LABELS, OPINION_LABELS, OPINION_ICONS } from './etat.js';
 import { $, $$, view, esc, hint, api, toast, debounce, fmtDate, coverHtml, availabilityBadge } from './utilitaires.js';
 import { scanIsbn } from './scanner.js';
-import { onLeave } from './routage.js';
+import { onLeave, hashParams, replaceHash } from './routage.js';
 import { kobo, koboOn, busy, pushManyToKobo } from './kobo.js';
 import { missingLabel } from './incompletes.js';
 import { icon } from './icones.js';
@@ -111,8 +111,54 @@ const catalogConf = () => {
     filters: Array.isArray(conf.filters) ? conf.filters : ALL_CATALOG_FILTERS, position: conf.position === 'left' ? 'left' : 'top',
     card: Array.isArray(conf.card) ? conf.card : ALL_CATALOG_CARD,
     list: Array.isArray(conf.list) ? conf.list : DEFAULT_CATALOG_LIST,
+    infinite: !!conf.infinite,
   };
 };
+
+// Filtres du catalogue dans l'adresse (#/?author=...) : lien partageable, bouton precedent.
+const URL_KEYS = ['q', 'category', 'collection', 'series', 'author', 'tag', 'status', 'format', 'reading', 'opinion', 'rating', 'reader', 'statusUser', 'missing', 'since'];
+function stateToParams(c) {
+  const p = new URLSearchParams();
+  // statusUser : le compte connecte est le choix par defaut, inutile dans l'adresse.
+  URL_KEYS.forEach((k) => { if (c[k] && !(k === 'statusUser' && String(c[k]) === String(state.user && state.user.id))) p.set(k, String(c[k])); });
+  if (c.mine) p.set('mine', '1');
+  if (c.sort && c.sort !== 'title') p.set('sort', c.sort);
+  if (c.reverse) p.set('reverse', '1');
+  return p;
+}
+// Adresse -> etat (seulement si elle porte des filtres et differe de l'etat courant).
+function readUrlFilters(c) {
+  const q = hashParams();
+  if (![...q.keys()].length) return;
+  const t = {};
+  URL_KEYS.forEach((k) => { t[k] = q.get(k) || ''; });
+  Object.assign(t, { mine: q.get('mine') === '1', sort: q.get('sort') || 'title', reverse: q.get('reverse') === '1' });
+  if (stateToParams(t).toString() === stateToParams(c).toString()) return;
+  Object.assign(c, t, { page: 1 });
+}
+// Etat -> adresse, tant qu'on est bien sur la page catalogue.
+function syncUrl(c) {
+  if (!/^#\/?(\?.*)?$/.test(location.hash)) return;
+  const qs = stateToParams(c).toString();
+  const next = '#/' + (qs ? '?' + qs : '');
+  if (next !== location.hash) replaceHash(next);
+}
+
+// Defilement continu (option des Reglages) : la suite se charge quand le bas approche.
+let moreObserver = null;
+let noAuto = false;
+function armMore() {
+  if (moreObserver) { moreObserver.disconnect(); moreObserver = null; }
+  const btn = $('#more-btn');
+  if (noAuto || !btn || !catalogConf().infinite || !('IntersectionObserver' in window)) return;
+  moreObserver = new IntersectionObserver((entries) => {
+    if (!entries[0].isIntersecting) return;
+    moreObserver.disconnect();
+    moreObserver = null;
+    btn.click();
+  }, { rootMargin: '600px' });
+  moreObserver.observe(btn);
+}
 
 // [cle, libelle, option de la bibliotheque necessaire]
 const CATALOG_FILTER_LABELS = [
@@ -166,6 +212,7 @@ const forgetMembers = () => { membersCache = null; };
 
 async function viewCatalog() {
   const c = state.catalog;
+  readUrlFilters(c);
   const conf = catalogConf();
   const show = (k) => conf.filters.includes(k);
   const withStatus = statusesOn() && show('statusUser');
@@ -285,7 +332,7 @@ async function viewCatalog() {
   function renderToggle() {
     const btn = $('#filters-toggle');
     if (!btn) return;
-    const n = ['category', 'collection', 'series', 'author', 'tag', 'mine', 'reader', 'status', 'format', 'reading', 'opinion', 'rating', 'kobo'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0) + (c.reverse ? 1 : 0);
+    const n = ['category', 'collection', 'series', 'author', 'since', 'tag', 'mine', 'reader', 'status', 'format', 'reading', 'opinion', 'rating', 'kobo'].filter((k) => c[k]).length + (c.sort && c.sort !== 'title' ? 1 : 0) + (c.reverse ? 1 : 0);
     btn.textContent = n ? `Filtres · ${n}` : 'Filtres';
     btn.classList.toggle('btn-primary', n > 0);
   }
@@ -304,6 +351,7 @@ async function viewCatalog() {
     if (c.collection && !$('#coll')) chips.push(['collection', 'Collection : ' + c.collection]);
     if (c.series && !$('#seriesf')) chips.push(['series', 'Série : ' + c.series]);
     if (c.author) chips.push(['author', 'Auteur : ' + c.author]);
+    if (c.since) chips.push(['since', `Ajoutés depuis ${c.since} jours`]);
     if (c.tag && !$('#tagf')) chips.push(['tag', 'Filtré par tag']);
     if (c.category && !$('#cat')) chips.push(['category', 'Filtré par catégorie']);
     if (c.missing && canManage()) chips.push(['missing', missingLabel(c.missing)]);
@@ -375,12 +423,16 @@ async function viewCatalog() {
   state.catalogBack = null;
   if (back && back.page > 1 && c.page === back.page) {
     c.page = 1;
+    noAuto = true;
     await loadBooks(false);
     while (c.page < back.page) { c.page++; await loadBooks(true); }
+    noAuto = false;
+    armMore();
   } else await loadBooks(false);
   if (back) window.scrollTo(0, back.y);
   // En quittant pour une fiche : memorise la position.
   onLeave(() => {
+    if (moreObserver) { moreObserver.disconnect(); moreObserver = null; }
     state.catalogBack = location.hash.startsWith('#/book/') ? { y: window.scrollY, page: c.page } : null;
   });
 }
@@ -647,6 +699,7 @@ function catalogParams(extra = {}) {
   if (c.collection) params.set('collection', c.collection);
   if (c.series) params.set('series', c.series);
   if (c.author) params.set('author', c.author);
+  if (c.since) params.set('since', c.since);
   if (c.missing && canManage()) params.set('missing', c.missing);
   if (features().tags && c.tag) params.set('tag', c.tag);
   if (isMember() && c.reader && show('reader')) params.set('reader', c.reader);
@@ -745,6 +798,7 @@ function bindListHead(list) {
 async function loadBooks(append) {
   const c = state.catalog;
   const withStatus = statusesOn();
+  if (!append) syncUrl(c);
   const data = await api(`/api/${isMember() ? 'books' : 'public/books'}?${catalogParams()}`);
   const list = $('#books');
   if (!list) return;
@@ -777,7 +831,7 @@ async function loadBooks(append) {
       ${meta || ebookBadge ? `<div class="meta">${meta}${ebookBadge}</div>` : ''}
     </a>`;
   }).join('');
-  const filtered = c.missing || c.q || c.category || c.tag || c.mine || c.reader || c.collection || c.series || c.author || c.status || c.format || c.reading || c.opinion || c.rating;
+  const filtered = c.missing || c.q || c.category || c.tag || c.mine || c.reader || c.collection || c.series || c.author || c.since || c.status || c.format || c.reading || c.opinion || c.rating;
   if (table) { list.style.setProperty('--cols', table.cols); list.style.setProperty('--cols-narrow', table.colsNarrow); }
   if (append) list.insertAdjacentHTML('beforeend', html);
   else if (table && html) { list.innerHTML = table.head + html; bindListHead(list); }
@@ -788,6 +842,7 @@ async function loadBooks(append) {
   $('#more').innerHTML = shown < data.total ? '<button class="btn" id="more-btn">Afficher plus</button>' : '';
   const more = $('#more-btn');
   if (more) more.onclick = () => { c.page++; loadBooks(true); };
+  armMore();
 }
 
 // Choix de plusieurs comptes (lecteurs d'un livre...) : pastilles retirables et liste

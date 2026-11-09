@@ -74,6 +74,9 @@ natif à compiler). Compatible avec la passerelle [node-gateway](../node-gateway
   collections, tags, disponibilité, papier/numérique, mes livres, lecteur, compte des statuts, statut de lecture, avis, tri — chacun indépendant), en haut
   ou dans une colonne à gauche. Même choix pour le catalogue WordPress (générateur de
   shortcode : `filtres="..."`, `position="gauche"`). Réglages présentés en accordéon.
+- **Navigation du catalogue** : les filtres sont dans l'adresse (`#/?author=Victor+Hugo&sort=recent` : lien partageable, bouton « précédent » du navigateur) ; retour d'une fiche (ou d'une autre liste) à la position de défilement et aux pages déjà chargées ; option **Défilement continu** (Réglages > Affichage du catalogue) ; filtre « ajoutés depuis N jours » (carte Nouveautés de l'accueil).
+- **Fiche livre** : auteurs, séries et catégories cliquables (catalogue filtré, auteur exact) ; boutons précédent / suivant dans l'ordre du catalogue ; bandeaux « autres livres de la série / du même auteur » et gestion des exemplaires placés au choix sous la fiche, en colonne de droite ou de gauche, ou masqués (Réglages > Fiche d'un livre).
+- **Doublons à l'ajout** : à la saisie (ISBN, ou titre + auteur identiques sans tenir compte des accents), les fiches déjà au catalogue sont signalées avec un bouton « Ajouter un exemplaire » à la fiche existante.
 - **Miniatures du catalogue** paramétrables (Réglages > Affichage du catalogue) : couverture, titre,
   auteurs, série et tome, collection, catégories, tags, statut de lecture, note (étoiles), disponibilité, bandeau « Numérique »
   en travers de la couverture.

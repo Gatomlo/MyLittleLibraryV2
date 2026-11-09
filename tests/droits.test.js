@@ -59,6 +59,7 @@ test('lecteur : catalogue en lecture seule et ses statuts', async () => {
     ['GET', '/export/copies.csv'], ['POST', '/books/bulk-delete', { ids: [bookId] }], ['POST', '/categories', { name: 'x' }],
     ['PUT', '/settings', { loanDays: 5 }], ['POST', '/empty', { confirm: 'Test' }], ['GET', '/Borrowers'], ['GET', '/borrowers/'],
     ['POST', '/copies/1/move', { bookId }], ['POST', '/labels/reset'], ['POST', '/labels/clear', { kind: 'spine' }],
+    ['GET', '/books/duplicates?title=x'],
   ]) await check('lecteur', method, path, body, 403);
   const b = await check('lecteur', 'GET', `/books/${bookId}`, null, 200);
   assert.equal(b.body.history, undefined, 'pas d\'historique des prets pour un lecteur');
@@ -68,6 +69,7 @@ test('lecteur : catalogue en lecture seule et ses statuts', async () => {
 test('bibliothecaire : catalogue et prets, pas les reglages', async () => {
   await check('bibliothecaire', 'GET', '/borrowers', null, 200);
   await check('bibliothecaire', 'GET', '/loans', null, 200);
+  await check('bibliothecaire', 'GET', '/books/duplicates?title=x', null, 200);
   const b = await check('bibliothecaire', 'POST', '/books', { title: 'Ajout du bibliothecaire' }, 200);
   await check('bibliothecaire', 'DELETE', `/books/${b.body.id}`, null, 200);
   // Seule exception aux reglages : le format de planche des etiquettes.

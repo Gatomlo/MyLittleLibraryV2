@@ -88,7 +88,7 @@ async function viewBook(id) {
   $$('[data-tag]').forEach((a) => {
     a.onclick = (e) => {
       e.preventDefault();
-      Object.assign(state.catalog, { q: '', author: '', category: '', collection: '', series: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '', tag: a.dataset.tag, page: 1 });
+      Object.assign(state.catalog, { q: '', author: '', since: '', category: '', collection: '', series: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '', tag: a.dataset.tag, page: 1 });
       go('#/');
     };
   });
@@ -96,7 +96,7 @@ async function viewBook(id) {
   $$('[data-category], [data-author]').forEach((a) => {
     a.onclick = (e) => {
       e.preventDefault();
-      Object.assign(state.catalog, { q: '', author: a.dataset.author || '', category: a.dataset.category || '', collection: '', series: '', tag: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '', page: 1 });
+      Object.assign(state.catalog, { q: '', author: a.dataset.author || '', since: '', category: a.dataset.category || '', collection: '', series: '', tag: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '', page: 1 });
       go('#/');
     };
   });
@@ -104,7 +104,7 @@ async function viewBook(id) {
   $$('[data-collection], [data-series]').forEach((a) => {
     a.onclick = (e) => {
       e.preventDefault();
-      Object.assign(state.catalog, { q: '', author: '', category: '', tag: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '',
+      Object.assign(state.catalog, { q: '', author: '', since: '', category: '', tag: '', status: '', format: '', reading: '', opinion: '', rating: '', mine: false, reader: '',
         collection: a.dataset.collection || '', series: a.dataset.series || '', page: 1 });
       go('#/');
     };

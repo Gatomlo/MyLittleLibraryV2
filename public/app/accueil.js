@@ -87,6 +87,7 @@ function homeGo(target) {
   if (target.startsWith('#/')) { if (target === '#/wishes') wishState.owners = 'all'; return go(target); }
   if (target === 'reading') return openCatalog({ reading: 'reading', statusUser: String(state.user.id) });
   if (target === 'recent') return openCatalog({ sort: 'recent' });
+  if (target === 'month') return openCatalog({ sort: 'recent', since: '30' });
   if (target === 'toread') return openCatalog({ reading: 'to_read', statusUser: String(state.user.id) });
   pending.loansTab = target;
   go('#/loans');
@@ -217,6 +218,9 @@ function bindHomeCards(d) {
 const HOME_LINKS = { reading: ['reading', 'Tout voir'], due: ['open', 'Page Prêts'], wishes: ['#/wishes', 'Tout voir'], news: ['recent', 'Catalogue'], goal: ['#/stats', 'Statistiques'],
   toread: ['toread', 'Tout voir'], topwishes: ['#/wishes', 'Tous les souhaits'], activity: ['open', 'Page Prêts'], kobo: ['#/kobo', 'Toutes les liseuses'] };
 
+// Lien de l'en-tete d'une carte ; Nouveautes : les ajouts des 30 derniers jours.
+const homeLink = (key, d) => (key === 'news' && d.news && d.news.month ? ['month', `Ajoutés ce mois-ci (${d.news.month})`] : HOME_LINKS[key]);
+
 async function viewDashboard() {
   const home = await api('/api/home');
   const shown = home.cards.filter((c) => c.shown);
@@ -234,7 +238,7 @@ async function viewDashboard() {
     <div class="home-cards">${shown.map((c) => `<section class="card home-card" aria-labelledby="hc-${c.key}">
         <div class="home-card-head"><span class="h-icon" style="${colorVars(HOME_META[c.key].color)}" aria-hidden="true">${icon(HOME_META[c.key].icon, 18)}</span>
           <h2 id="hc-${c.key}">${esc(c.label)}${c.key === 'wishes' && d.wishes.count ? ` <span class="muted">(${d.wishes.count})</span>` : ''}</h2>
-          ${HOME_LINKS[c.key] ? `<button type="button" class="link-btn" data-home-go="${HOME_LINKS[c.key][0]}">${HOME_LINKS[c.key][1]}</button>` : ''}</div>
+          ${homeLink(c.key, d) ? `<button type="button" class="link-btn" data-home-go="${homeLink(c.key, d)[0]}">${esc(homeLink(c.key, d)[1])}</button>` : ''}</div>
         ${homeCardBody(c.key, d)}</section>`).join('')}</div>
     <nav class="home-tiles" id="home-tiles" aria-label="Accueil">${shown.map((c, i) => { const s = homeSummary(c.key, d); return `
         <button type="button" class="home-tile" data-home-go="${esc(s.go)}" data-lines="${s.lines.length}"${s.value ? ' data-value' : ''} style="${colorVars(HOME_META[c.key].color)}" ${foldTiles && i >= HOME_PHONE_TILES ? 'data-extra hidden' : ''}>

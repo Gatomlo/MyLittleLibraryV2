@@ -538,6 +538,16 @@ test('sauvegarde et archive : export, restauration dans une nouvelle bibliothequ
   assert.notEqual(slug, ctx.lib.slug);
   const list = ok(await a.get(`/${slug}/api/books?q=miserables`));
   assert.equal(list.total, 1);
+  // Doublons : meme ISBN, ou meme titre (sans accents) avec auteur en commun.
+  const uniq = ok(await a.post(`/${slug}/api/books`, { title: 'Zéphyr Unique', authors: 'Ann Auteur, Bob Second', isbn: '978-0-306-40615-7' }));
+  const dupIsbn = ok(await a.get(`/${slug}/api/books/duplicates?isbn=978-0-306-40615-7`));
+  assert.deepEqual(dupIsbn.map((d) => [d.id, d.reason]), [[uniq.id, 'isbn']]);
+  const dupTitle = ok(await a.get(`/${slug}/api/books/duplicates?title=${encodeURIComponent('zephyr unique')}&authors=${encodeURIComponent('bob second')}`));
+  assert.deepEqual(dupTitle.map((d) => [d.id, d.reason, d.copies]), [[uniq.id, 'title', 1]]);
+  assert.equal(ok(await a.get(`/${slug}/api/books/duplicates?title=${encodeURIComponent('Zéphyr Unique')}&authors=${encodeURIComponent('Autre Personne')}`)).length, 0);
+  assert.equal(ok(await a.get(`/${slug}/api/books/duplicates?title=${encodeURIComponent('Zéphyr Unique')}&exclude=${uniq.id}`)).length, 0);
+  // Nouveautes : ajoutes depuis N jours.
+  assert.equal(ok(await a.get(`/${slug}/api/books?q=miserables&since=30`)).total, list.total);
   // Filtre auteur exact (et non une recherche texte).
   assert.equal(ok(await a.get(`/${slug}/api/books?author=${encodeURIComponent('Victor Hugo')}`)).total, 1);
   assert.equal(ok(await a.get(`/${slug}/api/books?author=Victor`)).total, 0);

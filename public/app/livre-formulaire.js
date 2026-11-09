@@ -65,6 +65,7 @@ async function viewBookForm(id) {
           </div>
         </div>
       </div>
+      <div id="dup-box"></div>
       <div class="field"><label for="title">Titre *</label><input id="title" name="title" required value="${esc(b.title)}"></div>
       <div class="field"><label for="subtitle">Sous-titre</label><input id="subtitle" name="subtitle" value="${esc(b.subtitle)}"></div>
       <div class="field"><label for="authors">Auteur(s)</label><input id="authors" name="authors" placeholder="Séparés par des virgules" value="${esc(b.authors)}" autocomplete="off"></div>
@@ -169,6 +170,32 @@ async function viewBookForm(id) {
   };
   $('#cover-remove').onclick = () => { form.cover = { url: '', remoteUrl: '', data: '', removed: true }; renderCover(); };
 
+  // Doublons : meme ISBN, ou meme titre et auteur, deja au catalogue. Propose d'ouvrir la
+  // fiche ou d'y ajouter un exemplaire papier.
+  async function checkDuplicates() {
+    const box = $('#dup-box');
+    if (!box) return;
+    const params = new URLSearchParams({ isbn: f.isbn.value, title: f.title.value, authors: f.authors.value });
+    if (editing) params.set('exclude', b.id);
+    const list = await api(`/api/books/duplicates?${params}`).catch(() => []);
+    if (!$('#dup-box')) return;
+    if (!list.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="info-box"><strong>Peut-être déjà au catalogue</strong><ul class="list">${list.map((x) => `<li class="list-item">
+      <div class="grow"><a href="#/book/${x.id}">${esc(x.title)}</a><div class="small muted">${[esc(x.authors), x.reason === 'isbn' ? 'même ISBN' : 'même titre', `${x.copies} exemplaire${x.copies > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}</div></div>
+      <button type="button" class="btn btn-small" data-dup-copy="${x.id}">${iconText('add', 'Ajouter un exemplaire')}</button></li>`).join('')}</ul></div>`;
+    $$('[data-dup-copy]', box).forEach((btn) => {
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          const r = await api(`/api/books/${btn.dataset.dupCopy}/copies`, { method: 'POST', body: { count: 1 } });
+          toast(`Exemplaire ${r.codes[0]} ajouté à la fiche existante.`);
+          go(`#/book/${btn.dataset.dupCopy}`);
+        } catch (err) { btn.disabled = false; toast(err.message, 'error'); }
+      };
+    });
+  }
+  ['title', 'authors', 'isbn'].forEach((k) => f[k].addEventListener('change', debounce(checkDuplicates, 200)));
+
   async function lookup(raw) {
     const out = $('#isbn-result');
     out.innerHTML = '<span class="muted">Recherche…</span>';
@@ -178,11 +205,6 @@ async function viewBookForm(id) {
       $('#isbn-search').value = r.isbn;
       f.isbn.value = r.isbn;
       let html = '';
-      const others = r.existing.filter((x) => !editing || x.id !== b.id);
-      if (others.length) {
-        html += `<div class="info-box">Déjà au catalogue : ${others.map((x) => `<a href="#/book/${x.id}">${esc(x.title)}</a>`).join(', ')}.
-          Pour un exemplaire supplémentaire, ouvre la fiche et utilise « Ajouter un exemplaire ».</div>`;
-      }
       if (r.found) {
         const d = r.found;
         const fill = (name, value) => { if (value && (!editing || !f[name].value)) f[name].value = value; };
@@ -217,12 +239,14 @@ async function viewBookForm(id) {
           toast('Fiche remplacée : vérifie puis enregistre.');
         };
         if (!editing) f.title.focus();
+        checkDuplicates();
         return;
       } else {
         html += '<span class="muted">Aucune information trouvée pour cet ISBN : complète la fiche à la main.</span>';
       }
       out.innerHTML = html;
       if (!editing) f.title.focus();
+      checkDuplicates();
     } catch (err) {
       out.innerHTML = `<span style="color:var(--danger)">${esc(err.message)}</span>`;
     }

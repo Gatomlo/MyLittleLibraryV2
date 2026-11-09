@@ -83,10 +83,38 @@ function leavePage() {
   list.forEach((fn) => { try { fn(); } catch (e) { /* rien */ } });
 }
 
+// Hash = chemin + ?requete (filtres du catalogue, lien partageable).
+function hashParts() {
+  const raw = location.hash.replace(/^#/, '');
+  const i = raw.indexOf('?');
+  return { path: decodeURIComponent(i < 0 ? raw : raw.slice(0, i)) || '/', query: i < 0 ? '' : raw.slice(i + 1) };
+}
+const hashParams = () => new URLSearchParams(hashParts().query);
+
+// Remplace le hash sans changer de page ni creer d'entree d'historique.
+let lastHash = null;
+function replaceHash(hash) {
+  history.replaceState(null, '', hash);
+  lastHash = location.hash || '#/';
+}
+
+// Position de defilement par page : retrouvee au retour (bouton precedent du navigateur).
+const scrollMemo = new Map();
+let byHistory = false;
+window.addEventListener('popstate', () => { byHistory = true; });
+
 async function route() {
   closeMenu();
   leavePage();
-  const path = decodeURIComponent(location.hash.replace(/^#/, '')) || '/';
+  const fromHistory = byHistory;
+  byHistory = false;
+  if (lastHash !== null) {
+    scrollMemo.delete(lastHash);
+    scrollMemo.set(lastHash, window.scrollY);
+    if (scrollMemo.size > 60) scrollMemo.delete(scrollMemo.keys().next().value);
+  }
+  lastHash = location.hash || '#/';
+  const { path } = hashParts();
   renderNav();
   window.scrollTo(0, 0);
   for (const [re, fn, needs] of (LIBRARY ? LIBRARY_ROUTES : HOME_ROUTES)) {
@@ -104,6 +132,8 @@ async function route() {
     try {
       await fn(...m.slice(1));
       announcePage();
+      const y = fromHistory ? scrollMemo.get(location.hash || '#/') : 0;
+      if (y) requestAnimationFrame(() => window.scrollTo(0, y));
     } catch (err) {
       view().innerHTML = `<div class="error-box">${esc(err.message)}</div><a class="btn" href="#/">Retour</a>`;
     }
@@ -112,4 +142,4 @@ async function route() {
   view().innerHTML = '<div class="empty">Page introuvable.</div>';
 }
 
-export { onLeave, leavePage, route };
+export { onLeave, leavePage, route, hashParams, replaceHash };

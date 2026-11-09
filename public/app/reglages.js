@@ -33,6 +33,7 @@ async function viewSettings() {
     filters: (s.catalog && s.catalog.filters) || ALL_CATALOG_FILTERS, position: (s.catalog && s.catalog.position) || 'top',
     card: (s.catalog && s.catalog.card) || ALL_CATALOG_CARD,
     list: (s.catalog && s.catalog.list) || DEFAULT_CATALOG_LIST,
+    infinite: !!(s.catalog && s.catalog.infinite),
   };
   const bookPage = { series: 'bottom', authors: 'bottom', copies: 'bottom', ...(s.bookPage || {}) };
   const search = { books: [], wishes: [], url: '', label: '', ...(s.search || {}) };
@@ -182,6 +183,7 @@ async function viewSettings() {
         <label class="check"><input type="radio" name="position" value="top" ${catalog.position !== 'left' ? 'checked' : ''}> En haut</label>
         <label class="check"><input type="radio" name="position" value="left" ${catalog.position === 'left' ? 'checked' : ''}> Colonne à gauche</label>
       </div>
+      <label class="check" style="margin-top:14px"><input type="checkbox" name="infinite" ${catalog.infinite ? 'checked' : ''}> Défilement continu (la suite se charge en descendant)</label>
       <label style="margin-top:14px">Miniature d'un livre</label>
       <div class="btn-row">
         ${CATALOG_CARD_LABELS.map(([k, l, needs]) => {
@@ -464,7 +466,7 @@ async function viewSettings() {
     const card = $$('#catalog-form [name=card]:checked').map((cb) => cb.value);
     const list = $$('#catalog-form [name=list]:checked').map((cb) => cb.value);
     try {
-      await api('/api/settings', { method: 'PUT', body: { catalog: { filters, position, card, list } } });
+      await api('/api/settings', { method: 'PUT', body: { catalog: { filters, position, card, list, infinite: !!$('#catalog-form [name=infinite]:checked') } } });
       await loadSettings();
       toast('Catalogue mis à jour.');
     } catch (err) { toast(err.message, 'error'); }
