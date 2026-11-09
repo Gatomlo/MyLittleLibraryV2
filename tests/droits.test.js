@@ -210,3 +210,55 @@ test('invitation : role du lien, jamais administrateur', async () => {
   assert.equal((await c.post(`${ctx.api}/books`, { title: 'x' })).status, 403);
   assert.equal((await client().post('/api/invitations/jeton-inconnu-0123456789', { username: 'a', password: 'mot-de-passe' })).status, 404);
 });
+
+test('etageres : option, listes privees ou partagees, droits', async () => {
+  await check('anonyme', 'GET', '/shelves', null, 401);
+  await check('etranger', 'GET', '/shelves', null, 403);
+  // Option desactivee par defaut.
+  await check('lecteur', 'GET', '/shelves', null, 409);
+  await check('lecteur', 'POST', '/shelves', { name: 'x' }, 409);
+  await check('bibliothecaire', 'PUT', '/settings', { features: { shelves: true } }, 403);
+  await check('gestionnaire', 'PUT', '/settings', { features: { shelves: true } }, 200);
+  assert.equal((await check('lecteur', 'GET', '/settings', null, 200)).body.features.shelves, true);
+
+  const mine = (await check('lecteur', 'POST', '/shelves', { name: 'À lire cet été', shared: true, ids: [bookId] }, 200)).body;
+  assert.equal(mine.shared, false, 'un lecteur ne partage pas');
+  assert.equal(mine.count, 1);
+  await check('lecteur', 'POST', '/shelves', { name: 'à lire cet été' }, 409);
+  await check('lecteur', 'POST', '/shelves', { name: '  ' }, 400);
+  const shared = (await check('gestionnaire', 'POST', '/shelves', { name: 'Coups de coeur', shared: true }, 200)).body;
+  assert.equal(shared.shared, true);
+
+  // Visibilite : les siennes et les partagees.
+  assert.deepEqual((await check('lecteur', 'GET', '/shelves', null, 200)).body.map((s) => s.name), ['À lire cet été', 'Coups de coeur']);
+  assert.deepEqual((await check('bibliothecaire', 'GET', '/shelves', null, 200)).body.map((s) => s.name), ['Coups de coeur']);
+  assert.equal((await check('lecteur', 'GET', `/books?shelf=${mine.id}`, null, 200)).body.total, 1);
+  assert.equal((await check('bibliothecaire', 'GET', `/books?shelf=${mine.id}`, null, 200)).body.total, 0);
+  assert.equal((await check('anonyme', 'GET', `/public/books?shelf=${mine.id}`, null, 200)).body.total >= 1, true, 'filtre ignore sans compte');
+  const fiche = (await check('lecteur', 'GET', `/books/${bookId}/shelves`, null, 200)).body;
+  assert.deepEqual(fiche.map((s) => [s.name, s.has]), [['À lire cet été', true], ['Coups de coeur', false]]);
+
+  // Ecriture : seulement dans ses propres etageres.
+  await check('lecteur', 'POST', `/shelves/${shared.id}/books`, { ids: [bookId] }, 403);
+  await check('bibliothecaire', 'POST', `/shelves/${mine.id}/books`, { ids: [bookId] }, 404);
+  await check('bibliothecaire', 'PUT', `/shelves/${mine.id}`, { name: 'x' }, 404);
+  await check('bibliothecaire', 'DELETE', `/shelves/${mine.id}`, null, 404);
+  await check('gestionnaire', 'DELETE', `/shelves/${mine.id}`, null, 404);
+  assert.equal((await check('gestionnaire', 'POST', `/shelves/${shared.id}/books`, { ids: [bookId, 999999] }, 200)).body.added, 1);
+  assert.equal((await check('lecteur', 'POST', `/shelves/${mine.id}/books/remove`, { ids: [bookId] }, 200)).body.removed, 1);
+  await check('lecteur', 'POST', `/shelves/${mine.id}/books`, { ids: [] }, 400);
+  assert.equal((await check('lecteur', 'PUT', `/shelves/${mine.id}`, { name: 'Vacances' }, 200)).body.name, 'Vacances');
+
+  // Preference du compte : interface masquee, donnees gardees.
+  assert.equal((await check('lecteur', 'GET', '/shelves/pref', null, 200)).body.enabled, true);
+  await check('lecteur', 'PUT', '/shelves/pref', { enabled: false }, 200);
+  assert.equal((await check('lecteur', 'GET', '/shelves/pref', null, 200)).body.enabled, false);
+  assert.equal((await check('bibliothecaire', 'GET', '/shelves/pref', null, 200)).body.enabled, true);
+  assert.equal((await check('lecteur', 'GET', '/shelves', null, 200)).body.length, 2);
+
+  // Un gestionnaire retire une etagere partagee ; suppression du livre : l'etagere reste.
+  await check('gestionnaire', 'DELETE', `/shelves/${shared.id}`, null, 200);
+  await check('lecteur', 'DELETE', `/shelves/${mine.id}`, null, 200);
+  await check('gestionnaire', 'PUT', '/settings', { features: { shelves: false } }, 200);
+  await check('lecteur', 'GET', '/shelves', null, 409);
+});
