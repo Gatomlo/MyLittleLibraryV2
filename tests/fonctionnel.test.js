@@ -91,7 +91,9 @@ test('pret, retard, retour, reservation', async () => {
   const borrowers = ok(await a.get(`${api}/borrowers?q=camille`));
   assert.equal(borrowers.length, 1);
   assert.equal(borrowers[0].totalLoans, 1);
-  assert.equal((await a.del(`${api}/borrowers/${borrowers[0].id}`)).status, 409);
+  // Sans pret en cours, la suppression est permise (l'historique part avec l'emprunteur).
+  assert.equal((await a.del(`${api}/borrowers/${borrowers[0].id}`)).status, 200);
+  assert.equal(ok(await a.get(`${api}/borrowers?q=camille`)).length, 0);
 });
 
 test('exemplaire transfere vers une autre fiche', async () => {

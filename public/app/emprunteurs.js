@@ -61,8 +61,10 @@ async function viewBorrower(id) {
     <p><a href="#/borrowers">← Emprunteurs</a></p>
     <div class="page-head"><h1>${esc(b.name)}</h1>
       <div class="btn-row">${open.length ? `<button class="btn" type="button" id="remind-all">${icon('mail', 16)}Relancer (${open.length} livre${open.length > 1 ? 's' : ''})</button>` : ''}
+      <button class="btn" type="button" id="edit-borrower">Modifier</button>
       <button class="btn btn-primary" type="button" id="lend" title="Prêter un livre">${icon('scan', 16)}Prêter<span class="hide-mobile"> un livre</span></button></div></div>
-    <form class="card" id="borrower-form" style="margin-top:14px">
+    <div class="card small muted" id="borrower-info" style="margin-top:14px">${esc([b.email, b.phone].filter(Boolean).join(' · ')) || 'Aucune coordonnée.'}${b.notes ? `<div class="borrower-notes">${esc(b.notes)}</div>` : ''}</div>
+    <form class="card" id="borrower-form" style="margin-top:14px" hidden>
       <div class="grid-3">
         <div class="field"><label>Nom *</label><input name="name" required value="${esc(b.name)}"></div>
         <div class="field"><label>E-mail</label><input name="email" type="email" value="${esc(b.email)}"></div>
@@ -71,7 +73,8 @@ async function viewBorrower(id) {
       <div class="field"><label>Informations</label><textarea name="notes" style="min-height:60px" placeholder="Adresse, classe, remarques…">${esc(b.notes)}</textarea></div>
       <div class="btn-row">
         <button class="btn btn-primary" type="submit">Enregistrer</button>
-        ${b.loans.length ? '' : '<button class="btn btn-danger" type="button" id="del">Supprimer</button>'}
+        <button class="btn" type="button" id="cancel-edit">Annuler</button>
+        ${open.length ? '' : '<button class="btn btn-danger" type="button" id="del">Supprimer</button>'}
       </div>
     </form>
     <h2>En cours (${open.length})${late ? ` <span class="badge badge-late">${late} en retard</span>` : ''}</h2>
@@ -94,6 +97,13 @@ async function viewBorrower(id) {
       try { await api(`/api/reservations/${btn.dataset.delRes}`, { method: 'DELETE' }); route(); } catch (err) { toast(err.message, 'error'); }
     };
   });
+  const showEdit = (on) => {
+    $('#borrower-form').hidden = !on;
+    $('#borrower-info').hidden = on;
+    $('#edit-borrower').hidden = on;
+  };
+  $('#edit-borrower').onclick = () => showEdit(true);
+  $('#cancel-edit').onclick = () => showEdit(false);
   $('#borrower-form').onsubmit = async (e) => {
     e.preventDefault();
     const t = e.target;
@@ -105,7 +115,7 @@ async function viewBorrower(id) {
   };
   const del = $('#del');
   if (del) del.onclick = async () => {
-    if (!confirm(`Supprimer ${b.name} ?`)) return;
+    if (!confirm(`Supprimer ${b.name}${past.length ? ` et ses ${past.length} prêt${past.length > 1 ? 's' : ''} dans l'historique` : ''} ?`)) return;
     try { await api(`/api/borrowers/${id}`, { method: 'DELETE' }); go('#/borrowers'); } catch (err) { toast(err.message, 'error'); }
   };
 }
