@@ -212,6 +212,30 @@ document.addEventListener('click', async (e) => {
   if (!l) return;
   try { if (await sendReminder(l.borrower, [l])) route(); } catch (err) { toast(err.message, 'error'); }
 });
+// Bouton « Prolonger » des listes : +7/+14/+21 jours depuis l'echeance (ou aujourd'hui si depassee), ou date libre.
+const isoDay = (d) => { const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return z.toISOString().slice(0, 10); };
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-extend]');
+  if (!btn) return;
+  e.preventDefault();
+  const l = loanCache.get(Number(btn.dataset.extend));
+  if (!l) return;
+  const today = isoDay(new Date());
+  const base = l.dueAt && l.dueAt > today ? l.dueAt : today;
+  const plus = (n) => { const d = new Date(`${base}T12:00:00`); d.setDate(d.getDate() + n); return isoDay(d); };
+  let custom = plus(14);
+  document.addEventListener('input', function track(ev) { if (ev.target.id === 'extend-date') custom = ev.target.value; }, true);
+  const v = await dialog(`<h2>Prolonger le prêt</h2>
+    <p class="small muted">${esc(l.book.title)}${l.dueAt ? ` · à rendre le ${fmtDay(l.dueAt)}` : ''}</p>
+    <div class="btn-row">${[7, 14, 21].map((n) => `<button class="btn" type="button" data-v="${plus(n)}">+${n} jours</button>`).join('')}</div>
+    <div class="field" style="margin-top:12px"><label>Ou une date</label><input type="date" id="extend-date" min="${today}" value="${plus(14)}"></div>
+    <div class="btn-row"><button class="btn btn-primary" type="button" id="extend-ok">Valider</button><button class="btn" type="button" data-close>Annuler</button></div>`
+    .replace('id="extend-ok"', 'id="extend-ok" data-v="custom"'));
+  if (!v) return;
+  const dueAt = v === 'custom' ? custom : v;
+  if (!dueAt) return;
+  try { await api(`/api/loans/${l.id}`, { method: 'PUT', body: { dueAt } }); toast('Prêt prolongé.'); route(); } catch (err) { toast(err.message, 'error'); }
+});
 const remindedHtml = (l) => (l.remindedAt ? `relancé le ${fmtDate(l.remindedAt)}${l.reminderCount > 1 ? ` (${l.reminderCount} fois)` : ''}` : '');
 
 // Fenetre simple : renvoie la valeur data-v du bouton touche, ou null.

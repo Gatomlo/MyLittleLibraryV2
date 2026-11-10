@@ -119,6 +119,7 @@ function loanItemHtml(l, hideBorrower) {
     </div>
     ${l.returnedAt ? '' : `<div class="btn-row loan-actions">
       <button class="btn btn-small" type="button" data-remind="${l.id}" aria-label="Relancer ${esc(l.borrower.name)} pour « ${esc(l.book.title)} »">${icon('mail', 16)}<span>Relancer</span></button>
+      <button class="btn btn-small" type="button" data-extend="${l.id}" aria-label="Prolonger « ${esc(l.book.title)} »">Prolonger</button>
       <a class="btn btn-small btn-ok" href="#/c/${encodeURIComponent(l.copy.code)}" data-quick-return="${esc(l.copy.code)}" aria-label="Retour de « ${esc(l.book.title)} »">Retour</a></div>`}
   </div>`;
 }
