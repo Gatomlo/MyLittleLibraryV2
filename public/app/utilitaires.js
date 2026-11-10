@@ -135,7 +135,8 @@ function toast(message, type) {
 // Date sans heure ('YYYY-MM-DD') : date de retour prevue d'un pret.
 const fmtDay = (s) => (s ? s.split('-').reverse().join('/') : '');
 // Echeance d'un pret en cours ("a rendre le ...", badge rouge si depassee).
-const dueHtml = (l) => (!l.dueAt ? '' : l.overdue ? `<span class="badge badge-late">En retard · ${fmtDay(l.dueAt)}</span>` : `à rendre le ${fmtDay(l.dueAt)}`);
+const extHtml = (l) => (l.extensionCount ? ` · prolongé ${l.extensionCount} fois` : '');
+const dueHtml = (l) => (!l.dueAt ? '' : (l.overdue ? `<span class="badge badge-late">En retard · ${fmtDay(l.dueAt)}</span>` : `à rendre le ${fmtDay(l.dueAt)}`) + extHtml(l));
 
 // ---------- Rappels de retour (mailto) ----------
 // Modele par defaut (reglages de la bibliotheque : objet et message personnalisables).

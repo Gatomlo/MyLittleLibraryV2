@@ -79,6 +79,12 @@ test('pret, retard, retour, reservation', async () => {
 
   ok(await a.put(`${api}/loans/${loan.id}`, { dueAt: '2020-01-01' }));
   assert.equal(ok(await a.get(`${api}/loans?status=overdue`)).length, 1);
+  // Raccourcir l'echeance ne compte pas ; la repousser compte comme une prolongation.
+  assert.equal(ok(await a.get(`${api}/loans?status=overdue`))[0].extensionCount, 0);
+  ok(await a.put(`${api}/loans/${loan.id}`, { dueAt: '2020-02-01' }));
+  assert.equal(ok(await a.get(`${api}/loans?status=overdue`))[0].extensionCount, 1);
+  ok(await a.put(`${api}/loans/${loan.id}`, { dueAt: '2020-01-01' }));
+  assert.equal(ok(await a.get(`${api}/loans?status=overdue`))[0].extensionCount, 1);
   const back = ok(await a.post(`${api}/loans/${loan.id}/return`));
   assert.equal(back.reservations[0].borrower.name, 'Sacha Martin');
   assert.equal((await a.post(`${api}/loans/${loan.id}/return`)).status, 404);
