@@ -620,4 +620,8 @@ if (require.main === module) {
   app.listen(PORT, () => console.log(`MyLittleLibrary disponible sur http://localhost:${PORT}`));
 }
 
+// Liste des comptes pour l'administration de node-gateway (lecture seule, facultatif : voir node-gateway/README).
+app.gatewayAccounts = () => db.prepare('SELECT username, email, role FROM users ORDER BY username').all()
+  .map((u) => ({ key: u.username, login: u.username, email: u.email || '', name: u.username, detail: (u.role === 'admin' ? 'administrateur' : 'utilisateur') + (u.email ? ' · ' + u.email : '') }));
+
 module.exports = app;
