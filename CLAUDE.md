@@ -36,3 +36,5 @@ Utilisateur francophone : interface, commentaires et réponses **en français**.
 - Après chaque modification : `npm run lint` et `npm test`.
 - Commit + push après chaque fonctionnalité validée (dépôt GitHub privé Gatomlo/MyLittleLibraryV2), mettre à jour `README.md` si la fonctionnalité est visible, `docs/ARCHITECTURE.md` si l'architecture change.
 - Réponses à l'utilisateur : courtes, en français, avec les instructions de déploiement quand le serveur ou la base changent.
+
+- Connexion centralisée (node-gateway) : `lib/gateway-bridge.js` (copie de `node-gateway/docs/gateway-bridge.js`) + `loadUser` dans `lib/auth.js`. Si la passerelle fournit `req.gateway` (droit sur cet outil), l'identité est rattachée au compte local **de même e-mail, sinon de même identifiant** (aucun compte créé) via une session locale de 2 h renouvelée en silence. Hors passerelle (et dans un cadre tiers type Teams) : sans effet. Test : `tests/gateway-bridge.test.js`.
