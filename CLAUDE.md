@@ -38,3 +38,5 @@ Utilisateur francophone : interface, commentaires et réponses **en français**.
 - Réponses à l'utilisateur : courtes, en français, avec les instructions de déploiement quand le serveur ou la base changent.
 
 - Connexion centralisée (node-gateway) : `lib/gateway-bridge.js` (copie de `node-gateway/docs/gateway-bridge.js`) + `loadUser` dans `lib/auth.js`. Si la passerelle fournit `req.gateway` (droit sur cet outil), l'identité est rattachée au compte local **de même e-mail, sinon de même identifiant** (aucun compte créé) via une session locale de 2 h renouvelée en silence. Hors passerelle (et dans un cadre tiers type Teams) : sans effet. Test : `tests/gateway-bridge.test.js`.
+
+- Sécurité (branche `claude/security-fixes`) : derrière la passerelle, la création du premier compte exige le droit admin de la passerelle (plus de course au premier visiteur ; hors passerelle : inchangé, test `gateway-setup`) ; dépendances à jour (`npm audit` : 0).

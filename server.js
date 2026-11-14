@@ -37,6 +37,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const { httpError, asyncHandler: h, str, intOrNull } = require('./lib/util');
+const gatewayBridge = require('./lib/gateway-bridge');
 
 app.disable('x-powered-by');
 app.use(security.headers);
@@ -146,6 +147,8 @@ function checkSlugAvailable(slug, libraryId) {
 api.post('/auth/setup', h((req, res) => {
   const username = readUsername(req.body.username);
   const password = readPassword(req.body.password);
+  // Derriere node-gateway, c'est elle qui authentifie : le premier visiteur ne peut plus s'approprier l'outil.
+  if (gatewayBridge.behindGateway(req) && !gatewayBridge.identity(req, 'admin')) throw httpError(403, 'Connectez-vous à la passerelle avec un compte ayant le droit admin pour créer le premier compte.');
   const result = tx(() => {
     if (db.prepare('SELECT 1 FROM users LIMIT 1').get()) throw httpError(403, 'Un compte existe déjà.');
     const lib = db.prepare('SELECT * FROM libraries ORDER BY id LIMIT 1').get()
